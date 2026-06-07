@@ -1,0 +1,66 @@
+# Entorno virtual y dependencias locales
+venv/
+.venv/
+env/
+ENV/
+
+# Variables de entorno y secretos (nunca subir a GitHub)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# Tests y cobertura
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Imágenes subidas por usuarios (fallback local sin Cloudinary)
+uploads/**
+!uploads/**/
+!uploads/**/.gitkeep
+
+# Logs y bases de datos locales de desarrollo
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Editores e IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Cursor / agentes (opcional, evita ruido en el repo)
+.cursor/
