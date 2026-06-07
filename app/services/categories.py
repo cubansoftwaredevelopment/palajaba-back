@@ -3,6 +3,18 @@ from typing import Any
 from app.database import get_categories_collection
 from app.schemas.seller_profile import CategoryPublic
 
+BUSINESS_CATEGORY_SORT_ORDER = {
+    "comida": 1,
+    "moda": 2,
+    "belleza": 3,
+    "hogar": 4,
+    "tecnologia": 5,
+    "salud": 6,
+    "artesanias": 7,
+    "servicios": 8,
+    "otros": 99,
+}
+
 DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "comida", "name": "Comida y bebidas"},
     {"id": "moda", "name": "Moda y accesorios"},
@@ -18,6 +30,17 @@ DEFAULT_CATEGORIES: list[dict[str, str]] = [
 
 def document_to_category(doc: dict[str, Any]) -> CategoryPublic:
     return CategoryPublic(id=doc["id"], name=doc["name"])
+
+
+def business_category_name(category_id: str) -> str:
+    for item in DEFAULT_CATEGORIES:
+        if item["id"] == category_id:
+            return item["name"]
+    return "Otros"
+
+
+def business_category_sort_order(category_id: str) -> int:
+    return BUSINESS_CATEGORY_SORT_ORDER.get(category_id, 99)
 
 
 async def ensure_category_seed() -> None:

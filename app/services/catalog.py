@@ -7,13 +7,13 @@ from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile, status
 
 from app.constants import CURRENCY_CODES, SUPPORTED_CURRENCIES
-from app.database import get_catalog_categories_collection, get_catalog_products_collection
-from app.services.product_categories import (
-    category_name,
-    category_sort_order,
-    map_seller_category_name,
-    validate_product_category_id,
+from app.database import (
+    get_catalog_categories_collection,
+    get_catalog_products_collection,
+    get_registrations_collection,
 )
+from app.services.categories import business_category_name
+from app.services.product_categories import map_seller_category_name
 from app.schemas.catalog import (
     CatalogCategoryCreate,
     CatalogCategoryPublic,
@@ -104,9 +104,12 @@ def _parse_accepted_currencies(raw: str, base_currency: str) -> list[str]:
 
 
 def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
+    global_category_id = str(doc.get("global_category_id") or "otros")
     return CatalogProductPublic(
         id=str(doc["_id"]),
-        global_category_id=str(doc.get("global_category_id") or "otros"),
+        category_id=str(doc.get("category_id") or ""),
+        global_category_id=global_category_id,
+        global_category_name=business_category_name(global_category_id),
         name=doc["name"],
         description=doc.get("description"),
         image_url=doc["image_url"],
@@ -137,17 +140,20 @@ async def ensure_catalog_indexes() -> None:
     products = get_catalog_products_collection()
     await categories.create_index([("seller_id", 1), ("name", 1)], unique=True)
     await categories.create_index([("seller_id", 1), ("sort_order", 1)])
+    await products.create_index([("seller_id", 1), ("category_id", 1), ("sort_order", 1)])
     await products.create_index([("seller_id", 1), ("global_category_id", 1), ("sort_order", 1)])
-    await _backfill_product_global_categories()
+    await _backfill_product_categories()
 
     from app.services.product_popularity import ensure_popularity_field
 
     await ensure_popularity_field()
 
 
-async def _backfill_product_global_categories() -> None:
+async def _backfill_product_categories() -> None:
     products_col = get_catalog_products_collection()
     categories_col = get_catalog_categories_collection()
+    registrations_col = get_registrations_collection()
+
     cursor = products_col.find({"global_category_id": {"$exists": False}})
     async for product in cursor:
         global_category_id = "otros"
@@ -162,24 +168,111 @@ async def _backfill_product_global_categories() -> None:
             {"$set": {"global_category_id": global_category_id}},
         )
 
+    cursor = products_col.find({"category_id": {"$exists": False}})
+    async for product in cursor:
+        seller_id = product.get("seller_id")
+        if not seller_id:
+            continue
+        local_category = await categories_col.find_one({"seller_id": seller_id})
+        if not local_category:
+            continue
+        await products_col.update_one(
+            {"_id": product["_id"]},
+            {"$set": {"category_id": local_category["_id"]}},
+        )
+
+    category_docs = await categories_col.find({}).to_list(length=None)
+    for category_doc in category_docs:
+        seller_id = category_doc.get("seller_id")
+        category_oid = category_doc.get("_id")
+        if not seller_id or not category_oid:
+            continue
+        count = await products_col.count_documents(
+            {"seller_id": seller_id, "category_id": category_oid}
+        )
+        await categories_col.update_one(
+            {"_id": category_oid},
+            {"$set": {"product_count": count}},
+        )
+
+
+async def _get_seller_category_ids(seller_id: str) -> list[str]:
+    try:
+        seller_oid = ObjectId(seller_id)
+    except InvalidId as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendedor no encontrado.",
+        ) from exc
+
+    seller = await get_registrations_collection().find_one({"_id": seller_oid})
+    if not seller:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendedor no encontrado.",
+        )
+    return list(seller.get("category_ids") or [])
+
+
+async def _validate_global_category_for_seller(seller_id: str, global_category_id: str) -> str:
+    normalized = global_category_id.strip().lower()
+    allowed = await _get_seller_category_ids(seller_id)
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Completa las categorías de tu negocio en el perfil antes de publicar productos.",
+        )
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La categoría global debe ser una de las categorías de tu negocio.",
+        )
+    return normalized
+
+
+async def _validate_local_category_id(seller_id: str, category_id: str) -> ObjectId:
+    oid = _parse_category_id(category_id)
+    collection = get_catalog_categories_collection()
+    doc = await collection.find_one({"_id": oid, "seller_id": seller_id})
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Selecciona una categoría local válida de tu catálogo.",
+        )
+    return oid
+
+
+async def _sync_local_category_product_count(seller_id: str, category_oid: ObjectId) -> None:
+    products_col = get_catalog_products_collection()
+    categories_col = get_catalog_categories_collection()
+    count = await products_col.count_documents(
+        {"seller_id": seller_id, "category_id": category_oid}
+    )
+    await categories_col.update_one(
+        {"_id": category_oid, "seller_id": seller_id},
+        {"$set": {"product_count": count}},
+    )
+
 
 async def get_catalog_summary(seller_id: str) -> CatalogSummaryPublic:
+    categories_col = get_catalog_categories_collection()
     products_col = get_catalog_products_collection()
+
+    category_docs = await categories_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
     product_docs = await products_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
 
-    grouped: dict[str, list[CatalogProductPublic]] = {}
+    products_by_category: dict[str, list[CatalogProductPublic]] = {}
     for doc in product_docs:
-        global_category_id = str(doc.get("global_category_id") or "otros")
-        grouped.setdefault(global_category_id, []).append(document_to_product(doc))
+        category_key = str(doc.get("category_id") or "")
+        products_by_category.setdefault(category_key, []).append(document_to_product(doc))
 
     categories: list[CatalogCategoryPublic] = []
-    for global_category_id in sorted(grouped.keys(), key=category_sort_order):
-        products = grouped[global_category_id]
+    for category_doc in category_docs:
+        category_id = str(category_doc["_id"])
+        products = products_by_category.get(category_id, [])
         categories.append(
-            CatalogCategoryPublic(
-                id=global_category_id,
-                name=category_name(global_category_id),
-                product_count=len(products),
+            document_to_category(
+                {**category_doc, "product_count": len(products)},
                 products=products,
             )
         )
@@ -256,16 +349,21 @@ async def create_catalog_product(
     base_price: float,
     base_currency: str,
     accepted_currencies_raw: str,
+    category_id: str,
     global_category_id: str,
     offers_delivery: bool,
     view_only: bool,
     is_available: bool,
     photo: UploadFile,
 ) -> CatalogProductPublic:
-    normalized_global_category_id = await validate_product_category_id(global_category_id)
+    local_category_oid = await _validate_local_category_id(seller_id, category_id)
+    normalized_global_category_id = await _validate_global_category_for_seller(
+        seller_id,
+        global_category_id,
+    )
     products = get_catalog_products_collection()
     product_count = await products.count_documents(
-        {"seller_id": seller_id, "global_category_id": normalized_global_category_id}
+        {"seller_id": seller_id, "category_id": local_category_oid}
     )
     if product_count >= MAX_PRODUCTS_PER_CATEGORY:
         raise HTTPException(
@@ -301,6 +399,7 @@ async def create_catalog_product(
     now = to_utc_naive(utc_now())
     doc = {
         "seller_id": seller_id,
+        "category_id": local_category_oid,
         "global_category_id": normalized_global_category_id,
         "name": normalized_name,
         "description": cleaned_description,
@@ -318,6 +417,7 @@ async def create_catalog_product(
     }
     result = await products.insert_one(doc)
     doc["_id"] = result.inserted_id
+    await _sync_local_category_product_count(seller_id, local_category_oid)
 
     return document_to_product(doc)
 
@@ -389,6 +489,7 @@ async def update_catalog_product(
     base_price: float,
     base_currency: str,
     accepted_currencies_raw: str,
+    category_id: str,
     global_category_id: str,
     offers_delivery: bool,
     view_only: bool,
@@ -396,7 +497,12 @@ async def update_catalog_product(
     photo: UploadFile | None = None,
 ) -> CatalogProductPublic:
     doc = await _get_product_doc(seller_id, product_id)
-    normalized_global_category_id = await validate_product_category_id(global_category_id)
+    local_category_oid = await _validate_local_category_id(seller_id, category_id)
+    normalized_global_category_id = await _validate_global_category_for_seller(
+        seller_id,
+        global_category_id,
+    )
+    previous_category_oid = doc.get("category_id")
 
     normalized_name, cleaned_description, price, normalized_currency, accepted_currencies = _validate_product_payload(
         name=name,
@@ -413,6 +519,7 @@ async def update_catalog_product(
         "base_price": price,
         "base_currency": normalized_currency,
         "accepted_currencies": accepted_currencies,
+        "category_id": local_category_oid,
         "global_category_id": normalized_global_category_id,
         "offers_delivery": bool(offers_delivery),
         "view_only": bool(view_only),
@@ -427,6 +534,9 @@ async def update_catalog_product(
 
     products = get_catalog_products_collection()
     await products.update_one({"_id": doc["_id"]}, {"$set": update_fields})
+    await _sync_local_category_product_count(seller_id, local_category_oid)
+    if isinstance(previous_category_oid, ObjectId) and previous_category_oid != local_category_oid:
+        await _sync_local_category_product_count(seller_id, previous_category_oid)
     updated = await products.find_one({"_id": doc["_id"]})
     return document_to_product(updated)
 
@@ -436,4 +546,7 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     products = get_catalog_products_collection()
     await products.delete_one({"_id": doc["_id"]})
     _delete_product_image_file(doc.get("image_url"))
+    category_oid = doc.get("category_id")
+    if isinstance(category_oid, ObjectId):
+        await _sync_local_category_product_count(seller_id, category_oid)
 

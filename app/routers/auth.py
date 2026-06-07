@@ -124,6 +124,7 @@ async def get_my_catalog_currencies(_seller_payload: dict = Depends(require_sell
 @router.post("/me/catalog/products", response_model=CatalogProductPublic, status_code=201)
 async def create_my_catalog_product(
     name: str = Form(...),
+    category_id: str = Form(...),
     global_category_id: str = Form(...),
     base_price: float = Form(...),
     base_currency: str = Form(...),
@@ -142,6 +143,7 @@ async def create_my_catalog_product(
         base_price=base_price,
         base_currency=base_currency,
         accepted_currencies_raw=accepted_currencies,
+        category_id=category_id,
         global_category_id=global_category_id,
         offers_delivery=offers_delivery,
         view_only=view_only,
@@ -154,6 +156,7 @@ async def create_my_catalog_product(
 async def update_my_catalog_product(
     product_id: str,
     name: str = Form(...),
+    category_id: str = Form(...),
     global_category_id: str = Form(...),
     base_price: float = Form(...),
     base_currency: str = Form(...),
@@ -173,6 +176,7 @@ async def update_my_catalog_product(
         base_price=base_price,
         base_currency=base_currency,
         accepted_currencies_raw=accepted_currencies,
+        category_id=category_id,
         global_category_id=global_category_id,
         offers_delivery=offers_delivery,
         view_only=view_only,

@@ -12,7 +12,33 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
-from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES, category_name, category_sort_order
+from app.services.categories import (
+    DEFAULT_CATEGORIES,
+    business_category_name,
+    business_category_sort_order,
+)
+from app.services.product_categories import (
+    REVOLICO_PRODUCT_CATEGORIES,
+    category_name as product_category_name,
+    category_sort_order,
+)
+
+KNOWN_BUSINESS_CATEGORY_IDS = {item["id"] for item in DEFAULT_CATEGORIES}
+KNOWN_PRODUCT_CATEGORY_IDS = {item["id"] for item in REVOLICO_PRODUCT_CATEGORIES}
+
+
+def _display_category_name(category_id: str) -> str:
+    name = business_category_name(category_id)
+    if name != "Otros":
+        return name
+    return product_category_name(category_id)
+
+
+def _normalize_marketplace_category_id(category_id: str) -> str:
+    normalized = category_id.strip().lower()
+    if normalized in KNOWN_BUSINESS_CATEGORY_IDS or normalized in KNOWN_PRODUCT_CATEGORY_IDS:
+        return normalized
+    raise ValueError("Categoría no válida.")
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
 from app.services.seller_profile import is_profile_complete
 from app.services.subscriptions import is_subscription_active
@@ -66,7 +92,7 @@ def _product_to_public(
             phone=phone_display(seller["phone"]),
             profile_photo_url=seller.get("profile_photo_url"),
         ),
-        category_name=category_name(global_category_id),
+        category_name=_display_category_name(global_category_id),
     )
 
 
@@ -146,6 +172,7 @@ def _sort_category_ids(stats: dict[str, dict[str, int]]) -> list[str]:
         stats.keys(),
         key=lambda category_id: (
             -stats[category_id]["popularity"],
+            business_category_sort_order(category_id),
             category_sort_order(category_id),
         ),
     )
@@ -219,7 +246,7 @@ async def list_home_feed(
         sections.append(
             MarketplaceCategorySectionPublic(
                 category_id=category_id,
-                category_name=category_name(category_id),
+                category_name=_display_category_name(category_id),
                 products=products,
                 total_products=total_in_category,
                 has_more=total_in_category > len(products),
@@ -248,10 +275,7 @@ async def list_category_products(
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     _ = province_name, municipality_name
 
-    normalized_category_id = global_category_id.strip().lower()
-    known_ids = {item["id"] for item in REVOLICO_PRODUCT_CATEGORIES}
-    if normalized_category_id not in known_ids:
-        raise ValueError("Categoría no válida.")
+    normalized_category_id = _normalize_marketplace_category_id(global_category_id)
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
@@ -262,7 +286,7 @@ async def list_category_products(
     if not seller_ids:
         return MarketplaceCategoryProductsPublic(
             category_id=normalized_category_id,
-            category_name=category_name(normalized_category_id),
+            category_name=_display_category_name(normalized_category_id),
             products=[],
             total_products=0,
             limit=page_size,
@@ -288,7 +312,7 @@ async def list_category_products(
     loaded = safe_offset + len(products)
     return MarketplaceCategoryProductsPublic(
         category_id=normalized_category_id,
-        category_name=category_name(normalized_category_id),
+        category_name=_display_category_name(normalized_category_id),
         products=products,
         total_products=total_in_category,
         limit=page_size,

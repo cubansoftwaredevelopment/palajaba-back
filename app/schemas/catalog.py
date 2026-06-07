@@ -7,7 +7,9 @@ class CatalogCategoryCreate(BaseModel):
 
 class CatalogProductPublic(BaseModel):
     id: str
+    category_id: str
     global_category_id: str
+    global_category_name: str | None = None
     name: str
     description: str | None = None
     image_url: str

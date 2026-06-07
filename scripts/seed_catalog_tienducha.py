@@ -11,6 +11,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from bson import ObjectId
+
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -18,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.database import (
     close_mongo_connection,
     connect_to_mongo,
+    get_catalog_categories_collection,
     get_catalog_products_collection,
     get_registrations_collection,
 )
@@ -27,10 +30,10 @@ from app.utils.datetime import to_utc_naive, utc_now
 STORE_NAME = "Tienducha"
 PRODUCTS_UPLOADS_DIR = Path(__file__).resolve().parents[1] / "uploads" / "products"
 
-GLOBAL_CATEGORY_BY_SECTION = {
-    "Electrodomésticos": "electrodomesticos",
-    "Ferretería": "construccion-herramientas",
-    "Despensa": "alimentos",
+BUSINESS_CATEGORY_BY_SECTION = {
+    "Electrodomésticos": "hogar",
+    "Ferretería": "hogar",
+    "Despensa": "comida",
 }
 
 CATEGORIES = [
@@ -122,14 +125,39 @@ async def main() -> None:
     )
     print(f"Zona de negocio: {business_area['municipality_name']}, {business_area['province_name']}")
 
+    categories_col = get_catalog_categories_collection()
     products_col = get_catalog_products_collection()
 
     await products_col.delete_many({"seller_id": seller_id})
 
     now = to_utc_naive(utc_now())
+    local_category_ids: dict[str, ObjectId] = {}
 
     for category_order, category in enumerate(CATEGORIES):
-        global_category_id = GLOBAL_CATEGORY_BY_SECTION[category["name"]]
+        local_doc = {
+            "seller_id": seller_id,
+            "name": category["name"],
+            "product_count": len(category["products"]),
+            "sort_order": category_order,
+            "created_at": now,
+            "updated_at": now,
+        }
+        existing_local = await categories_col.find_one(
+            {"seller_id": seller_id, "name": category["name"]}
+        )
+        if existing_local:
+            local_category_ids[category["name"]] = existing_local["_id"]
+            await categories_col.update_one(
+                {"_id": existing_local["_id"]},
+                {"$set": {"product_count": len(category["products"]), "updated_at": now}},
+            )
+        else:
+            result = await categories_col.insert_one(local_doc)
+            local_category_ids[category["name"]] = result.inserted_id
+
+    for category_order, category in enumerate(CATEGORIES):
+        global_category_id = BUSINESS_CATEGORY_BY_SECTION[category["name"]]
+        local_category_id = local_category_ids[category["name"]]
         print(f"\n{category['name']} ({len(category['products'])} productos)")
 
         for product_order, product in enumerate(category["products"]):
@@ -138,6 +166,7 @@ async def main() -> None:
 
             product_doc = {
                 "seller_id": seller_id,
+                "category_id": local_category_id,
                 "global_category_id": global_category_id,
                 "name": product["name"],
                 "description": product.get("description"),
