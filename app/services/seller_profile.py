@@ -211,12 +211,13 @@ async def save_profile_photo(seller_id: str, file: UploadFile) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
 
     content, content_type = await read_image_upload(file)
-    photo_url = await store_image(
+    stored_image = await store_image(
         content,
         content_type,
         scope="profiles",
         owner_id=seller_id,
     )
+    photo_url = stored_image.url
 
     old_url = doc.get("profile_photo_url")
     now = to_utc_naive(utc_now())

@@ -331,7 +331,7 @@ async def delete_catalog_category(seller_id: str, category_id: str) -> None:
     await collection.delete_one({"_id": oid})
 
 
-async def _save_product_photo(seller_id: str, file: UploadFile) -> str:
+async def _save_product_photo(seller_id: str, file: UploadFile):
     content, content_type = await read_image_upload(file)
     return await store_image(
         content,
@@ -395,7 +395,7 @@ async def create_catalog_product(
                 detail="La descripción no puede superar 500 caracteres.",
             )
 
-    image_url = await _save_product_photo(seller_id, photo)
+    stored_image = await _save_product_photo(seller_id, photo)
     now = to_utc_naive(utc_now())
     doc = {
         "seller_id": seller_id,
@@ -403,7 +403,8 @@ async def create_catalog_product(
         "global_category_id": normalized_global_category_id,
         "name": normalized_name,
         "description": cleaned_description,
-        "image_url": image_url,
+        "image_url": stored_image.url,
+        "image_public_id": stored_image.public_id,
         "base_price": float(base_price),
         "base_currency": normalized_currency,
         "accepted_currencies": accepted_currencies,
@@ -422,8 +423,12 @@ async def create_catalog_product(
     return document_to_product(doc)
 
 
-def _delete_product_image_file(image_url: str | None) -> None:
-    remove_image(image_url)
+def _delete_product_image_file(
+    image_url: str | None,
+    *,
+    public_id: str | None = None,
+) -> None:
+    remove_image(image_url, public_id=public_id)
 
 
 async def _get_product_doc(seller_id: str, product_id: str) -> dict[str, Any]:
@@ -528,9 +533,13 @@ async def update_catalog_product(
     }
 
     if photo is not None and photo.filename:
-        new_image_url = await _save_product_photo(seller_id, photo)
-        _delete_product_image_file(doc.get("image_url"))
-        update_fields["image_url"] = new_image_url
+        stored_image = await _save_product_photo(seller_id, photo)
+        _delete_product_image_file(
+            doc.get("image_url"),
+            public_id=doc.get("image_public_id"),
+        )
+        update_fields["image_url"] = stored_image.url
+        update_fields["image_public_id"] = stored_image.public_id
 
     products = get_catalog_products_collection()
     await products.update_one({"_id": doc["_id"]}, {"$set": update_fields})
@@ -545,7 +554,10 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     doc = await _get_product_doc(seller_id, product_id)
     products = get_catalog_products_collection()
     await products.delete_one({"_id": doc["_id"]})
-    _delete_product_image_file(doc.get("image_url"))
+    _delete_product_image_file(
+        doc.get("image_url"),
+        public_id=doc.get("image_public_id"),
+    )
     category_oid = doc.get("category_id")
     if isinstance(category_oid, ObjectId):
         await _sync_local_category_product_count(seller_id, category_oid)
