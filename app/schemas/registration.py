@@ -1,7 +1,8 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+
+from app.utils.datetime import UtcDateTime
 
 BillingPeriod = Literal["monthly", "yearly"]
 RegistrationStatus = Literal["pending", "approved", "rejected"]
@@ -46,11 +47,11 @@ class RegistrationPublic(BaseModel):
     phone: str
     billing_period: BillingPeriod
     status: RegistrationStatus
-    subscription_starts_at: datetime | None = None
-    subscription_ends_at: datetime | None = None
+    subscription_starts_at: UtcDateTime | None = None
+    subscription_ends_at: UtcDateTime | None = None
     rejection_reason: str | None = None
-    created_at: datetime
-    updated_at: datetime
-    approved_at: datetime | None = None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+    approved_at: UtcDateTime | None = None
     payment_amount_cup: int | None = None
 

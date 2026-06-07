@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.seller_profile import BusinessArea, BusinessLocation
+from app.utils.datetime import UtcDateTime
 
 LoginMethod = Literal["phone", "store_name"]
 
@@ -48,7 +48,7 @@ class SellerPublic(BaseModel):
     store_name: str
     phone: str
     billing_period: str
-    subscription_ends_at: datetime | None = None
+    subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
     business_location: BusinessLocation | None = None
     business_area: BusinessArea | None = None
@@ -59,7 +59,7 @@ class SellerPublic(BaseModel):
     category_ids: list[str] = []
     offers_delivery: bool | None = None
     profile_completed: bool = False
-    profile_completed_at: datetime | None = None
+    profile_completed_at: UtcDateTime | None = None
     subscription_active: bool = True
     subscription_days_remaining: int | None = None
     subscription_hours_remaining: int | None = None

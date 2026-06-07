@@ -1,4 +1,4 @@
-from datetime import datetime
+from app.utils.datetime import UtcDateTime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -126,9 +126,9 @@ class OrderPublic(BaseModel):
     delivery_currency: str | None = None
     payment_currency: str | None = None
     buyer_zone: BuyerZone | None = None
-    created_at: datetime
-    updated_at: datetime
-    completed_at: datetime | None = None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+    completed_at: UtcDateTime | None = None
 
 
 class UpdateOrderRequest(BaseModel):

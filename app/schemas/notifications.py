@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field
+
+from app.utils.datetime import UtcDateTime
 
 
 class AdminNotificationCreate(BaseModel):
@@ -13,7 +13,7 @@ class AdminNotificationSendResult(BaseModel):
     title: str
     content: str
     recipient_count: int
-    created_at: datetime
+    created_at: UtcDateTime
 
 
 class AdminNotificationBroadcastPublic(BaseModel):
@@ -21,15 +21,15 @@ class AdminNotificationBroadcastPublic(BaseModel):
     title: str
     content: str
     recipient_count: int
-    created_at: datetime
+    created_at: UtcDateTime
 
 
 class SellerNotificationPublic(BaseModel):
     id: str
     title: str
     content: str
-    read_at: datetime | None
-    created_at: datetime
+    read_at: UtcDateTime | None
+    created_at: UtcDateTime
     kind: str | None = None
     action_label: str | None = None
     action_type: str | None = None

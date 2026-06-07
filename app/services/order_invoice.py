@@ -9,6 +9,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from app.utils.currency_conversion import convert_amount, format_money
+from app.utils.datetime import format_utc_naive_for_display
 from app.utils.phone import phone_display
 
 InvoiceType = Literal["store", "transporter"]
@@ -26,9 +27,7 @@ RULE = colors.HexColor("#D8E4C8")
 
 
 def _format_datetime(value: datetime | None) -> str:
-    if value is None:
-        return "—"
-    return value.strftime("%d/%m/%Y %H:%M")
+    return format_utc_naive_for_display(value)
 
 
 def _payment_lines(doc: dict[str, Any]) -> tuple[list[dict[str, Any]], float]:
@@ -256,6 +255,38 @@ def _draw_info_box(
     return top - box_height - 8
 
 
+def _draw_table_header(
+    pdf: canvas.Canvas,
+    margin: float,
+    table_top: float,
+    content_width: float,
+    header_height: float,
+    col_product: float,
+    col_qty: float,
+    col_unit: float,
+    col_total: float,
+) -> float:
+    header_bottom = table_top - header_height
+
+    pdf.setFillColor(BG_TABLE_HEAD)
+    pdf.roundRect(margin, header_bottom, content_width, header_height, 6, fill=1, stroke=0)
+    pdf.rect(margin, header_bottom, content_width, 3 * mm, fill=1, stroke=0)
+
+    pdf.setStrokeColor(RULE)
+    pdf.setLineWidth(0.5)
+    pdf.line(margin + 1, header_bottom, margin + content_width - 1, header_bottom)
+
+    header_baseline = header_bottom + (header_height / 2) - 1.2 * mm
+    pdf.setFillColor(BRAND_GREEN_DARK)
+    pdf.setFont("Helvetica-Bold", 9)
+    pdf.drawString(col_product, header_baseline, "Producto")
+    pdf.drawCentredString(col_qty + 12, header_baseline, "Cant.")
+    pdf.drawRightString(col_unit + 30, header_baseline, "Precio unit.")
+    pdf.drawRightString(col_total, header_baseline, "Importe")
+
+    return header_bottom
+
+
 def _draw_products_table(
     pdf: canvas.Canvas,
     margin: float,
@@ -271,50 +302,65 @@ def _draw_products_table(
     col_unit = margin + content_width * 0.72
     col_total = width - margin - 10
     row_height = 7.5 * mm
+    text_baseline_offset = 2.8 * mm
+    font_size = 9
 
     table_top = y
-    header_height = 8 * mm
+    header_height = 9 * mm
     body_height = max(len(lines), 1) * row_height
-    table_height = header_height + body_height + 2
+    table_height = header_height + body_height
+    table_bottom = table_top - table_height
 
     pdf.setStrokeColor(RULE)
     pdf.setLineWidth(0.6)
-    pdf.roundRect(margin, table_top - table_height, content_width, table_height, 6, fill=0, stroke=1)
+    pdf.roundRect(margin, table_bottom, content_width, table_height, 6, fill=0, stroke=1)
 
-    pdf.setFillColor(BG_TABLE_HEAD)
-    pdf.roundRect(margin, table_top - header_height, content_width, header_height, 6, fill=1, stroke=0)
-    pdf.rect(margin, table_top - header_height, content_width, 3 * mm, fill=1, stroke=0)
+    header_bottom = _draw_table_header(
+        pdf,
+        margin,
+        table_top,
+        content_width,
+        header_height,
+        col_product,
+        col_qty,
+        col_unit,
+        col_total,
+    )
 
-    header_y = table_top - 5.5 * mm
-    pdf.setFillColor(BRAND_GREEN_DARK)
-    pdf.setFont("Helvetica-Bold", 9)
-    pdf.drawString(col_product, header_y, "Producto")
-    pdf.drawCentredString(col_qty + 12, header_y, "Cant.")
-    pdf.drawRightString(col_unit + 30, header_y, "Precio unit.")
-    pdf.drawRightString(col_total, header_y, "Importe")
-
-    current_y = table_top - header_height - 5
-    pdf.setFont("Helvetica", 9)
+    pdf.setFont("Helvetica", font_size)
 
     for index, line in enumerate(lines):
-        if current_y < 72:
+        row_top = header_bottom - (index * row_height)
+        row_bottom = row_top - row_height
+
+        if row_bottom < 72:
             pdf.showPage()
             _draw_page_background(pdf, width, height)
-            current_y = height - margin - 24
+            table_top = height - margin - 24
+            remaining = lines[index:]
+            return _draw_products_table(
+                pdf,
+                margin,
+                table_top,
+                width,
+                height,
+                remaining,
+                payment_currency,
+            )
 
         if index % 2 == 1:
             pdf.setFillColor(ROW_ALT)
-            pdf.rect(margin + 1, current_y - row_height + 4, content_width - 2, row_height, fill=1, stroke=0)
+            pdf.rect(margin + 1, row_bottom, content_width - 2, row_height, fill=1, stroke=0)
 
+        baseline = row_top - text_baseline_offset
         pdf.setFillColor(colors.black)
         name = line["name"][:40]
-        pdf.drawString(col_product, current_y, name)
-        pdf.drawCentredString(col_qty + 12, current_y, str(line["quantity"]))
-        pdf.drawRightString(col_unit + 30, current_y, format_money(line["unit_price"], payment_currency))
-        pdf.drawRightString(col_total, current_y, format_money(line["line_total"], payment_currency))
-        current_y -= row_height
+        pdf.drawString(col_product, baseline, name)
+        pdf.drawCentredString(col_qty + 12, baseline, str(line["quantity"]))
+        pdf.drawRightString(col_unit + 30, baseline, format_money(line["unit_price"], payment_currency))
+        pdf.drawRightString(col_total, baseline, format_money(line["line_total"], payment_currency))
 
-    return table_top - table_height - 10
+    return table_bottom - 10
 
 
 def _draw_totals_block(
@@ -461,36 +507,52 @@ def build_order_invoice_pdf(doc: dict[str, Any], seller_doc: dict[str, Any], inv
             grand_total,
         )
     else:
-        y = _draw_section_title(pdf, margin, y, "Productos a entregar")
         items = doc.get("items") or []
-        box_height = 10 * mm + (max(len(items), 1) * 6.5 * mm)
-        pdf.setFillColor(BG_SECTION)
-        pdf.roundRect(margin, y - box_height, content_width, box_height, 6, fill=1, stroke=0)
-        current_y = y - 9 * mm
-        pdf.setFont("Helvetica", 10)
-        pdf.setFillColor(colors.black)
-        for item in items:
-            pdf.drawString(margin + 12, current_y, f"• {item['name']}  ×  {item['quantity']}")
-            current_y -= 6.5 * mm
-        y -= box_height + 8
+        grand_total = None
+        table_currency = payment_currency
 
         if payment_currency:
             try:
-                _, grand_total = _payment_lines(doc)
-                pdf.setFillColor(BRAND_GREEN)
-                pdf.roundRect(margin, y - 16 * mm, content_width, 16 * mm, 6, fill=1, stroke=0)
-                pdf.setFillColor(colors.white)
-                pdf.setFont("Helvetica-Bold", 10)
-                pdf.drawString(margin + 12, y - 7 * mm, "Total a cobrar / entregar")
-                pdf.setFont("Helvetica-Bold", 14)
-                pdf.drawRightString(
-                    width - margin - 12,
-                    y - 8 * mm,
-                    format_money(grand_total, payment_currency),
-                )
-                y -= 22 * mm
+                lines, grand_total = _payment_lines(doc)
             except ValueError:
-                pass
+                lines = [
+                    {
+                        "name": item["name"],
+                        "quantity": item["quantity"],
+                        "unit_price": float(item["unit_price"]),
+                        "line_total": float(item["line_total"]),
+                    }
+                    for item in items
+                ]
+                table_currency = items[0]["currency"] if items else "CUP"
+        else:
+            lines = [
+                {
+                    "name": item["name"],
+                    "quantity": item["quantity"],
+                    "unit_price": float(item["unit_price"]),
+                    "line_total": float(item["line_total"]),
+                }
+                for item in items
+            ]
+            table_currency = items[0]["currency"] if items else "CUP"
+
+        y = _draw_section_title(pdf, margin, y, "Detalle de productos")
+        y = _draw_products_table(pdf, margin, y, width, height, lines, table_currency)
+
+        if grand_total is not None and payment_currency:
+            pdf.setFillColor(BRAND_GREEN)
+            pdf.roundRect(margin, y - 16 * mm, content_width, 16 * mm, 6, fill=1, stroke=0)
+            pdf.setFillColor(colors.white)
+            pdf.setFont("Helvetica-Bold", 10)
+            pdf.drawString(margin + 12, y - 7 * mm, "Total a cobrar / entregar")
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawRightString(
+                width - margin - 12,
+                y - 8 * mm,
+                format_money(grand_total, payment_currency),
+            )
+            y -= 22 * mm
 
     _draw_footer(pdf, width, margin, seller_phone)
 

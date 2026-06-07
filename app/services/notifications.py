@@ -235,6 +235,8 @@ async def send_notification_to_sellers(
 async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadcastPublic]:
     collection = get_notifications_collection()
     pipeline = [
+        # Solo avisos emitidos por un admin; excluye pedidos, suscripciones, etc.
+        {"$match": {"created_by_admin_id": {"$type": "objectId"}}},
         {"$sort": {"created_at": DESCENDING}},
         {
             "$group": {
