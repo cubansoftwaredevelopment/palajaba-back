@@ -314,21 +314,29 @@ async def create_catalog_category(seller_id: str, payload: CatalogCategoryCreate
 
 async def delete_catalog_category(seller_id: str, category_id: str) -> None:
     oid = _parse_category_id(category_id)
-    collection = get_catalog_categories_collection()
-    doc = await collection.find_one({"_id": oid, "seller_id": seller_id})
+    categories_col = get_catalog_categories_collection()
+    doc = await categories_col.find_one({"_id": oid, "seller_id": seller_id})
     if not doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Categoría no encontrada.",
         )
 
-    if int(doc.get("product_count") or 0) > 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No puedes eliminar una categoría que ya tiene productos.",
+    products_col = get_catalog_products_collection()
+    product_docs = await products_col.find(
+        {"seller_id": seller_id, "category_id": oid},
+    ).to_list(length=None)
+
+    for product_doc in product_docs:
+        _delete_product_image_file(
+            product_doc.get("image_url"),
+            public_id=product_doc.get("image_public_id"),
         )
 
-    await collection.delete_one({"_id": oid})
+    if product_docs:
+        await products_col.delete_many({"seller_id": seller_id, "category_id": oid})
+
+    await categories_col.delete_one({"_id": oid})
 
 
 async def _save_product_photo(seller_id: str, file: UploadFile):

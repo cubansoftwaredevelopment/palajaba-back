@@ -14,7 +14,6 @@ from app.schemas.orders import (
 )
 from app.services import notifications as notification_service
 from app.services.product_popularity import bump_products_on_order_completed
-from app.services.order_invoice import build_order_invoice_pdf
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now
 
@@ -291,6 +290,8 @@ async def generate_order_invoice_pdf(
     seller = await get_registrations_collection().find_one({"_id": ObjectId(seller_id)})
     if seller is None:
         raise ValueError("Tienda no encontrada.")
+
+    from app.services.order_invoice import build_order_invoice_pdf
 
     pdf_bytes = build_order_invoice_pdf(doc, seller, invoice_type)
     order_code = str(doc["_id"])[-6:].upper()
