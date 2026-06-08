@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.schemas.marketplace import (
     MarketplaceCategoryProductsPublic,
     MarketplaceHomeFeedPublic,
+    MarketplaceStoreCatalogPublic,
+    MarketplaceStoreCategoryProductsPublic,
     MarketplaceStorePublic,
 )
 from app.schemas.orders import CreateOrderRequest, OrderPublic
@@ -56,10 +58,59 @@ async def list_marketplace_category_products(
         ) from exc
 
 
-@router.get("/stores/{store_id}", response_model=MarketplaceStorePublic)
-async def get_marketplace_store(store_id: str):
+@router.get("/stores/{store_slug}/catalog", response_model=MarketplaceStoreCatalogPublic)
+async def get_marketplace_store_catalog(
+    store_slug: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    limit_per_category: int = Query(20, ge=1, le=50),
+):
     try:
-        return await marketplace_service.get_store_public(store_id)
+        return await marketplace_service.get_store_catalog(
+            store_slug,
+            province_id.strip(),
+            municipality_id.strip(),
+            limit_per_category=limit_per_category,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/stores/{store_slug}/categories/{category_id}/products",
+    response_model=MarketplaceStoreCategoryProductsPublic,
+)
+async def list_marketplace_store_category_products(
+    store_slug: str,
+    category_id: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        return await marketplace_service.list_store_category_products(
+            store_slug,
+            province_id.strip(),
+            municipality_id.strip(),
+            category_id.strip(),
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/stores/{store_slug}", response_model=MarketplaceStorePublic)
+async def get_marketplace_store(store_slug: str):
+    try:
+        return await marketplace_service.get_store_public(store_slug)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

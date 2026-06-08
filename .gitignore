@@ -4,9 +4,11 @@ venv/
 env/
 ENV/
 
-# Variables de entorno y secretos (nunca subir a GitHub)
+# Variables de entorno y secretos (NUNCA subir a GitHub)
 .env
 .env.*
+.env.production
+.env.local.dev
 !.env.example
 
 # Python

@@ -1,9 +1,12 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+
 
 class MarketplaceStorePublic(BaseModel):
     id: str
     store_name: str
+    store_slug: str
     phone: str
     profile_photo_url: str | None = None
 
@@ -41,6 +44,38 @@ class MarketplaceHomeFeedPublic(BaseModel):
 
 
 class MarketplaceCategoryProductsPublic(BaseModel):
+    category_id: str
+    category_name: str
+    products: list[MarketplaceProductPublic] = Field(default_factory=list)
+    total_products: int = 0
+    limit: int
+    offset: int
+    has_more: bool = False
+
+
+class MarketplaceStoreLocalSectionPublic(BaseModel):
+    category_id: str
+    category_name: str
+    products: list[MarketplaceProductPublic] = Field(default_factory=list)
+    total_products: int = 0
+    has_more: bool = False
+
+
+class MarketplaceStoreCatalogPublic(BaseModel):
+    store: MarketplaceStorePublic
+    biography: str | None = None
+    social_instagram: str | None = None
+    social_facebook: str | None = None
+    business_location: BusinessLocation | None = None
+    business_area: BusinessArea | None = None
+    delivery_areas: list[BusinessArea] = Field(default_factory=list)
+    categories: list[CategoryPublic] = Field(default_factory=list)
+    offers_delivery: bool | None = None
+    sections: list[MarketplaceStoreLocalSectionPublic] = Field(default_factory=list)
+    total_products: int = 0
+
+
+class MarketplaceStoreCategoryProductsPublic(BaseModel):
     category_id: str
     category_name: str
     products: list[MarketplaceProductPublic] = Field(default_factory=list)

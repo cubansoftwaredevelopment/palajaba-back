@@ -9,6 +9,7 @@ from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
 from app.utils.datetime import to_utc_naive, utc_now
+from app.utils.store_slug import store_name_to_slug
 
 PHONE_PREFIX = "+53"
 
@@ -85,6 +86,7 @@ async def create_registration(
     document = {
         "transfer_id": normalized_transfer_id,
         "store_name": store_name,
+        "store_slug": store_name_to_slug(store_name),
         "phone": phone,
         "password_hash": hash_password(password),
         "billing_period": billing_period,
@@ -299,9 +301,20 @@ async def _get_document_or_404(collection, registration_id: str) -> dict[str, An
 
 async def ensure_registration_indexes() -> None:
     collection = get_registrations_collection()
+    cursor = collection.find({})
+    async for doc in cursor:
+        store_name = doc.get("store_name") or ""
+        slug = store_name_to_slug(store_name)
+        if doc.get("store_slug") != slug:
+            await collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"store_slug": slug}},
+            )
+
     await collection.create_index("transfer_id", unique=True)
     await collection.create_index("phone", unique=True)
     await collection.create_index("status")
     await collection.create_index("created_at")
     await collection.create_index("store_name")
+    await collection.create_index("store_slug", unique=True)
     await collection.create_index("approved_at")
