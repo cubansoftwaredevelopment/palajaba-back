@@ -10,6 +10,11 @@ from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerPro
 from app.services.cuba_locations import validate_business_area
 from app.utils.phone import phone_display
 from app.services.categories import validate_category_ids
+from app.services.plans import (
+    normalize_plan_tier,
+    seller_has_recommendation_boost,
+    seller_has_statistics,
+)
 from app.services.subscriptions import (
     is_publicly_visible,
     is_subscription_active,
@@ -106,6 +111,9 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         store_name=doc["store_name"],
         phone=phone_display(doc["phone"]),
         billing_period=doc["billing_period"],
+        plan_tier=normalize_plan_tier(doc.get("plan_tier")),
+        has_statistics=seller_has_statistics(doc),
+        has_recommendation_boost=seller_has_recommendation_boost(doc),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
         business_location=business_location,

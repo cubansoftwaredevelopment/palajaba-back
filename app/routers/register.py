@@ -14,6 +14,7 @@ async def register_seller(payload: RegisterRequest):
         phone=payload.phone,
         password=payload.password,
         billing_period=payload.billing_period,
+        plan_tier=payload.plan_tier,
     )
     return RegisterResponse(
         id=registration.id,

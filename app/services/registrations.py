@@ -8,6 +8,7 @@ from app.constants import REJECTION_REASON_UNCONFIRMED_PAYMENT
 from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
+from app.services.plans import normalize_plan_tier
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
 
@@ -29,6 +30,7 @@ def document_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         store_name=doc["store_name"],
         phone=phone_display(doc["phone"]),
         billing_period=doc["billing_period"],
+        plan_tier=normalize_plan_tier(doc.get("plan_tier")),
         status=doc["status"],
         subscription_starts_at=doc.get("subscription_starts_at"),
         subscription_ends_at=doc.get("subscription_ends_at"),
@@ -53,6 +55,7 @@ async def create_registration(
     phone: str,
     password: str,
     billing_period: str,
+    plan_tier: str = "standard",
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     normalized_transfer_id = normalize_transfer_id(transfer_id)
@@ -90,6 +93,7 @@ async def create_registration(
         "phone": phone,
         "password_hash": hash_password(password),
         "billing_period": billing_period,
+        "plan_tier": normalize_plan_tier(plan_tier),
         "status": "pending",
         "subscription_starts_at": None,
         "subscription_ends_at": None,
@@ -318,3 +322,7 @@ async def ensure_registration_indexes() -> None:
     await collection.create_index("store_name")
     await collection.create_index("store_slug", unique=True)
     await collection.create_index("approved_at")
+    await collection.update_many(
+        {"plan_tier": {"$exists": False}},
+        {"$set": {"plan_tier": "standard"}},
+    )

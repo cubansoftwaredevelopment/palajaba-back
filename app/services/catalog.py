@@ -17,6 +17,7 @@ from app.services.product_categories import map_seller_category_name
 from app.schemas.catalog import (
     CatalogCategoryCreate,
     CatalogCategoryPublic,
+    CatalogCategoryReorder,
     CatalogProductPublic,
     CatalogSummaryPublic,
     CurrencyPublic,
@@ -135,6 +136,28 @@ def get_supported_currencies() -> list[CurrencyPublic]:
     return [CurrencyPublic(**item) for item in SUPPORTED_CURRENCIES]
 
 
+async def _renormalize_category_sort_orders(seller_id: str) -> None:
+    collection = get_catalog_categories_collection()
+    docs = await collection.find({"seller_id": seller_id}).sort(
+        [("sort_order", 1), ("created_at", 1)]
+    ).to_list(length=None)
+    now = to_utc_naive(utc_now())
+    for index, doc in enumerate(docs):
+        if doc.get("sort_order") != index:
+            await collection.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"sort_order": index, "updated_at": now}},
+            )
+
+
+async def _backfill_category_sort_orders() -> None:
+    categories = get_catalog_categories_collection()
+    seller_ids = await categories.distinct("seller_id")
+    for seller_id in seller_ids:
+        if seller_id:
+            await _renormalize_category_sort_orders(seller_id)
+
+
 async def ensure_catalog_indexes() -> None:
     categories = get_catalog_categories_collection()
     products = get_catalog_products_collection()
@@ -142,6 +165,7 @@ async def ensure_catalog_indexes() -> None:
     await categories.create_index([("seller_id", 1), ("sort_order", 1)])
     await products.create_index([("seller_id", 1), ("category_id", 1), ("sort_order", 1)])
     await products.create_index([("seller_id", 1), ("global_category_id", 1), ("sort_order", 1)])
+    await _backfill_category_sort_orders()
     await _backfill_product_categories()
 
     from app.services.product_popularity import ensure_popularity_field
@@ -337,6 +361,44 @@ async def delete_catalog_category(seller_id: str, category_id: str) -> None:
         await products_col.delete_many({"seller_id": seller_id, "category_id": oid})
 
     await categories_col.delete_one({"_id": oid})
+    await _renormalize_category_sort_orders(seller_id)
+
+
+async def reorder_catalog_categories(
+    seller_id: str,
+    payload: CatalogCategoryReorder,
+) -> CatalogSummaryPublic:
+    collection = get_catalog_categories_collection()
+    existing_docs = await collection.find({"seller_id": seller_id}).to_list(length=None)
+    existing_ids = {str(doc["_id"]) for doc in existing_docs}
+
+    if not existing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aún no tienes categorías para ordenar.",
+        )
+
+    if len(payload.category_ids) != len(existing_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista debe incluir todas tus categorías.",
+        )
+
+    if set(payload.category_ids) != existing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista contiene categorías inválidas o duplicadas.",
+        )
+
+    now = to_utc_naive(utc_now())
+    for index, category_id in enumerate(payload.category_ids):
+        category_oid = _parse_category_id(category_id)
+        await collection.update_one(
+            {"_id": category_oid, "seller_id": seller_id},
+            {"$set": {"sort_order": index, "updated_at": now}},
+        )
+
+    return await get_catalog_summary(seller_id)
 
 
 async def _save_product_photo(seller_id: str, file: UploadFile):

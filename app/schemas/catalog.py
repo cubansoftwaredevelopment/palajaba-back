@@ -1,8 +1,27 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class CatalogCategoryCreate(BaseModel):
     name: str = Field(..., min_length=2, max_length=60)
+
+
+class CatalogCategoryReorder(BaseModel):
+    category_ids: list[str] = Field(..., min_length=1)
+
+    @field_validator("category_ids")
+    @classmethod
+    def normalize_category_ids(cls, value: list[str]) -> list[str]:
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            category_id = item.strip()
+            if not category_id or category_id in seen:
+                continue
+            seen.add(category_id)
+            normalized.append(category_id)
+        if not normalized:
+            raise ValueError("Debes enviar al menos una categoría.")
+        return normalized
 
 
 class CatalogProductPublic(BaseModel):

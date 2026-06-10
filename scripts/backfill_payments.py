@@ -11,8 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.constants import PLAN_PRICES_CUP
 from app.database import close_mongo_connection, connect_to_mongo, get_registrations_collection
+from app.services.plans import normalize_plan_tier, plan_price_cup
 
 
 async def main() -> None:
@@ -24,7 +24,10 @@ async def main() -> None:
     )
     updated = 0
     async for doc in cursor:
-        amount = PLAN_PRICES_CUP.get(doc.get("billing_period"), PLAN_PRICES_CUP["monthly"])
+        amount = plan_price_cup(
+            normalize_plan_tier(doc.get("plan_tier")),
+            doc.get("billing_period") or "monthly",
+        )
         await collection.update_one(
             {"_id": doc["_id"]},
             {"$set": {"payment_amount_cup": amount}},

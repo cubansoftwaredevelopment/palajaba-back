@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.utils.datetime import UtcDateTime
 
 BillingPeriod = Literal["monthly", "yearly"]
+PlanTier = Literal["standard", "premium"]
 RegistrationStatus = Literal["pending", "approved", "rejected"]
 
 
@@ -14,6 +15,7 @@ class RegisterRequest(BaseModel):
     phone: str = Field(..., min_length=8, max_length=20)
     password: str = Field(..., min_length=6, max_length=128)
     billing_period: BillingPeriod
+    plan_tier: PlanTier = "standard"
 
     @field_validator("transfer_id", "store_name")
     @classmethod
@@ -46,6 +48,7 @@ class RegistrationPublic(BaseModel):
     store_name: str
     phone: str
     billing_period: BillingPeriod
+    plan_tier: PlanTier = "standard"
     status: RegistrationStatus
     subscription_starts_at: UtcDateTime | None = None
     subscription_ends_at: UtcDateTime | None = None

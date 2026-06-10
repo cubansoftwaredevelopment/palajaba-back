@@ -6,6 +6,7 @@ from app.schemas.auth import SellerLoginRequest, SellerLoginResponse, SellerPubl
 from app.schemas.catalog import (
     CatalogCategoryCreate,
     CatalogCategoryPublic,
+    CatalogCategoryReorder,
     CatalogProductPublic,
     CatalogSummaryPublic,
     CurrencyPublic,
@@ -113,6 +114,17 @@ async def delete_my_catalog_category(
     await catalog_service.delete_catalog_category(
         seller_payload["seller_id"],
         category_id,
+    )
+
+
+@router.put("/me/catalog/categories/order", response_model=CatalogSummaryPublic)
+async def reorder_my_catalog_categories(
+    payload: CatalogCategoryReorder,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await catalog_service.reorder_catalog_categories(
+        seller_payload["seller_id"],
+        payload,
     )
 
 

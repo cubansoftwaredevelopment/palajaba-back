@@ -48,6 +48,9 @@ class SellerPublic(BaseModel):
     store_name: str
     phone: str
     billing_period: str
+    plan_tier: str = "standard"
+    has_statistics: bool = False
+    has_recommendation_boost: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
     business_location: BusinessLocation | None = None
