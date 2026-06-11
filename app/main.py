@@ -46,4 +46,5 @@ async def health_check():
         "status": "ok",
         "mongodb": "atlas" if settings.mongodb_url.startswith("mongodb+srv://") else "local",
         "cloudinary": settings.cloudinary_enabled,
+        "cors_origins_count": len(settings.cors_origins_list),
     }

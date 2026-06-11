@@ -17,12 +17,18 @@ BUSINESS_CATEGORY_SORT_ORDER = {
 
 DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "comida", "name": "Comida y bebidas"},
+    {"id": "restaurant", "name": "Restaurant y cafeteria"},
+    {"id": "energia", "name": "Paneles, EcoFlow y fuentes de energia"},
+    {"id": "inmobiliaria", "name": "Inmobiliaria"},
     {"id": "moda", "name": "Moda y accesorios"},
     {"id": "belleza", "name": "Belleza y cuidado personal"},
     {"id": "hogar", "name": "Hogar y decoración"},
     {"id": "tecnologia", "name": "Tecnología"},
     {"id": "salud", "name": "Salud y bienestar"},
     {"id": "artesanias", "name": "Artesanías"},
+    {"id": "insumos-fiestas", "name": "Insumos para fiestas"},
+    {"id": "+18", "name": "Materiales y herramientas de construcción"},
+    {"id": "+18", "name": "Articulos +18"},
     {"id": "servicios", "name": "Servicios"},
     {"id": "otros", "name": "Otros"},
 ]
