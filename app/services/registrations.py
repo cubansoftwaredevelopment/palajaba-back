@@ -117,7 +117,41 @@ async def create_registration(
     return document_to_public(document)
 
 
+async def sync_expired_registrations() -> None:
+    """Pasa a «expired» las tiendas aprobadas cuya suscripción ya venció."""
+    collection = get_registrations_collection()
+    now = to_utc_naive(utc_now())
+    await collection.update_many(
+        {
+            "status": "approved",
+            "subscription_ends_at": {"$lte": now},
+        },
+        {"$set": {"status": "expired", "updated_at": now}},
+    )
+
+
+async def mark_registration_expired_if_needed(doc: dict[str, Any]) -> None:
+    if doc.get("status") != "approved":
+        return
+
+    ends_at = doc.get("subscription_ends_at")
+    if ends_at is None:
+        return
+
+    now = to_utc_naive(utc_now())
+    if to_utc_naive(ends_at) > now:
+        return
+
+    collection = get_registrations_collection()
+    await collection.update_one(
+        {"_id": doc["_id"], "status": "approved"},
+        {"$set": {"status": "expired", "updated_at": now}},
+    )
+    doc["status"] = "expired"
+
+
 async def list_registrations(status_filter: str | None = None) -> list[RegistrationPublic]:
+    await sync_expired_registrations()
     collection = get_registrations_collection()
     query: dict[str, Any] = {}
     if status_filter and status_filter != "all":
@@ -189,6 +223,9 @@ async def approve_registration(
 async def update_subscription_end(
     registration_id: str,
     subscription_ends_at: datetime,
+    *,
+    plan_tier: str | None = None,
+    billing_period: str | None = None,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     doc = await _get_document_or_404(collection, registration_id)
@@ -208,15 +245,83 @@ async def update_subscription_end(
             detail="La fecha de fin de suscripción debe ser futura.",
         )
 
-    await collection.update_one(
-        {"_id": doc["_id"]},
-        {
-            "$set": {
-                "subscription_ends_at": ends_at,
-                "updated_at": now,
-            }
-        },
-    )
+    updates: dict[str, Any] = {
+        "subscription_ends_at": ends_at,
+        "updated_at": now,
+    }
+    if plan_tier is not None:
+        updates["plan_tier"] = normalize_plan_tier(plan_tier)
+    if billing_period is not None:
+        if billing_period not in ("monthly", "yearly"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Periodo de facturación inválido.",
+            )
+        updates["billing_period"] = billing_period
+
+    await collection.update_one({"_id": doc["_id"]}, {"$set": updates})
+
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_public(updated)
+
+
+async def renew_registration(
+    registration_id: str,
+    subscription_ends_at: datetime | None,
+    payment_amount_cup: int,
+    *,
+    plan_tier: str | None = None,
+    billing_period: str | None = None,
+) -> RegistrationPublic:
+    collection = get_registrations_collection()
+    doc = await _get_document_or_404(collection, registration_id)
+
+    if doc["status"] != "expired":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo se pueden renovar tiendas con suscripción vencida.",
+        )
+
+    now = to_utc_naive(utc_now())
+    billing = billing_period or doc["billing_period"]
+    ends_at = subscription_ends_at
+    if ends_at is None:
+        ends_at = default_subscription_end(now, billing)
+    else:
+        ends_at = to_utc_naive(ends_at)
+
+    if ends_at <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La fecha de fin de suscripción debe ser futura.",
+        )
+
+    if payment_amount_cup < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El monto pagado debe ser mayor que cero.",
+        )
+
+    updates: dict[str, Any] = {
+        "status": "approved",
+        "subscription_starts_at": now,
+        "subscription_ends_at": ends_at,
+        "payment_amount_cup": payment_amount_cup,
+        "approved_at": now,
+        "rejection_reason": None,
+        "updated_at": now,
+    }
+    if plan_tier is not None:
+        updates["plan_tier"] = normalize_plan_tier(plan_tier)
+    if billing_period is not None:
+        if billing_period not in ("monthly", "yearly"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Periodo de facturación inválido.",
+            )
+        updates["billing_period"] = billing_period
+
+    await collection.update_one({"_id": doc["_id"]}, {"$set": updates})
 
     updated = await collection.find_one({"_id": doc["_id"]})
     return document_to_public(updated)

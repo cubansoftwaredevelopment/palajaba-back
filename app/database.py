@@ -26,6 +26,8 @@ async def connect_to_mongo():
     from app.services.orders import ensure_order_indexes
     from app.services.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary
+    from app.services.seller_stats import ensure_seller_stats_indexes
+    from app.services.platform_settings import ensure_platform_settings_indexes
     from app.services.seller_profile import ensure_uploads_dir
 
     init_cloudinary()
@@ -33,9 +35,11 @@ async def connect_to_mongo():
     await ensure_registration_indexes()
     await ensure_order_indexes()
     await ensure_admin_indexes()
+    await ensure_platform_settings_indexes()
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
     await ensure_catalog_indexes()
+    await ensure_seller_stats_indexes()
     await ensure_category_seed()
     await ensure_product_category_seed()
     await seed_default_admin()
@@ -95,3 +99,15 @@ def get_orders_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["seller_orders"]
+
+
+def get_seller_profile_views_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["seller_profile_views"]
+
+
+def get_platform_settings_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["platform_settings"]

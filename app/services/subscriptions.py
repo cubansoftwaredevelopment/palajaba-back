@@ -140,7 +140,16 @@ async def assert_seller_subscription_active(seller_id: str) -> dict[str, Any]:
         )
 
     if not is_subscription_active(doc):
-        raise_subscription_expired(doc)
+        from app.services.platform_settings import get_renewal_contact_phone
+        from app.services.registrations import mark_registration_expired_if_needed
+
+        await mark_registration_expired_if_needed(doc)
+        detail = subscription_expired_detail(doc)
+        detail["renewal_contact_phone"] = await get_renewal_contact_phone()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=detail,
+        )
 
     return doc
 

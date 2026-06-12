@@ -1,22 +1,12 @@
-from datetime import UTC, datetime
-
 from app.database import get_registrations_collection
 from app.schemas.admin_stats import AdminStatsSummary
 from app.utils.datetime import to_utc_naive, utc_now
-
-
-def _month_bounds(year: int, month: int) -> tuple[datetime, datetime]:
-    start = datetime(year, month, 1, tzinfo=UTC)
-    if month == 12:
-        end = datetime(year + 1, 1, 1, tzinfo=UTC)
-    else:
-        end = datetime(year, month + 1, 1, tzinfo=UTC)
-    return to_utc_naive(start), to_utc_naive(end)
+from app.utils.month_bounds import month_bounds
 
 
 async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     collection = get_registrations_collection()
-    start, end = _month_bounds(year, month)
+    start, end = month_bounds(year, month)
     now = to_utc_naive(utc_now())
 
     payments_pipeline = [

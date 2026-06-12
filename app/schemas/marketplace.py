@@ -43,6 +43,17 @@ class MarketplaceHomeFeedPublic(BaseModel):
     total_products: int = 0
 
 
+class MarketplaceSearchPublic(BaseModel):
+    query: str = ""
+    category_id: str | None = None
+    category_name: str | None = None
+    products: list[MarketplaceProductPublic] = Field(default_factory=list)
+    total_products: int = 0
+    limit: int
+    offset: int
+    has_more: bool = False
+
+
 class MarketplaceCategoryProductsPublic(BaseModel):
     category_id: str
     category_name: str

@@ -1,3 +1,4 @@
+import asyncio
 import io
 import re
 import uuid
@@ -93,6 +94,21 @@ async def store_image(
     scope: ImageScope,
     owner_id: str,
 ) -> StoredImage:
+    return await asyncio.to_thread(
+        _store_image_sync,
+        content,
+        content_type,
+        scope,
+        owner_id,
+    )
+
+
+def _store_image_sync(
+    content: bytes,
+    content_type: str,
+    scope: ImageScope,
+    owner_id: str,
+) -> StoredImage:
     if settings.cloudinary_enabled:
         return _upload_to_cloudinary(content, scope=scope, owner_id=owner_id)
 
@@ -101,7 +117,11 @@ async def store_image(
     )
 
 
-def remove_image(url: str | None, *, public_id: str | None = None) -> None:
+async def remove_image(url: str | None, *, public_id: str | None = None) -> None:
+    await asyncio.to_thread(_remove_image_sync, url, public_id)
+
+
+def _remove_image_sync(url: str | None, public_id: str | None) -> None:
     if not url and not public_id:
         return
 

@@ -14,6 +14,7 @@ from app.schemas.marketplace import (
     MarketplaceCategorySectionPublic,
     MarketplaceHomeFeedPublic,
     MarketplaceProductPublic,
+    MarketplaceSearchPublic,
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
     MarketplaceStoreLocalSectionPublic,
@@ -31,6 +32,11 @@ from app.services.product_categories import (
     category_name as product_category_name,
     category_sort_order,
 )
+from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
+from app.services.seller_profile import is_profile_complete
+from app.services.subscriptions import is_subscription_active
+from app.utils.phone import phone_display
+from app.utils.store_slug import decode_store_ref, store_name_to_slug
 
 KNOWN_BUSINESS_CATEGORY_IDS = {item["id"] for item in DEFAULT_CATEGORIES}
 KNOWN_PRODUCT_CATEGORY_IDS = {item["id"] for item in REVOLICO_PRODUCT_CATEGORIES}
@@ -48,11 +54,7 @@ def _normalize_marketplace_category_id(category_id: str) -> str:
     if normalized in KNOWN_BUSINESS_CATEGORY_IDS or normalized in KNOWN_PRODUCT_CATEGORY_IDS:
         return normalized
     raise ValueError("Categoría no válida.")
-from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
-from app.services.seller_profile import is_profile_complete
-from app.services.subscriptions import is_subscription_active
-from app.utils.phone import phone_display
-from app.utils.store_slug import decode_store_ref, store_name_to_slug
+
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 50
@@ -182,6 +184,15 @@ async def _resolve_visible_seller(
     return seller
 
 
+async def resolve_visible_seller_id(
+    store_ref: str,
+    province_id: str,
+    municipality_id: str,
+) -> str:
+    seller = await _resolve_visible_seller(store_ref, province_id, municipality_id)
+    return str(seller["_id"])
+
+
 def _product_to_public(
     product: dict[str, Any],
     seller_by_id: dict[str, dict[str, Any]],
@@ -225,6 +236,7 @@ async def _get_visible_sellers(
                 "business_area.municipality_id": municipality_id,
             },
             {
+                "offers_delivery": True,
                 "delivery_areas": {
                     "$elemMatch": {
                         "province_id": province_id,
@@ -244,6 +256,122 @@ async def _get_visible_sellers(
     return {str(doc["_id"]): doc for doc in visible_sellers}
 
 
+def _seller_is_local_to_municipality(
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+) -> bool:
+    area = seller.get("business_area")
+    if not isinstance(area, dict):
+        return False
+    return (
+        area.get("province_id") == province_id
+        and area.get("municipality_id") == municipality_id
+    )
+
+
+def _split_sellers_by_locality(
+    seller_by_id: dict[str, dict[str, Any]],
+    province_id: str,
+    municipality_id: str,
+) -> tuple[list[str], list[str]]:
+    local_ids: list[str] = []
+    delivery_ids: list[str] = []
+    for seller_id, seller in seller_by_id.items():
+        if _seller_is_local_to_municipality(seller, province_id, municipality_id):
+            local_ids.append(seller_id)
+        else:
+            delivery_ids.append(seller_id)
+    return local_ids, delivery_ids
+
+
+def _marketplace_product_query(
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
+    *,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    visibility: list[dict[str, Any]] = []
+    if local_seller_ids:
+        visibility.append({"seller_id": {"$in": local_seller_ids}})
+    if delivery_seller_ids:
+        visibility.append(
+            {
+                "seller_id": {"$in": delivery_seller_ids},
+                "offers_delivery": True,
+            }
+        )
+    if not visibility:
+        return {"_id": {"$exists": False}}
+
+    query: dict[str, Any] = {
+        "is_available": True,
+        "view_only": {"$ne": True},
+        "$or": visibility,
+    }
+    if extra:
+        query.update(extra)
+    return query
+
+
+def _seller_store_product_query(
+    seller_id: str,
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+    *,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    query: dict[str, Any] = {
+        "seller_id": seller_id,
+        "is_available": True,
+        "view_only": {"$ne": True},
+    }
+    if not _seller_is_local_to_municipality(seller, province_id, municipality_id):
+        query["offers_delivery"] = True
+    if extra:
+        query.update(extra)
+    return query
+
+
+def _search_text_filter(query_text: str) -> dict[str, Any] | None:
+    normalized = query_text.strip()
+    if not normalized:
+        return None
+    pattern = re.escape(normalized)
+    return {
+        "$or": [
+            {"name": {"$regex": pattern, "$options": "i"}},
+            {"description": {"$regex": pattern, "$options": "i"}},
+        ],
+    }
+
+
+def _build_marketplace_products_query(
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
+    *,
+    global_category_id: str | None = None,
+    search_text: str | None = None,
+) -> dict[str, Any]:
+    extra: dict[str, Any] = {}
+    if global_category_id:
+        extra["global_category_id"] = global_category_id
+
+    query = _marketplace_product_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        extra=extra or None,
+    )
+    if query.get("_id"):
+        return query
+
+    text_filter = _search_text_filter(search_text or "")
+    if text_filter:
+        query = {"$and": [query, text_filter]}
+    return query
+
+
 def _base_product_filter(seller_ids: list[str]) -> dict[str, Any]:
     return {
         "seller_id": {"$in": seller_ids},
@@ -253,14 +381,16 @@ def _base_product_filter(seller_ids: list[str]) -> dict[str, Any]:
 
 
 async def _aggregate_category_stats(
-    seller_ids: list[str],
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
 ) -> dict[str, dict[str, int]]:
-    if not seller_ids:
+    match_query = _marketplace_product_query(local_seller_ids, delivery_seller_ids)
+    if match_query.get("_id"):
         return {}
 
     products_col = get_catalog_products_collection()
     pipeline = [
-        {"$match": _base_product_filter(seller_ids)},
+        {"$match": match_query},
         {
             "$group": {
                 "_id": {"$ifNull": ["$global_category_id", "otros"]},
@@ -291,17 +421,22 @@ def _sort_category_ids(stats: dict[str, dict[str, int]]) -> list[str]:
 
 
 async def _list_category_product_docs(
-    seller_ids: list[str],
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
     global_category_id: str,
     *,
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
-    query = {
-        **_base_product_filter(seller_ids),
-        "global_category_id": global_category_id,
-    }
+    query = _build_marketplace_products_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        global_category_id=global_category_id,
+    )
+    if query.get("_id"):
+        return []
+
     cursor = (
         products_col.find(query)
         .sort(MARKETPLACE_PRODUCT_SORT)
@@ -320,9 +455,13 @@ async def list_home_feed(
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
     seller_by_id = await _get_visible_sellers(province_id, municipality_id)
-    seller_ids = list(seller_by_id.keys())
+    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
+        seller_by_id,
+        province_id,
+        municipality_id,
+    )
 
-    if not seller_ids:
+    if not local_seller_ids and not delivery_seller_ids:
         return MarketplaceHomeFeedPublic(
             province_id=province_id,
             province_name=province_name,
@@ -332,7 +471,7 @@ async def list_home_feed(
             total_products=0,
         )
 
-    stats_by_category = await _aggregate_category_stats(seller_ids)
+    stats_by_category = await _aggregate_category_stats(local_seller_ids, delivery_seller_ids)
     category_ids = _sort_category_ids(stats_by_category)
 
     sections: list[MarketplaceCategorySectionPublic] = []
@@ -344,7 +483,8 @@ async def list_home_feed(
             continue
 
         product_docs = await _list_category_product_docs(
-            seller_ids,
+            local_seller_ids,
+            delivery_seller_ids,
             category_id,
             limit=page_size,
             offset=0,
@@ -393,9 +533,13 @@ async def list_category_products(
     safe_offset = max(0, offset)
 
     seller_by_id = await _get_visible_sellers(province_id, municipality_id)
-    seller_ids = list(seller_by_id.keys())
+    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
+        seller_by_id,
+        province_id,
+        municipality_id,
+    )
 
-    if not seller_ids:
+    if not local_seller_ids and not delivery_seller_ids:
         return MarketplaceCategoryProductsPublic(
             category_id=normalized_category_id,
             category_name=_display_category_name(normalized_category_id),
@@ -406,11 +550,12 @@ async def list_category_products(
             has_more=False,
         )
 
-    stats_by_category = await _aggregate_category_stats(seller_ids)
+    stats_by_category = await _aggregate_category_stats(local_seller_ids, delivery_seller_ids)
     total_in_category = stats_by_category.get(normalized_category_id, {}).get("count", 0)
 
     product_docs = await _list_category_product_docs(
-        seller_ids,
+        local_seller_ids,
+        delivery_seller_ids,
         normalized_category_id,
         limit=page_size,
         offset=safe_offset,
@@ -447,18 +592,96 @@ async def _get_local_category_doc(seller_id: str, category_id: str) -> dict[str,
     return category_doc
 
 
+async def search_products(
+    province_id: str,
+    municipality_id: str,
+    *,
+    query: str = "",
+    global_category_id: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+) -> MarketplaceSearchPublic:
+    province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
+    _ = province_name, municipality_name
+
+    normalized_query = query.strip()
+    normalized_category_id = None
+    if global_category_id and global_category_id.strip():
+        normalized_category_id = _normalize_marketplace_category_id(global_category_id)
+
+    if len(normalized_query) < 2 and not normalized_category_id:
+        raise ValueError("Escribe al menos 2 caracteres o elige una categoría.")
+
+    page_size = _normalize_page_size(limit)
+    safe_offset = max(0, offset)
+
+    seller_by_id = await _get_visible_sellers(province_id, municipality_id)
+    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
+        seller_by_id,
+        province_id,
+        municipality_id,
+    )
+
+    match_query = _build_marketplace_products_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        global_category_id=normalized_category_id,
+        search_text=normalized_query,
+    )
+
+    products_col = get_catalog_products_collection()
+    if match_query.get("_id"):
+        total_products = 0
+        product_docs: list[dict[str, Any]] = []
+    else:
+        total_products = await products_col.count_documents(match_query)
+        product_docs = (
+            await products_col.find(match_query)
+            .sort(MARKETPLACE_PRODUCT_SORT)
+            .skip(safe_offset)
+            .limit(page_size)
+            .to_list(length=page_size)
+        )
+
+    products = [
+        item
+        for doc in product_docs
+        if (item := _product_to_public(doc, seller_by_id)) is not None
+    ]
+    loaded = safe_offset + len(products)
+
+    return MarketplaceSearchPublic(
+        query=normalized_query,
+        category_id=normalized_category_id,
+        category_name=_display_category_name(normalized_category_id)
+        if normalized_category_id
+        else None,
+        products=products,
+        total_products=total_products,
+        limit=page_size,
+        offset=safe_offset,
+        has_more=loaded < total_products,
+    )
+
+
 async def _list_store_local_product_docs(
     seller_id: str,
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
     category_oid: ObjectId,
     *,
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
-    query = {
-        **_base_product_filter([seller_id]),
-        "category_id": category_oid,
-    }
+    query = _seller_store_product_query(
+        seller_id,
+        seller,
+        province_id,
+        municipality_id,
+        extra={"category_id": category_oid},
+    )
     cursor = (
         products_col.find(query)
         .sort("sort_order", 1)
@@ -496,16 +719,22 @@ async def get_store_catalog(
         category_id = str(category_doc["_id"])
         category_oid = category_doc["_id"]
         total_in_category = await products_col.count_documents(
-            {
-                **_base_product_filter([seller_id]),
-                "category_id": category_oid,
-            }
+            _seller_store_product_query(
+                seller_id,
+                seller,
+                province_id,
+                municipality_id,
+                extra={"category_id": category_oid},
+            )
         )
         if total_in_category <= 0:
             continue
 
         product_docs = await _list_store_local_product_docs(
             seller_id,
+            seller,
+            province_id,
+            municipality_id,
             category_oid,
             limit=page_size,
             offset=0,
@@ -559,14 +788,20 @@ async def list_store_category_products(
 
     products_col = get_catalog_products_collection()
     total_in_category = await products_col.count_documents(
-        {
-            **_base_product_filter([seller_id]),
-            "category_id": category_oid,
-        }
+        _seller_store_product_query(
+            seller_id,
+            seller,
+            province_id,
+            municipality_id,
+            extra={"category_id": category_oid},
+        )
     )
 
     product_docs = await _list_store_local_product_docs(
         seller_id,
+        seller,
+        province_id,
+        municipality_id,
         category_oid,
         limit=page_size,
         offset=safe_offset,
@@ -591,6 +826,9 @@ async def list_store_category_products(
 
 async def get_store_public(store_ref: str) -> MarketplaceStorePublic:
     seller = await _find_seller_by_store_ref(store_ref)
+
+    if not is_subscription_active(seller) or not is_profile_complete(seller):
+        raise ValueError("Tienda no encontrada.")
 
     phone_digits = seller.get("phone")
     if not phone_digits:

@@ -1,6 +1,5 @@
 """
 Pobla la base de datos con tiendas y productos de demostración (producción o local).
-
 Crea 4 tiendas aprobadas con perfil completo y 100 productos (25 por tienda),
 visibles en el marketplace de La Habana.
 

@@ -3,6 +3,7 @@ from typing import Literal
 from app.constants import PLAN_PRICES_CUP
 
 PlanTier = Literal["standard", "premium"]
+BillingPeriod = Literal["monthly", "yearly"]
 
 STANDARD_PLAN_TIER: PlanTier = "standard"
 PREMIUM_PLAN_TIER: PlanTier = "premium"
@@ -13,6 +14,10 @@ def normalize_plan_tier(value: str | None) -> PlanTier:
     if value == PREMIUM_PLAN_TIER:
         return PREMIUM_PLAN_TIER
     return STANDARD_PLAN_TIER
+
+
+def normalize_billing_period(value: str | None) -> BillingPeriod:
+    return "yearly" if value == "yearly" else "monthly"
 
 
 def plan_price_cup(plan_tier: str, billing_period: str) -> int:

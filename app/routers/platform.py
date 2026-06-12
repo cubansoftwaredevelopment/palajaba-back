@@ -1,0 +1,14 @@
+from fastapi import APIRouter
+
+from app.schemas.platform_settings import PlatformRenewalContactPublic
+from app.services import platform_settings as platform_settings_service
+
+router = APIRouter(prefix="/api/platform", tags=["platform"])
+
+
+@router.get("/renewal-contact", response_model=PlatformRenewalContactPublic)
+async def get_renewal_contact():
+    settings = await platform_settings_service.get_platform_settings()
+    return PlatformRenewalContactPublic(
+        renewal_contact_phone=settings.renewal_contact_phone,
+    )

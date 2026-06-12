@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 
 from app.dependencies import require_seller
-from app.schemas.auth import SellerLoginRequest, SellerLoginResponse, SellerPublic
+from app.schemas.auth import SellerLoginRequest, SellerLoginResponse, SellerPublic, SubscriptionExpiredPublic
 from app.schemas.catalog import (
     CatalogCategoryCreate,
     CatalogCategoryPublic,
@@ -11,28 +11,34 @@ from app.schemas.catalog import (
     CatalogSummaryPublic,
     CurrencyPublic,
 )
-from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount
+from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import SellerProfileUpdate
+from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import notifications as notification_service
 from app.services import orders as orders_service
 from app.services import seller_profile as profile_service
+from app.services import seller_stats as seller_stats_service
+from app.services.seller_stats import Granularity
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/login", response_model=SellerLoginResponse)
 async def seller_login(payload: SellerLoginRequest):
-    doc = await auth_service.authenticate_seller(
+    result = await auth_service.login_seller(
         method=payload.method,
         password=payload.password,
         phone=payload.phone,
         store_name=payload.store_name,
     )
-    seller = profile_service.document_to_seller(doc)
+    if isinstance(result, SubscriptionExpiredPublic):
+        return SellerLoginResponse(subscription_expired=result)
+
+    seller = profile_service.document_to_seller(result)
     return SellerLoginResponse(
         access_token=create_seller_token(
             seller_id=seller.id,
@@ -77,6 +83,13 @@ async def list_my_notifications(seller_payload: dict = Depends(require_seller)):
 @router.get("/me/notifications/unread-count", response_model=SellerNotificationUnreadCount)
 async def my_notifications_unread_count(seller_payload: dict = Depends(require_seller)):
     return await notification_service.get_unread_count(seller_payload["seller_id"])
+
+
+@router.patch("/me/notifications/read-system", response_model=SellerNotificationBulkReadResult)
+async def mark_my_system_notifications_read(seller_payload: dict = Depends(require_seller)):
+    return await notification_service.mark_system_notifications_read(
+        seller_payload["seller_id"],
+    )
 
 
 @router.patch("/me/notifications/{notification_id}/read", response_model=SellerNotificationPublic)
@@ -247,6 +260,110 @@ async def delete_my_order(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/me/stats/summary", response_model=SellerStatsSummary)
+async def seller_stats_summary(
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.database import get_registrations_collection
+    from bson import ObjectId
+
+    seller = await get_registrations_collection().find_one(
+        {"_id": ObjectId(seller_payload["seller_id"])},
+    )
+    if seller is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tienda no encontrada.",
+        )
+
+    return await seller_stats_service.get_seller_stats_summary(
+        seller_payload["seller_id"],
+        seller,
+        year=year,
+        month=month,
+    )
+
+
+@router.get("/me/stats/revenue", response_model=SellerRevenueChart)
+async def seller_revenue_chart(
+    granularity: Granularity,
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.database import get_registrations_collection
+    from bson import ObjectId
+
+    seller = await get_registrations_collection().find_one(
+        {"_id": ObjectId(seller_payload["seller_id"])},
+    )
+    if seller is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tienda no encontrada.",
+        )
+
+    return await seller_stats_service.get_seller_revenue_chart(
+        seller_payload["seller_id"],
+        seller,
+        granularity=granularity,
+        year=year,
+        month=month,
+    )
+
+
+@router.get("/me/stats/products-sold", response_model=SellerProductsSoldChart)
+async def seller_products_sold_chart(
+    granularity: Granularity,
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.database import get_registrations_collection
+    from bson import ObjectId
+
+    seller = await get_registrations_collection().find_one(
+        {"_id": ObjectId(seller_payload["seller_id"])},
+    )
+    if seller is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tienda no encontrada.",
+        )
+
+    return await seller_stats_service.get_seller_products_sold_chart(
+        seller_payload["seller_id"],
+        seller,
+        granularity=granularity,
+        year=year,
+        month=month,
+    )
+
+
+@router.get("/me/stats/top-products", response_model=SellerTopProducts)
+async def seller_top_products(
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.database import get_registrations_collection
+    from bson import ObjectId
+
+    seller = await get_registrations_collection().find_one(
+        {"_id": ObjectId(seller_payload["seller_id"])},
+    )
+    if seller is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tienda no encontrada.",
+        )
+
+    return await seller_stats_service.get_seller_top_products(
+        seller_payload["seller_id"],
+        seller,
+    )
 
 
 @router.get("/me/orders/{order_id}/invoice.pdf")

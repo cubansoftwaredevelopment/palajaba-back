@@ -352,7 +352,7 @@ async def delete_catalog_category(seller_id: str, category_id: str) -> None:
     ).to_list(length=None)
 
     for product_doc in product_docs:
-        _delete_product_image_file(
+        await _delete_product_image_file(
             product_doc.get("image_url"),
             public_id=product_doc.get("image_public_id"),
         )
@@ -493,12 +493,12 @@ async def create_catalog_product(
     return document_to_product(doc)
 
 
-def _delete_product_image_file(
+async def _delete_product_image_file(
     image_url: str | None,
     *,
     public_id: str | None = None,
 ) -> None:
-    remove_image(image_url, public_id=public_id)
+    await remove_image(image_url, public_id=public_id)
 
 
 async def _get_product_doc(seller_id: str, product_id: str) -> dict[str, Any]:
@@ -604,7 +604,7 @@ async def update_catalog_product(
 
     if photo is not None and photo.filename:
         stored_image = await _save_product_photo(seller_id, photo)
-        _delete_product_image_file(
+        await _delete_product_image_file(
             doc.get("image_url"),
             public_id=doc.get("image_public_id"),
         )
@@ -624,7 +624,7 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     doc = await _get_product_doc(seller_id, product_id)
     products = get_catalog_products_collection()
     await products.delete_one({"_id": doc["_id"]})
-    _delete_product_image_file(
+    await _delete_product_image_file(
         doc.get("image_url"),
         public_id=doc.get("image_public_id"),
     )

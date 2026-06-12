@@ -237,7 +237,7 @@ async def save_profile_photo(seller_id: str, file: UploadFile) -> SellerPublic:
     )
 
     if old_url and old_url != photo_url:
-        remove_image(old_url)
+        await remove_image(old_url)
 
     updated = await collection.find_one({"_id": doc["_id"]})
     return document_to_seller(updated)

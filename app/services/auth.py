@@ -3,17 +3,27 @@ from typing import Any
 from fastapi import HTTPException, status
 
 from app.database import get_registrations_collection
+from app.schemas.auth import SubscriptionExpiredPublic
 from app.security import verify_password
-from app.services.subscriptions import is_subscription_active, raise_subscription_expired
+from app.services.platform_settings import get_renewal_contact_phone
+from app.services.registrations import mark_registration_expired_if_needed
+from app.services.subscriptions import is_subscription_active, subscription_expired_detail
 
 
-async def authenticate_seller(
+
+async def _subscription_expired_public(doc: dict[str, Any]) -> SubscriptionExpiredPublic:
+    detail = subscription_expired_detail(doc)
+    detail["renewal_contact_phone"] = await get_renewal_contact_phone()
+    return SubscriptionExpiredPublic(**detail)
+
+
+async def login_seller(
     *,
     method: str,
     password: str,
     phone: str | None = None,
     store_name: str | None = None,
-) -> dict[str, Any]:
+) -> dict[str, Any] | SubscriptionExpiredPublic:
     collection = get_registrations_collection()
 
     if method == "phone":
@@ -45,6 +55,9 @@ async def authenticate_seller(
             detail=f"Solicitud rechazada: {reason}",
         )
 
+    if doc["status"] == "expired":
+        return await _subscription_expired_public(doc)
+
     if doc["status"] != "approved":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -52,6 +65,28 @@ async def authenticate_seller(
         )
 
     if not is_subscription_active(doc):
-        raise_subscription_expired(doc)
+        await mark_registration_expired_if_needed(doc)
+        return await _subscription_expired_public(doc)
 
     return doc
+
+
+async def authenticate_seller(
+    *,
+    method: str,
+    password: str,
+    phone: str | None = None,
+    store_name: str | None = None,
+) -> dict[str, Any]:
+    result = await login_seller(
+        method=method,
+        password=password,
+        phone=phone,
+        store_name=store_name,
+    )
+    if isinstance(result, SubscriptionExpiredPublic):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=result.model_dump(),
+        )
+    return result

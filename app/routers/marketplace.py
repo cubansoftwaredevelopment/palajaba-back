@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.schemas.marketplace import (
     MarketplaceCategoryProductsPublic,
     MarketplaceHomeFeedPublic,
+    MarketplaceSearchPublic,
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
     MarketplaceStorePublic,
@@ -12,6 +13,7 @@ from app.schemas.popularity import ProductPopularityEventRequest
 from app.services import marketplace as marketplace_service
 from app.services import orders as orders_service
 from app.services import product_popularity as popularity_service
+from app.services import seller_stats as seller_stats_service
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
 
@@ -56,6 +58,49 @@ async def list_marketplace_category_products(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/search", response_model=MarketplaceSearchPublic)
+async def search_marketplace_products(
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    q: str = Query(default=""),
+    global_category_id: str | None = Query(default=None),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        return await marketplace_service.search_products(
+            province_id.strip(),
+            municipality_id.strip(),
+            query=q,
+            global_category_id=global_category_id,
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/stores/{store_slug}/view", status_code=status.HTTP_204_NO_CONTENT)
+async def record_marketplace_store_view(
+    store_slug: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+):
+    try:
+        seller_id = await marketplace_service.resolve_visible_seller_id(
+            store_slug,
+            province_id.strip(),
+            municipality_id.strip(),
+        )
+        await seller_stats_service.record_profile_view(seller_id)
+    except ValueError:
+        return None
+    return None
 
 
 @router.get("/stores/{store_slug}/catalog", response_model=MarketplaceStoreCatalogPublic)

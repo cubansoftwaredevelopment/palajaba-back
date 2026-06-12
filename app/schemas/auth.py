@@ -68,7 +68,16 @@ class SellerPublic(BaseModel):
     subscription_hours_remaining: int | None = None
 
 
+class SubscriptionExpiredPublic(BaseModel):
+    code: Literal["subscription_expired"] = "subscription_expired"
+    message: str
+    store_name: str | None = None
+    subscription_ends_at: UtcDateTime | None = None
+    renewal_contact_phone: str | None = None
+
+
 class SellerLoginResponse(BaseModel):
-    access_token: str
+    access_token: str | None = None
     token_type: str = "bearer"
-    seller: SellerPublic
+    seller: SellerPublic | None = None
+    subscription_expired: SubscriptionExpiredPublic | None = None

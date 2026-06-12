@@ -9,8 +9,16 @@ from app.database import get_notifications_collection, get_orders_collection, ge
 from app.schemas.notifications import (
     AdminNotificationBroadcastPublic,
     AdminNotificationSendResult,
+    NotificationAudienceInput,
+    SellerNotificationBulkReadResult,
     SellerNotificationPublic,
     SellerNotificationUnreadCount,
+)
+from app.services.plans import (
+    PREMIUM_PLAN_TIER,
+    STANDARD_PLAN_TIER,
+    normalize_billing_period,
+    normalize_plan_tier,
 )
 from app.services.subscriptions import (
     ACTION_RENEW_SUBSCRIPTION,
@@ -38,6 +46,18 @@ async def ensure_notification_indexes() -> None:
     )
 
 
+def _is_admin_notification(doc: dict[str, Any]) -> bool:
+    return isinstance(doc.get("created_by_admin_id"), ObjectId)
+
+
+def _system_notifications_filter(seller_object_id: ObjectId) -> dict[str, Any]:
+    return {
+        "seller_id": seller_object_id,
+        "read_at": None,
+        "created_by_admin_id": {"$not": {"$type": "objectId"}},
+    }
+
+
 def _document_to_public(doc: dict[str, Any]) -> SellerNotificationPublic:
     return SellerNotificationPublic(
         id=str(doc["_id"]),
@@ -48,6 +68,7 @@ def _document_to_public(doc: dict[str, Any]) -> SellerNotificationPublic:
         kind=doc.get("kind"),
         action_label=doc.get("action_label"),
         action_type=doc.get("action_type"),
+        from_admin=_is_admin_notification(doc),
     )
 
 
@@ -179,19 +200,72 @@ async def notify_seller_new_order(
     )
 
 
+AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
+    "premium_monthly": (PREMIUM_PLAN_TIER, "monthly"),
+    "premium_yearly": (PREMIUM_PLAN_TIER, "yearly"),
+    "standard_monthly": (STANDARD_PLAN_TIER, "monthly"),
+    "standard_yearly": (STANDARD_PLAN_TIER, "yearly"),
+}
+
+AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
+    "premium_monthly": "No hay vendedores Premium con facturación mensual activos.",
+    "premium_yearly": "No hay vendedores Premium con facturación anual activos.",
+    "standard_monthly": "No hay vendedores Básico con facturación mensual activos.",
+    "standard_yearly": "No hay vendedores Básico con facturación anual activos.",
+}
+
+
+def _filter_sellers_by_audience(
+    sellers: list[dict[str, Any]],
+    audience: NotificationAudienceInput,
+) -> list[dict[str, Any]]:
+    if audience == "all":
+        return sellers
+
+    spec = AUDIENCE_SPECS.get(audience)
+    if spec is None:
+        return sellers
+
+    tier, billing = spec
+    return [
+        seller
+        for seller in sellers
+        if normalize_plan_tier(seller.get("plan_tier")) == tier
+        and normalize_billing_period(seller.get("billing_period")) == billing
+    ]
+
+
+def _audience_empty_message(audience: NotificationAudienceInput) -> str:
+    return AUDIENCE_EMPTY_MESSAGES.get(
+        audience,
+        "No hay vendedores activos para recibir la notificación.",
+    )
+
+
 async def send_notification_to_sellers(
     admin_id: str,
     title: str,
     content: str,
+    audience: NotificationAudienceInput = "all",
 ) -> AdminNotificationSendResult:
     registrations = get_registrations_collection()
-    sellers = await registrations.find({"status": "approved"}, {"_id": 1, "subscription_ends_at": 1, "status": 1}).to_list(length=None)
+    sellers = await registrations.find(
+        {"status": "approved"},
+        {
+            "_id": 1,
+            "subscription_ends_at": 1,
+            "status": 1,
+            "plan_tier": 1,
+            "billing_period": 1,
+        },
+    ).to_list(length=None)
     sellers = [seller for seller in sellers if is_subscription_active(seller)]
+    sellers = _filter_sellers_by_audience(sellers, audience)
 
     if not sellers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No hay vendedores activos para recibir la notificación.",
+            detail=_audience_empty_message(audience),
         )
 
     now = to_utc_naive(utc_now())
@@ -213,6 +287,7 @@ async def send_notification_to_sellers(
             "batch_id": batch_id,
             "title": title_clean,
             "content": content_clean,
+            "audience": audience,
             "read_at": None,
             "created_at": now,
             "created_by_admin_id": admin_object_id,
@@ -227,6 +302,7 @@ async def send_notification_to_sellers(
         batch_id=batch_id,
         title=title_clean,
         content=content_clean,
+        audience=audience,
         recipient_count=len(documents),
         created_at=now,
     )
@@ -243,6 +319,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "_id": "$batch_id",
                 "title": {"$first": "$title"},
                 "content": {"$first": "$content"},
+                "audience": {"$first": "$audience"},
                 "created_at": {"$first": "$created_at"},
                 "recipient_count": {"$sum": 1},
             }
@@ -256,6 +333,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             batch_id=row["_id"],
             title=row["title"],
             content=row["content"],
+            audience=row.get("audience") or "all",
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
         )
@@ -338,3 +416,23 @@ async def mark_notification_read(
         return _document_to_public(existing)
 
     return _document_to_public(result)
+
+
+async def mark_system_notifications_read(
+    seller_id: str,
+) -> SellerNotificationBulkReadResult:
+    try:
+        seller_object_id = ObjectId(seller_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendedor no encontrado.",
+        ) from exc
+
+    now = to_utc_naive(utc_now())
+    collection = get_notifications_collection()
+    result = await collection.update_many(
+        _system_notifications_filter(seller_object_id),
+        {"$set": {"read_at": now}},
+    )
+    return SellerNotificationBulkReadResult(marked_count=result.modified_count)

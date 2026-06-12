@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Literal
 
 from bson import ObjectId
@@ -13,7 +14,7 @@ from app.schemas.orders import (
     UpdateOrderRequest,
 )
 from app.services import notifications as notification_service
-from app.services.product_popularity import bump_products_on_order_completed
+from app.services.subscriptions import is_subscription_active
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now
 
@@ -87,9 +88,9 @@ async def _get_seller_doc(store_id: str) -> dict[str, Any]:
     except InvalidId as exc:
         raise ValueError("Tienda no válida.") from exc
 
-    seller = await get_registrations_collection().find_one({"_id": seller_oid, "status": "approved"})
-    if seller is None:
-        raise ValueError("Tienda no encontrada.")
+    seller = await get_registrations_collection().find_one({"_id": seller_oid})
+    if seller is None or not is_subscription_active(seller):
+        raise ValueError("Tienda no encontrada o no disponible.")
 
     return seller
 
@@ -293,7 +294,7 @@ async def generate_order_invoice_pdf(
 
     from app.services.order_invoice import build_order_invoice_pdf
 
-    pdf_bytes = build_order_invoice_pdf(doc, seller, invoice_type)
+    pdf_bytes = await asyncio.to_thread(build_order_invoice_pdf, doc, seller, invoice_type)
     order_code = str(doc["_id"])[-6:].upper()
     suffix = "tienda" if invoice_type == "store" else "transportista"
     filename = f"pedido-{order_code}-{suffix}.pdf"

@@ -11,12 +11,14 @@ from app.schemas.notifications import (
     AdminNotificationSendResult,
 )
 from app.schemas.admin_stats import AdminStatsSummary
-from app.schemas.registration import RegistrationPublic
+from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
+from app.schemas.registration import BillingPeriod, PlanTier, RegistrationPublic
 from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import admin_stats as admin_stats_service
 from app.services import notifications as notification_service
+from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -46,7 +48,7 @@ async def admin_login(payload: AdminLoginRequest):
 
 @router.get("/registrations", response_model=list[RegistrationPublic])
 async def list_registrations(
-    status: Literal["pending", "approved", "rejected", "all"] = Query(
+    status: Literal["pending", "approved", "rejected", "expired", "all"] = Query(
         default="pending"
     ),
     _: dict = Depends(require_admin),
@@ -121,6 +123,8 @@ async def update_subscription(
         description="Nueva fecha de fin (YYYY-MM-DD)",
         pattern=r"^\d{4}-\d{2}-\d{2}$",
     ),
+    plan_tier: PlanTier | None = Query(default=None),
+    billing_period: BillingPeriod | None = Query(default=None),
     _: dict = Depends(require_admin),
 ):
     parsed = parse_subscription_end(subscription_ends_at)
@@ -134,6 +138,38 @@ async def update_subscription(
     return await registration_service.update_subscription_end(
         registration_id,
         parsed,
+        plan_tier=plan_tier,
+        billing_period=billing_period,
+    )
+
+
+@router.post(
+    "/registrations/{registration_id}/renew",
+    response_model=RegistrationPublic,
+)
+async def renew_registration(
+    registration_id: str,
+    payment_amount_cup: int = Query(
+        ...,
+        gt=0,
+        description="Monto transferido en CUP",
+    ),
+    subscription_ends_at: str | None = Query(
+        default=None,
+        description="Fecha de fin de suscripción (YYYY-MM-DD)",
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+    ),
+    plan_tier: PlanTier | None = Query(default=None),
+    billing_period: BillingPeriod | None = Query(default=None),
+    _: dict = Depends(require_admin),
+):
+    parsed_end = parse_subscription_end(subscription_ends_at) if subscription_ends_at else None
+    return await registration_service.renew_registration(
+        registration_id,
+        parsed_end,
+        payment_amount_cup,
+        plan_tier=plan_tier,
+        billing_period=billing_period,
     )
 
 
@@ -170,4 +206,18 @@ async def send_notification(
         admin_payload["admin_id"],
         payload.title,
         payload.content,
+        payload.audience,
     )
+
+
+@router.get("/settings", response_model=PlatformSettingsPublic)
+async def get_settings(_: dict = Depends(require_admin)):
+    return await platform_settings_service.get_platform_settings()
+
+
+@router.patch("/settings", response_model=PlatformSettingsPublic)
+async def update_settings(
+    payload: PlatformSettingsUpdate,
+    _: dict = Depends(require_admin),
+):
+    return await platform_settings_service.update_platform_settings(payload)

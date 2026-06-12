@@ -6,7 +6,7 @@ from app.utils.datetime import UtcDateTime
 
 BillingPeriod = Literal["monthly", "yearly"]
 PlanTier = Literal["standard", "premium"]
-RegistrationStatus = Literal["pending", "approved", "rejected"]
+RegistrationStatus = Literal["pending", "approved", "rejected", "expired"]
 
 
 class RegisterRequest(BaseModel):
