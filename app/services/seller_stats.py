@@ -32,6 +32,9 @@ from app.utils.month_bounds import (
 
 Granularity = Literal["daily", "weekly", "monthly"]
 
+TOP_PRODUCTS_LIMIT = 5
+TOP_SOLD_LOOKUP_BUFFER = 50
+
 SPANISH_MONTHS = (
     "ene",
     "feb",
@@ -521,7 +524,7 @@ async def get_seller_top_products(
             "view_only": {"$ne": True},
         },
         {"name": 1, "image_url": 1, "popularity": 1},
-    ).sort([("popularity", -1), ("name", 1)]).limit(5).to_list(length=5)
+    ).sort([("popularity", -1), ("name", 1)]).limit(TOP_PRODUCTS_LIMIT).to_list(length=TOP_PRODUCTS_LIMIT)
 
     most_popular = [
         _product_to_top_item(
@@ -546,9 +549,11 @@ async def get_seller_top_products(
             }
         },
         {"$sort": {"units_sold": -1}},
-        {"$limit": 5},
+        {"$limit": TOP_SOLD_LOOKUP_BUFFER},
     ]
-    sold_rows = await get_orders_collection().aggregate(sold_pipeline).to_list(length=5)
+    sold_rows = await get_orders_collection().aggregate(sold_pipeline).to_list(
+        length=TOP_SOLD_LOOKUP_BUFFER,
+    )
 
     sold_product_ids: list[str] = []
     units_by_product: dict[str, int] = {}
@@ -572,28 +577,24 @@ async def get_seller_top_products(
                 continue
 
         if object_ids:
-            async for doc in products_col.find({"_id": {"$in": object_ids}}):
+            async for doc in products_col.find(
+                {"_id": {"$in": object_ids}, "seller_id": seller_id},
+            ):
                 product_docs_by_id[str(doc["_id"])] = doc
 
     most_sold: list[SellerTopProductItem] = []
     for product_id in sold_product_ids:
         doc = product_docs_by_id.get(product_id)
-        if doc:
-            most_sold.append(
-                _product_to_top_item(
-                    doc,
-                    units_sold=units_by_product[product_id],
-                )
+        if not doc:
+            continue
+        most_sold.append(
+            _product_to_top_item(
+                doc,
+                units_sold=units_by_product[product_id],
             )
-        else:
-            most_sold.append(
-                SellerTopProductItem(
-                    product_id=product_id,
-                    name="Producto eliminado",
-                    image_url=None,
-                    units_sold=units_by_product[product_id],
-                )
-            )
+        )
+        if len(most_sold) >= TOP_PRODUCTS_LIMIT:
+            break
 
     return SellerTopProducts(
         most_popular=most_popular,

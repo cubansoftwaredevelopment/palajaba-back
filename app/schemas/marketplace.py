@@ -21,7 +21,11 @@ class MarketplaceProductPublic(BaseModel):
     base_currency: str
     accepted_currencies: list[str] = Field(default_factory=list)
     offers_delivery: bool
+    is_available: bool = True
     view_only: bool = False
+    pickup_required: bool = False
+    pickup_municipality_name: str | None = None
+    pickup_notice: str | None = None
     store: MarketplaceStorePublic
     category_name: str
 
@@ -94,3 +98,27 @@ class MarketplaceStoreCategoryProductsPublic(BaseModel):
     limit: int
     offset: int
     has_more: bool = False
+
+
+class JabaSyncItemRequest(BaseModel):
+    product_id: str = Field(..., min_length=1)
+    name: str = Field(default="Producto", min_length=1)
+
+
+class JabaSyncRequest(BaseModel):
+    items: list[JabaSyncItemRequest] = Field(default_factory=list, max_length=50)
+    province_id: str | None = None
+    municipality_id: str | None = None
+    municipios_adicionales: list[str] | None = None
+
+
+class JabaRemovedProductPublic(BaseModel):
+    product_id: str
+    name: str
+    reason: str
+    message: str
+
+
+class JabaSyncPublic(BaseModel):
+    valid: list[MarketplaceProductPublic] = Field(default_factory=list)
+    removed: list[JabaRemovedProductPublic] = Field(default_factory=list)

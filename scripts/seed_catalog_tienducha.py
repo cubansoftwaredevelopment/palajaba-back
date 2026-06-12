@@ -40,7 +40,6 @@ CATEGORIES = [
     {
         "name": "Electrodomésticos",
         "products": [
-            {"name": "Licuadora Oster", "price": 4500, "currency": "CUP", "description": "Jarra de vidrio, 2 velocidades."},
             {"name": "Ventilador recargable", "price": 3200, "currency": "CUP", "description": "Batería de 8 horas, portátil."},
             {"name": "Microondas 20L", "price": 185, "currency": "USD", "accepted_currencies": ["CUP"], "description": "Panel digital, 700W."},
             {"name": "Plancha de ropa", "price": 2800, "currency": "CUP", "is_available": False},
@@ -62,6 +61,13 @@ CATEGORIES = [
     {
         "name": "Despensa",
         "products": [
+            {
+                "name": "Licuadora Oster",
+                "price": 4500,
+                "currency": "CUP",
+                "description": "Jarra de vidrio, 2 velocidades.",
+                "popularity": 150,
+            },
             {"name": "Arroz 1 kg", "price": 180, "currency": "CUP", "view_only": True},
             {"name": "Aceite vegetal 900 ml", "price": 420, "currency": "CUP"},
             {"name": "Frijoles negros 500 g", "price": 95, "currency": "CUP"},
@@ -178,6 +184,7 @@ async def main() -> None:
                 "view_only": bool(product.get("view_only", False)),
                 "is_available": bool(product.get("is_available", True)),
                 "sort_order": product_order,
+                "popularity": int(product.get("popularity", 0)),
                 "created_at": now,
                 "updated_at": now,
             }

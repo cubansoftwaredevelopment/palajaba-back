@@ -237,6 +237,35 @@ async def seed_product_popularity(seller_id: str, products: list[dict]) -> None:
         )
 
 
+async def ensure_licuadora_top_in_despensa(seller_id: str) -> None:
+    from app.database import get_catalog_categories_collection
+
+    products_col = get_catalog_products_collection()
+    categories_col = get_catalog_categories_collection()
+
+    despensa = await categories_col.find_one({"seller_id": seller_id, "name": "Despensa"})
+    licuadora = await products_col.find_one({"seller_id": seller_id, "name": "Licuadora Oster"})
+    if despensa is None or licuadora is None:
+        return
+
+    updates: dict[str, object] = {"updated_at": to_utc_naive(utc_now())}
+    if licuadora.get("category_id") != despensa["_id"]:
+        updates["category_id"] = despensa["_id"]
+        updates["global_category_id"] = "comida"
+
+    top_in_despensa = await products_col.find_one(
+        {"seller_id": seller_id, "category_id": despensa["_id"]},
+        sort=[("popularity", -1)],
+    )
+    max_popularity = int(top_in_despensa.get("popularity") or 0) if top_in_despensa else 0
+    licuadora_popularity = int(licuadora.get("popularity") or 0)
+    if licuadora["_id"] != (top_in_despensa or {}).get("_id") or licuadora_popularity < max_popularity:
+        updates["popularity"] = max(max_popularity + 10, 150)
+
+    if len(updates) > 1:
+        await products_col.update_one({"_id": licuadora["_id"]}, {"$set": updates})
+
+
 async def ensure_active_products(seller_id: str) -> int:
     products_col = get_catalog_products_collection()
     active = await products_col.count_documents(
@@ -348,6 +377,13 @@ async def main(*, keep_orders: bool) -> None:
         print(f"[OK] Unidades vendidas (completados): {products_sold}")
         await seed_product_popularity(seller_id, products)
         print(f"[OK] Popularidad asignada a {len(products)} productos")
+    else:
+        print("· Pedidos existentes conservados (--keep-orders)")
+
+    await ensure_licuadora_top_in_despensa(seller_id)
+    print("[OK] Licuadora Oster destacada en Despensa")
+
+    if not keep_orders:
         for year, month in ((2026, 3), (2026, 4), (2026, 5), (2026, 6)):
             from app.services.seller_stats import get_seller_products_sold_chart
 
@@ -360,8 +396,6 @@ async def main(*, keep_orders: bool) -> None:
                 month=month,
             )
             print(f"     {month:02d}/{year}: {chart.total} productos vendidos")
-    else:
-        print("· Pedidos existentes conservados (--keep-orders)")
 
     view_count = await seed_profile_views(seller_id)
     print(f"[OK] Visitas al perfil: {view_count}")

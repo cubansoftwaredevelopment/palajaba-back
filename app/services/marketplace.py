@@ -10,6 +10,9 @@ from app.database import (
     get_registrations_collection,
 )
 from app.schemas.marketplace import (
+    JabaRemovedProductPublic,
+    JabaSyncPublic,
+    JabaSyncRequest,
     MarketplaceCategoryProductsPublic,
     MarketplaceCategorySectionPublic,
     MarketplaceHomeFeedPublic,
@@ -71,6 +74,37 @@ def _validate_location_ids(province_id: str, municipality_id: str) -> tuple[str,
         raise ValueError("Municipio no válido para la provincia seleccionada.")
 
     return province_name, municipality_name
+
+
+def _normalize_additional_municipalities(
+    province_id: str,
+    base_municipality_id: str,
+    municipios_adicionales: list[str] | None,
+) -> list[str]:
+    if not municipios_adicionales:
+        return []
+
+    municipalities = MUNICIPALITIES_BY_PROVINCE.get(province_id, {})
+    if not municipalities:
+        raise ValueError("Provincia no válida.")
+
+    normalized_base = base_municipality_id.strip()
+    seen: set[str] = set()
+    result: list[str] = []
+
+    for raw_id in municipios_adicionales:
+        municipality_id = raw_id.strip()
+        if not municipality_id or municipality_id == normalized_base:
+            continue
+        if municipality_id not in municipalities:
+            raise ValueError(
+                f"Municipio adicional no válido para la provincia: {municipality_id}."
+            )
+        if municipality_id not in seen:
+            seen.add(municipality_id)
+            result.append(municipality_id)
+
+    return result
 
 
 def _normalize_page_size(limit: int) -> int:
@@ -196,11 +230,32 @@ async def resolve_visible_seller_id(
 def _product_to_public(
     product: dict[str, Any],
     seller_by_id: dict[str, dict[str, Any]],
+    *,
+    buyer_province_id: str | None = None,
+    buyer_municipality_id: str | None = None,
 ) -> MarketplaceProductPublic | None:
     seller_id = product.get("seller_id")
     seller = seller_by_id.get(seller_id)
     if seller is None:
         return None
+
+    pickup_required = False
+    pickup_municipality_name = None
+    pickup_notice = None
+    if buyer_province_id and buyer_municipality_id:
+        pickup_required, pickup_municipality_name = _product_pickup_info(
+            product,
+            seller,
+            buyer_province_id,
+            buyer_municipality_id,
+        )
+        if pickup_required:
+            if pickup_municipality_name:
+                pickup_notice = (
+                    f"Sin domicilio a tu municipio · Recoger en {pickup_municipality_name}"
+                )
+            else:
+                pickup_notice = "Sin domicilio a tu municipio"
 
     global_category_id = product.get("global_category_id") or "otros"
     return MarketplaceProductPublic(
@@ -213,7 +268,11 @@ def _product_to_public(
         base_currency=product["base_currency"],
         accepted_currencies=list(product.get("accepted_currencies") or []),
         offers_delivery=bool(product.get("offers_delivery")),
+        is_available=bool(product.get("is_available", True)),
         view_only=False,
+        pickup_required=pickup_required,
+        pickup_municipality_name=pickup_municipality_name,
+        pickup_notice=pickup_notice,
         store=_store_to_public(seller),
         category_name=_display_category_name(global_category_id),
     )
@@ -256,6 +315,67 @@ async def _get_visible_sellers(
     return {str(doc["_id"]): doc for doc in visible_sellers}
 
 
+async def _get_pickup_sellers_in_municipalities(
+    province_id: str,
+    municipality_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    if not municipality_ids:
+        return {}
+
+    registrations = get_registrations_collection()
+    seller_query = {
+        "status": "approved",
+        "profile_photo_url": {"$exists": True, "$ne": None},
+        "category_ids": {"$exists": True, "$not": {"$size": 0}},
+        "offers_delivery": {"$exists": True},
+        "business_area": {"$exists": True},
+        "$or": [
+            {
+                "business_area.province_id": province_id,
+                "business_area.municipality_id": municipality_id,
+            }
+            for municipality_id in municipality_ids
+        ],
+    }
+
+    seller_docs = await registrations.find(seller_query).to_list(length=None)
+    visible_sellers = [
+        doc
+        for doc in seller_docs
+        if is_subscription_active(doc) and is_profile_complete(doc)
+    ]
+    return {str(doc["_id"]): doc for doc in visible_sellers}
+
+
+async def _build_marketplace_seller_context(
+    province_id: str,
+    municipality_id: str,
+    *,
+    municipios_adicionales: list[str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[str], list[str], list[str]]:
+    additional_municipality_ids = _normalize_additional_municipalities(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
+
+    seller_by_id = await _get_visible_sellers(province_id, municipality_id)
+    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
+        seller_by_id,
+        province_id,
+        municipality_id,
+    )
+
+    pickup_seller_by_id = await _get_pickup_sellers_in_municipalities(
+        province_id,
+        additional_municipality_ids,
+    )
+    pickup_seller_ids = list(pickup_seller_by_id.keys())
+    merged_seller_by_id = {**seller_by_id, **pickup_seller_by_id}
+
+    return merged_seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids
+
+
 def _seller_is_local_to_municipality(
     seller: dict[str, Any],
     province_id: str,
@@ -268,6 +388,39 @@ def _seller_is_local_to_municipality(
         area.get("province_id") == province_id
         and area.get("municipality_id") == municipality_id
     )
+
+
+def _seller_delivers_to_municipality(
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+) -> bool:
+    if not seller.get("offers_delivery"):
+        return False
+    for area in _parse_delivery_areas(seller.get("delivery_areas")):
+        if area.province_id == province_id and area.municipality_id == municipality_id:
+            return True
+    return False
+
+
+def _product_pickup_info(
+    product: dict[str, Any],
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+) -> tuple[bool, str | None]:
+    if _seller_is_local_to_municipality(seller, province_id, municipality_id):
+        return False, None
+    if product.get("offers_delivery") and _seller_delivers_to_municipality(
+        seller,
+        province_id,
+        municipality_id,
+    ):
+        return False, None
+
+    area = seller.get("business_area")
+    municipality_name = area.get("municipality_name") if isinstance(area, dict) else None
+    return True, municipality_name
 
 
 def _split_sellers_by_locality(
@@ -289,6 +442,7 @@ def _marketplace_product_query(
     local_seller_ids: list[str],
     delivery_seller_ids: list[str],
     *,
+    pickup_seller_ids: list[str] | None = None,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     visibility: list[dict[str, Any]] = []
@@ -301,6 +455,8 @@ def _marketplace_product_query(
                 "offers_delivery": True,
             }
         )
+    if pickup_seller_ids:
+        visibility.append({"seller_id": {"$in": pickup_seller_ids}})
     if not visibility:
         return {"_id": {"$exists": False}}
 
@@ -324,7 +480,6 @@ def _seller_store_product_query(
 ) -> dict[str, Any]:
     query: dict[str, Any] = {
         "seller_id": seller_id,
-        "is_available": True,
         "view_only": {"$ne": True},
     }
     if not _seller_is_local_to_municipality(seller, province_id, municipality_id):
@@ -351,6 +506,7 @@ def _build_marketplace_products_query(
     local_seller_ids: list[str],
     delivery_seller_ids: list[str],
     *,
+    pickup_seller_ids: list[str] | None = None,
     global_category_id: str | None = None,
     search_text: str | None = None,
 ) -> dict[str, Any]:
@@ -361,6 +517,7 @@ def _build_marketplace_products_query(
     query = _marketplace_product_query(
         local_seller_ids,
         delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids,
         extra=extra or None,
     )
     if query.get("_id"):
@@ -383,8 +540,14 @@ def _base_product_filter(seller_ids: list[str]) -> dict[str, Any]:
 async def _aggregate_category_stats(
     local_seller_ids: list[str],
     delivery_seller_ids: list[str],
+    *,
+    pickup_seller_ids: list[str] | None = None,
 ) -> dict[str, dict[str, int]]:
-    match_query = _marketplace_product_query(local_seller_ids, delivery_seller_ids)
+    match_query = _marketplace_product_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids,
+    )
     if match_query.get("_id"):
         return {}
 
@@ -425,6 +588,7 @@ async def _list_category_product_docs(
     delivery_seller_ids: list[str],
     global_category_id: str,
     *,
+    pickup_seller_ids: list[str] | None = None,
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
@@ -432,6 +596,7 @@ async def _list_category_product_docs(
     query = _build_marketplace_products_query(
         local_seller_ids,
         delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids,
         global_category_id=global_category_id,
     )
     if query.get("_id"):
@@ -451,17 +616,19 @@ async def list_home_feed(
     municipality_id: str,
     *,
     limit_per_category: int = DEFAULT_PAGE_SIZE,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceHomeFeedPublic:
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
-    seller_by_id = await _get_visible_sellers(province_id, municipality_id)
-    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
-        seller_by_id,
-        province_id,
-        municipality_id,
+    seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
+        await _build_marketplace_seller_context(
+            province_id,
+            municipality_id,
+            municipios_adicionales=municipios_adicionales,
+        )
     )
 
-    if not local_seller_ids and not delivery_seller_ids:
+    if not local_seller_ids and not delivery_seller_ids and not pickup_seller_ids:
         return MarketplaceHomeFeedPublic(
             province_id=province_id,
             province_name=province_name,
@@ -471,7 +638,11 @@ async def list_home_feed(
             total_products=0,
         )
 
-    stats_by_category = await _aggregate_category_stats(local_seller_ids, delivery_seller_ids)
+    stats_by_category = await _aggregate_category_stats(
+        local_seller_ids,
+        delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids or None,
+    )
     category_ids = _sort_category_ids(stats_by_category)
 
     sections: list[MarketplaceCategorySectionPublic] = []
@@ -486,13 +657,19 @@ async def list_home_feed(
             local_seller_ids,
             delivery_seller_ids,
             category_id,
+            pickup_seller_ids=pickup_seller_ids or None,
             limit=page_size,
             offset=0,
         )
         products = [
             item
             for doc in product_docs
-            if (item := _product_to_public(doc, seller_by_id)) is not None
+            if (item := _product_to_public(
+                doc,
+                seller_by_id,
+                buyer_province_id=province_id,
+                buyer_municipality_id=municipality_id,
+            )) is not None
         ]
 
         sections.append(
@@ -523,6 +700,7 @@ async def list_category_products(
     *,
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceCategoryProductsPublic:
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     _ = province_name, municipality_name
@@ -532,14 +710,15 @@ async def list_category_products(
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
 
-    seller_by_id = await _get_visible_sellers(province_id, municipality_id)
-    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
-        seller_by_id,
-        province_id,
-        municipality_id,
+    seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
+        await _build_marketplace_seller_context(
+            province_id,
+            municipality_id,
+            municipios_adicionales=municipios_adicionales,
+        )
     )
 
-    if not local_seller_ids and not delivery_seller_ids:
+    if not local_seller_ids and not delivery_seller_ids and not pickup_seller_ids:
         return MarketplaceCategoryProductsPublic(
             category_id=normalized_category_id,
             category_name=_display_category_name(normalized_category_id),
@@ -550,21 +729,30 @@ async def list_category_products(
             has_more=False,
         )
 
-    stats_by_category = await _aggregate_category_stats(local_seller_ids, delivery_seller_ids)
+    stats_by_category = await _aggregate_category_stats(
+        local_seller_ids,
+        delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids or None,
+    )
     total_in_category = stats_by_category.get(normalized_category_id, {}).get("count", 0)
 
     product_docs = await _list_category_product_docs(
         local_seller_ids,
         delivery_seller_ids,
         normalized_category_id,
+        pickup_seller_ids=pickup_seller_ids or None,
         limit=page_size,
         offset=safe_offset,
     )
     products = [
         item
         for doc in product_docs
-        if (item := _product_to_public(doc, seller_by_id)) is not None
-    ]
+        if (item := _product_to_public(
+            doc,
+            seller_by_id,
+            buyer_province_id=province_id,
+            buyer_municipality_id=municipality_id,
+        )) is not None    ]
 
     loaded = safe_offset + len(products)
     return MarketplaceCategoryProductsPublic(
@@ -600,6 +788,7 @@ async def search_products(
     global_category_id: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceSearchPublic:
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     _ = province_name, municipality_name
@@ -615,16 +804,18 @@ async def search_products(
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
 
-    seller_by_id = await _get_visible_sellers(province_id, municipality_id)
-    local_seller_ids, delivery_seller_ids = _split_sellers_by_locality(
-        seller_by_id,
-        province_id,
-        municipality_id,
+    seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
+        await _build_marketplace_seller_context(
+            province_id,
+            municipality_id,
+            municipios_adicionales=municipios_adicionales,
+        )
     )
 
     match_query = _build_marketplace_products_query(
         local_seller_ids,
         delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids or None,
         global_category_id=normalized_category_id,
         search_text=normalized_query,
     )
@@ -646,8 +837,12 @@ async def search_products(
     products = [
         item
         for doc in product_docs
-        if (item := _product_to_public(doc, seller_by_id)) is not None
-    ]
+        if (item := _product_to_public(
+            doc,
+            seller_by_id,
+            buyer_province_id=province_id,
+            buyer_municipality_id=municipality_id,
+        )) is not None    ]
     loaded = safe_offset + len(products)
 
     return MarketplaceSearchPublic(
@@ -684,7 +879,7 @@ async def _list_store_local_product_docs(
     )
     cursor = (
         products_col.find(query)
-        .sort("sort_order", 1)
+        .sort(MARKETPLACE_PRODUCT_SORT)
         .skip(offset)
         .limit(limit)
     )
@@ -742,7 +937,12 @@ async def get_store_catalog(
         products = [
             item
             for doc in product_docs
-            if (item := _product_to_public(doc, seller_by_id)) is not None
+            if (item := _product_to_public(
+                doc,
+                seller_by_id,
+                buyer_province_id=province_id,
+                buyer_municipality_id=municipality_id,
+            )) is not None
         ]
         if not products:
             continue
@@ -809,8 +1009,12 @@ async def list_store_category_products(
     products = [
         item
         for doc in product_docs
-        if (item := _product_to_public(doc, seller_by_id)) is not None
-    ]
+        if (item := _product_to_public(
+            doc,
+            seller_by_id,
+            buyer_province_id=province_id,
+            buyer_municipality_id=municipality_id,
+        )) is not None    ]
 
     loaded = safe_offset + len(products)
     return MarketplaceStoreCategoryProductsPublic(
@@ -835,3 +1039,182 @@ async def get_store_public(store_ref: str) -> MarketplaceStorePublic:
         raise ValueError("La tienda no tiene teléfono registrado.")
 
     return _store_to_public(seller)
+
+
+JABA_REMOVAL_MESSAGES: dict[str, str] = {
+    "deleted": "Ya no está en el catálogo de la tienda.",
+    "unavailable": "Está agotado y no se puede comprar por ahora.",
+    "view_only": "Es solo para consulta y no admite compra directa.",
+    "store_unavailable": "La tienda ya no está disponible o no atiende en tu zona.",
+    "no_delivery": "No tiene entrega a domicilio en tu municipio.",
+}
+
+
+def _jaba_removal_message(reason: str) -> str:
+    return JABA_REMOVAL_MESSAGES.get(reason, "Ya no se puede comprar.")
+
+
+def _jaba_product_eligible(
+    product: dict[str, Any],
+    seller: dict[str, Any] | None,
+    *,
+    province_id: str | None,
+    municipality_id: str | None,
+    visible_seller_ids: set[str] | None,
+    pickup_seller_ids: set[str] | None = None,
+) -> str | None:
+    if seller is None:
+        return "deleted"
+
+    seller_id = str(seller["_id"])
+    if visible_seller_ids is not None:
+        if seller_id not in visible_seller_ids:
+            return "store_unavailable"
+    elif not is_subscription_active(seller) or not is_profile_complete(seller):
+        return "store_unavailable"
+
+    if product.get("view_only"):
+        return "view_only"
+
+    if not product.get("is_available", True):
+        return "unavailable"
+
+    if province_id and municipality_id and visible_seller_ids is not None:
+        is_local = _seller_is_local_to_municipality(seller, province_id, municipality_id)
+        delivers = product.get("offers_delivery") and _seller_delivers_to_municipality(
+            seller,
+            province_id,
+            municipality_id,
+        )
+        is_pickup = pickup_seller_ids is not None and seller_id in pickup_seller_ids
+
+        if not is_local and not delivers and not is_pickup:
+            return "no_delivery"
+
+    return None
+
+
+async def sync_jaba_products(payload: JabaSyncRequest) -> JabaSyncPublic:
+    if not payload.items:
+        return JabaSyncPublic()
+
+    province_id = payload.province_id.strip() if payload.province_id else None
+    municipality_id = payload.municipality_id.strip() if payload.municipality_id else None
+    visible_sellers: dict[str, dict[str, Any]] | None = None
+    visible_seller_ids: set[str] | None = None
+    pickup_seller_ids: set[str] | None = None
+
+    if province_id and municipality_id:
+        _validate_location_ids(province_id, municipality_id)
+        visible_sellers, _, _, pickup_list = await _build_marketplace_seller_context(
+            province_id,
+            municipality_id,
+            municipios_adicionales=payload.municipios_adicionales,
+        )
+        visible_seller_ids = set(visible_sellers.keys())
+        pickup_seller_ids = set(pickup_list)
+
+    products_col = get_catalog_products_collection()
+    registrations = get_registrations_collection()
+
+    product_ids: list[str] = []
+    names_by_id: dict[str, str] = {}
+    for item in payload.items:
+        product_id = item.product_id.strip()
+        if not product_id or product_id in names_by_id:
+            continue
+        product_ids.append(product_id)
+        names_by_id[product_id] = item.name.strip() or "Producto"
+
+    object_ids: list[ObjectId] = []
+    for product_id in product_ids:
+        try:
+            object_ids.append(ObjectId(product_id))
+        except InvalidId:
+            continue
+
+    docs_by_id: dict[str, dict[str, Any]] = {}
+    if object_ids:
+        cursor = products_col.find({"_id": {"$in": object_ids}})
+        async for doc in cursor:
+            docs_by_id[str(doc["_id"])] = doc
+
+    seller_ids = {doc["seller_id"] for doc in docs_by_id.values()}
+    seller_by_id: dict[str, dict[str, Any]] = {}
+    if visible_sellers is not None:
+        seller_by_id = visible_sellers
+    elif seller_ids:
+        seller_oids = []
+        for seller_id in seller_ids:
+            try:
+                seller_oids.append(ObjectId(seller_id))
+            except InvalidId:
+                continue
+        if seller_oids:
+            seller_docs = await registrations.find({"_id": {"$in": seller_oids}}).to_list(length=None)
+            seller_by_id = {str(doc["_id"]): doc for doc in seller_docs}
+
+    valid: list[MarketplaceProductPublic] = []
+    removed: list[JabaRemovedProductPublic] = []
+
+    for product_id in product_ids:
+        display_name = names_by_id.get(product_id, "Producto")
+        doc = docs_by_id.get(product_id)
+        if doc is None:
+            removed.append(
+                JabaRemovedProductPublic(
+                    product_id=product_id,
+                    name=display_name,
+                    reason="deleted",
+                    message=_jaba_removal_message("deleted"),
+                )
+            )
+            continue
+
+        seller = seller_by_id.get(doc.get("seller_id"))
+        if seller is None and visible_sellers is None:
+            try:
+                seller = await registrations.find_one({"_id": ObjectId(doc["seller_id"])})
+            except InvalidId:
+                seller = None
+
+        reason = _jaba_product_eligible(
+            doc,
+            seller,
+            province_id=province_id,
+            municipality_id=municipality_id,
+            visible_seller_ids=visible_seller_ids,
+            pickup_seller_ids=pickup_seller_ids,
+        )
+        if reason:
+            removed.append(
+                JabaRemovedProductPublic(
+                    product_id=product_id,
+                    name=doc.get("name") or display_name,
+                    reason=reason,
+                    message=_jaba_removal_message(reason),
+                )
+            )
+            continue
+
+        public_sellers = visible_sellers if visible_sellers is not None else seller_by_id
+        public = _product_to_public(
+            doc,
+            public_sellers,
+            buyer_province_id=province_id,
+            buyer_municipality_id=municipality_id,
+        )
+        if public is None:
+            removed.append(
+                JabaRemovedProductPublic(
+                    product_id=product_id,
+                    name=doc.get("name") or display_name,
+                    reason="store_unavailable",
+                    message=_jaba_removal_message("store_unavailable"),
+                )
+            )
+            continue
+
+        valid.append(public)
+
+    return JabaSyncPublic(valid=valid, removed=removed)
