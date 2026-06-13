@@ -39,6 +39,7 @@ def document_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         updated_at=doc["updated_at"],
         approved_at=doc.get("approved_at"),
         payment_amount_cup=doc.get("payment_amount_cup"),
+        is_launch_promo=bool(doc.get("is_launch_promo")),
     )
 
 
@@ -427,6 +428,7 @@ async def ensure_registration_indexes() -> None:
     await collection.create_index("store_name")
     await collection.create_index("store_slug", unique=True)
     await collection.create_index("approved_at")
+    await collection.create_index("is_launch_promo")
     await collection.update_many(
         {"plan_tier": {"$exists": False}},
         {"$set": {"plan_tier": "standard"}},

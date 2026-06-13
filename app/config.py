@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    eltoque_api_key: str = ""
+    eltoque_api_base_url: str = "https://tasas.eltoque.com"
+    eltoque_user_agent: str = (
+        "Mozilla/5.0 (compatible; PaLaJaba/1.0; +https://palajaba.com)"
+    )
+    eltoque_request_timeout_seconds: float = 20.0
+    exchange_rates_refresh_seconds: int = 3600
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -1,6 +1,7 @@
 from typing import Literal
 
-from app.constants import PLAN_PRICES_CUP
+from app.constants import PLAN_PRICES_USD
+from app.utils.currency_conversion import convert_amount
 
 PlanTier = Literal["standard", "premium"]
 BillingPeriod = Literal["monthly", "yearly"]
@@ -20,10 +21,15 @@ def normalize_billing_period(value: str | None) -> BillingPeriod:
     return "yearly" if value == "yearly" else "monthly"
 
 
-def plan_price_cup(plan_tier: str, billing_period: str) -> int:
+def plan_price_usd(plan_tier: str, billing_period: str) -> int:
     tier = normalize_plan_tier(plan_tier)
     period = "yearly" if billing_period == "yearly" else "monthly"
-    return PLAN_PRICES_CUP[tier][period]
+    return PLAN_PRICES_USD[tier][period]
+
+
+def plan_price_cup(plan_tier: str, billing_period: str) -> int:
+    usd_amount = plan_price_usd(plan_tier, billing_period)
+    return int(convert_amount(usd_amount, "USD", "CUP"))
 
 
 def seller_has_statistics(doc: dict) -> bool:

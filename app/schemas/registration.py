@@ -57,4 +57,5 @@ class RegistrationPublic(BaseModel):
     updated_at: UtcDateTime
     approved_at: UtcDateTime | None = None
     payment_amount_cup: int | None = None
+    is_launch_promo: bool = False
 

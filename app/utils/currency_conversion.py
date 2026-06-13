@@ -1,20 +1,13 @@
-"""Tasas stub hasta integrar El Toque (CUP por unidad de moneda)."""
-
-STUB_CUP_PER_UNIT = {
-    "CUP": 1,
-    "USD": 250,
-    "MLC": 250,
-}
-
-VALID_CURRENCIES = frozenset(STUB_CUP_PER_UNIT.keys())
+from app.services.exchange_rates import SUPPORTED_CURRENCIES, get_cup_per_unit
 
 
 def convert_amount(amount: float, from_currency: str, to_currency: str) -> float:
     if from_currency == to_currency:
         return float(amount)
 
-    from_rate = STUB_CUP_PER_UNIT.get(from_currency)
-    to_rate = STUB_CUP_PER_UNIT.get(to_currency)
+    cup_per_unit = get_cup_per_unit()
+    from_rate = cup_per_unit.get(from_currency)
+    to_rate = cup_per_unit.get(to_currency)
     if not from_rate or not to_rate:
         return float(amount)
 
@@ -33,3 +26,6 @@ def format_money(amount: float, currency: str) -> str:
     else:
         formatted = f"{amount:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{formatted} {currency}"
+
+
+VALID_CURRENCIES = frozenset(SUPPORTED_CURRENCIES)

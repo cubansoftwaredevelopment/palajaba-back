@@ -8,3 +8,4 @@ python-jose[cryptography]==3.3.0
 python-multipart==0.0.20
 reportlab==4.5.1
 cloudinary==1.44.1
+httpx==0.28.1
