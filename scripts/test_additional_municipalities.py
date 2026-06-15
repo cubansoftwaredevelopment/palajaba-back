@@ -93,7 +93,9 @@ class MarketplaceProductQueryTests(unittest.TestCase):
             search_text="martillo",
         )
         self.assertIn("$and", query)
-        self.assertEqual(query["$and"][0]["global_category_id"], "ferreteria")
+        category_filter = query["$and"][0]["global_category_id"]
+        self.assertIn("ferreteria", category_filter["$in"])
+        self.assertIn("construccion", category_filter["$in"])
         self.assertIn("$or", query["$and"][1])
 
     def test_recommendation_sort_unchanged(self) -> None:

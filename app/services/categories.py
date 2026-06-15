@@ -11,7 +11,8 @@ BUSINESS_CATEGORY_SORT_ORDER = {
     "tecnologia": 5,
     "salud": 6,
     "artesanias": 7,
-    "servicios": 8,
+    "construccion": 8,
+    "servicios": 9,
     "otros": 99,
 }
 
@@ -33,20 +34,57 @@ DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "otros", "name": "Otros"},
 ]
 
+_BUSINESS_CATEGORY_BY_ID = {item["id"]: item["name"] for item in DEFAULT_CATEGORIES}
+
+# IDs legacy o de backfills antiguos → id canónico de DEFAULT_CATEGORIES.
+CATEGORY_ID_ALIASES: dict[str, str] = {
+    "ferreteria": "construccion",
+    "ferretería": "construccion",
+    "construccion-herramientas": "construccion",
+    "construcción-herramientas": "construccion",
+    "alimentos": "comida",
+    "ropa-zapato-accesorios": "moda",
+    "muebles-decoracion": "hogar",
+    "muebles-decoración": "hogar",
+    "computadoras-celulares": "tecnologia",
+    "electronica": "tecnologia",
+    "electrónica": "tecnologia",
+    "electrodomesticos": "hogar",
+    "electrodomésticos": "hogar",
+    "salud-belleza": "belleza",
+    "arte-antiguedades": "artesanias",
+    "arte-antigüedades": "artesanias",
+}
+
 
 def document_to_category(doc: dict[str, Any]) -> CategoryPublic:
     return CategoryPublic(id=doc["id"], name=doc["name"])
 
 
+def normalize_business_category_id(category_id: str | None) -> str:
+    normalized = (category_id or "otros").strip().lower()
+    if normalized in _BUSINESS_CATEGORY_BY_ID:
+        return normalized
+    return CATEGORY_ID_ALIASES.get(normalized, "otros")
+
+
+def business_category_source_ids(category_id: str) -> list[str]:
+    canonical = normalize_business_category_id(category_id)
+    source_ids = [canonical]
+    for alias, target in CATEGORY_ID_ALIASES.items():
+        if target == canonical and alias not in source_ids:
+            source_ids.append(alias)
+    return source_ids
+
+
 def business_category_name(category_id: str) -> str:
-    for item in DEFAULT_CATEGORIES:
-        if item["id"] == category_id:
-            return item["name"]
-    return "Otros"
+    canonical = normalize_business_category_id(category_id)
+    return _BUSINESS_CATEGORY_BY_ID.get(canonical, "Otros")
 
 
 def business_category_sort_order(category_id: str) -> int:
-    return BUSINESS_CATEGORY_SORT_ORDER.get(category_id, 99)
+    canonical = normalize_business_category_id(category_id)
+    return BUSINESS_CATEGORY_SORT_ORDER.get(canonical, 99)
 
 
 async def ensure_category_seed() -> None:
@@ -55,24 +93,24 @@ async def ensure_category_seed() -> None:
     for category in DEFAULT_CATEGORIES:
         await collection.update_one(
             {"id": category["id"]},
-            {"$setOnInsert": category},
+            {"$set": category},
             upsert=True,
         )
 
 
 async def list_categories() -> list[CategoryPublic]:
-    collection = get_categories_collection()
-    cursor = collection.find({}).sort("name", 1)
-    documents = await cursor.to_list(length=100)
-    return [document_to_category(doc) for doc in documents]
+    return [
+        CategoryPublic(id=item["id"], name=item["name"])
+        for item in sorted(DEFAULT_CATEGORIES, key=lambda entry: entry["name"].lower())
+    ]
 
 
 async def validate_category_ids(category_ids: list[str]) -> None:
     from fastapi import HTTPException, status
 
-    collection = get_categories_collection()
-    count = await collection.count_documents({"id": {"$in": category_ids}})
-    if count != len(category_ids):
+    known_ids = {item["id"] for item in DEFAULT_CATEGORIES}
+    invalid = [category_id for category_id in category_ids if category_id not in known_ids]
+    if invalid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Una o más categorías no son válidas.",

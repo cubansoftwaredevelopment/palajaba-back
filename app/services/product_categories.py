@@ -30,41 +30,56 @@ REVOLICO_PRODUCT_CATEGORIES: list[dict[str, Any]] = [
 
 _CATEGORY_BY_ID = {item["id"]: item for item in REVOLICO_PRODUCT_CATEGORIES}
 
-_SELLER_CATEGORY_NAME_MAP = {
-    "electrodomesticos": "electrodomesticos",
-    "electrodomésticos": "electrodomesticos",
-    "electronica": "electronica",
-    "electrónica": "electronica",
-    "ferreteria": "construccion-herramientas",
-    "ferretería": "construccion-herramientas",
-    "construccion": "construccion-herramientas",
-    "construcción": "construccion-herramientas",
-    "herramientas": "construccion-herramientas",
-    "despensa": "alimentos",
-    "alimentos": "alimentos",
-    "comida": "alimentos",
-    "ropa": "ropa-zapato-accesorios",
-    "moda": "ropa-zapato-accesorios",
-    "muebles": "muebles-decoracion",
-    "decoracion": "muebles-decoracion",
-    "decoración": "muebles-decoracion",
-    "tecnologia": "computadoras-celulares",
-    "tecnología": "computadoras-celulares",
-    "celulares": "computadoras-celulares",
-    "computadoras": "computadoras-celulares",
-    "belleza": "salud-belleza",
-    "salud": "salud-belleza",
-    "deportes": "deportes-recreacion",
-    "mascotas": "mascotas",
-    "juguetes": "juguetes",
-    "libros": "libros-musica",
-    "musica": "libros-musica",
-    "música": "libros-musica",
-    "vehiculos": "vehiculos-repuestos",
-    "vehículos": "vehiculos-repuestos",
-    "repuestos": "vehiculos-repuestos",
+_LOCAL_NAME_TO_BUSINESS_CATEGORY = {
+    "ferreteria": "construccion",
+    "ferretería": "construccion",
+    "construccion": "construccion",
+    "construcción": "construccion",
+    "herramientas": "construccion",
+    "materiales y herramientas de construcción": "construccion",
+    "materiales y herramientas de construccion": "construccion",
+    "despensa": "comida",
+    "alimentos": "comida",
+    "comida": "comida",
+    "restaurant": "restaurant",
+    "restaurante": "restaurant",
+    "cafeteria": "restaurant",
+    "cafetería": "restaurant",
+    "ropa": "moda",
+    "moda": "moda",
+    "muebles": "hogar",
+    "decoracion": "hogar",
+    "decoración": "hogar",
+    "hogar": "hogar",
+    "tecnologia": "tecnologia",
+    "tecnología": "tecnologia",
+    "celulares": "tecnologia",
+    "computadoras": "tecnologia",
+    "electrodomesticos": "hogar",
+    "electrodomésticos": "hogar",
+    "electronica": "tecnologia",
+    "electrónica": "tecnologia",
+    "belleza": "belleza",
+    "salud": "salud",
+    "artesania": "artesanias",
+    "artesanía": "artesanias",
+    "artesanias": "artesanias",
+    "artesanías": "artesanias",
+    "servicios": "servicios",
     "otros": "otros",
 }
+
+
+def map_local_category_name_to_business_category(name: str | None) -> str:
+    if not name:
+        return "otros"
+    normalized = name.strip().lower()
+    return _LOCAL_NAME_TO_BUSINESS_CATEGORY.get(normalized, "otros")
+
+
+def map_seller_category_name(name: str | None) -> str:
+    """Compatibilidad con scripts antiguos."""
+    return map_local_category_name_to_business_category(name)
 
 
 def document_to_category(doc: dict[str, Any]) -> CategoryPublic:
@@ -77,13 +92,6 @@ def category_name(category_id: str) -> str:
 
 def category_sort_order(category_id: str) -> int:
     return int(_CATEGORY_BY_ID.get(category_id, {}).get("sort_order", 99))
-
-
-def map_seller_category_name(name: str | None) -> str:
-    if not name:
-        return "otros"
-    normalized = name.strip().lower()
-    return _SELLER_CATEGORY_NAME_MAP.get(normalized, "otros")
 
 
 async def ensure_product_category_seed() -> None:
