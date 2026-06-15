@@ -2,7 +2,7 @@ REJECTION_REASON_UNCONFIRMED_PAYMENT = (
     "No pudimos confirmar el pago de la transferencia."
 )
 
-LAUNCH_PROMO_LIMIT = 30
+LAUNCH_PROMO_LIMIT = 60
 
 PLAN_PRICES_USD = {
     "standard": {

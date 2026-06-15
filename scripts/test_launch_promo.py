@@ -1,5 +1,5 @@
 """
-Tests de la promoción de lanzamiento (primeros 30 usuarios).
+Tests de la promoción de lanzamiento (límite en app.constants.LAUNCH_PROMO_LIMIT).
 
 Uso (desde backend/):
   .\\venv\\Scripts\\python.exe scripts\\test_launch_promo.py

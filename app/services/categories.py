@@ -28,7 +28,7 @@ DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "artesanias", "name": "Artesanías"},
     {"id": "insumos-fiestas", "name": "Insumos para fiestas"},
     {"id": "construccion", "name": "Materiales y herramientas de construcción"},
-    {"id": "+18", "name": "Articulos +18"},
+    {"id": "articulos-adultos", "name": "Articulos +18"},
     {"id": "servicios", "name": "Servicios"},
     {"id": "otros", "name": "Otros"},
 ]
