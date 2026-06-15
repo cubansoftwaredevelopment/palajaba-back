@@ -58,4 +58,6 @@ class RegistrationPublic(BaseModel):
     approved_at: UtcDateTime | None = None
     payment_amount_cup: int | None = None
     is_launch_promo: bool = False
+    store_slug: str | None = None
+    profile_completed: bool = False
 

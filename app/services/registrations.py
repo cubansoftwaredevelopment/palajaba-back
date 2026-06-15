@@ -9,6 +9,7 @@ from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
 from app.services.plans import normalize_plan_tier
+from app.services.seller_profile import is_profile_complete
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
 
@@ -40,6 +41,8 @@ def document_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         approved_at=doc.get("approved_at"),
         payment_amount_cup=doc.get("payment_amount_cup"),
         is_launch_promo=bool(doc.get("is_launch_promo")),
+        store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
+        profile_completed=is_profile_complete(doc),
     )
 
 

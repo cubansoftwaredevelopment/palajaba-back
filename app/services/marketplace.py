@@ -218,6 +218,19 @@ async def _resolve_visible_seller(
     return seller
 
 
+async def _resolve_store_catalog_seller(store_ref: str) -> dict[str, Any]:
+    """Página pública de una tienda: no exige que el comprador esté en la misma zona."""
+    seller = await _find_seller_by_store_ref(store_ref)
+
+    if not is_subscription_active(seller):
+        raise ValueError("Tienda no encontrada.")
+
+    if not is_profile_complete(seller):
+        raise ValueError("Esta tienda aún no ha completado su perfil público.")
+
+    return seller
+
+
 async def resolve_visible_seller_id(
     store_ref: str,
     province_id: str,
@@ -896,7 +909,7 @@ async def get_store_catalog(
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
 
-    seller = await _resolve_visible_seller(store_ref, province_id, municipality_id)
+    seller = await _resolve_store_catalog_seller(store_ref)
     seller_id = str(seller["_id"])
     seller_by_id = {seller_id: seller}
     store_public = _store_to_public(seller)
@@ -980,7 +993,7 @@ async def list_store_category_products(
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
 
-    seller = await _resolve_visible_seller(store_ref, province_id, municipality_id)
+    seller = await _resolve_store_catalog_seller(store_ref)
     seller_id = str(seller["_id"])
     seller_by_id = {seller_id: seller}
     category_doc = await _get_local_category_doc(seller_id, local_category_id)
@@ -1031,8 +1044,11 @@ async def list_store_category_products(
 async def get_store_public(store_ref: str) -> MarketplaceStorePublic:
     seller = await _find_seller_by_store_ref(store_ref)
 
-    if not is_subscription_active(seller) or not is_profile_complete(seller):
+    if not is_subscription_active(seller):
         raise ValueError("Tienda no encontrada.")
+
+    if not is_profile_complete(seller):
+        raise ValueError("Esta tienda aún no ha completado su perfil público.")
 
     phone_digits = seller.get("phone")
     if not phone_digits:
