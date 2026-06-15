@@ -25,15 +25,13 @@ from app.schemas.marketplace import (
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
-from app.services.categories import (
-    DEFAULT_CATEGORIES,
-    business_category_name,
-    business_category_sort_order,
-)
+from app.services.categories import DEFAULT_CATEGORIES, business_category_name
 from app.services.product_categories import (
     REVOLICO_PRODUCT_CATEGORIES,
     category_name as product_category_name,
     category_sort_order,
+    marketplace_category_source_ids,
+    resolve_marketplace_category_id,
 )
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
 from app.services.seller_profile import is_profile_complete
@@ -46,16 +44,13 @@ KNOWN_PRODUCT_CATEGORY_IDS = {item["id"] for item in REVOLICO_PRODUCT_CATEGORIES
 
 
 def _display_category_name(category_id: str) -> str:
-    name = business_category_name(category_id)
-    if name != "Otros":
-        return name
-    return product_category_name(category_id)
+    return product_category_name(resolve_marketplace_category_id(category_id))
 
 
 def _normalize_marketplace_category_id(category_id: str) -> str:
     normalized = category_id.strip().lower()
     if normalized in KNOWN_BUSINESS_CATEGORY_IDS or normalized in KNOWN_PRODUCT_CATEGORY_IDS:
-        return normalized
+        return resolve_marketplace_category_id(normalized)
     raise ValueError("Categoría no válida.")
 
 
@@ -270,7 +265,7 @@ def _product_to_public(
             else:
                 pickup_notice = "Sin domicilio a tu municipio"
 
-    global_category_id = product.get("global_category_id") or "otros"
+    global_category_id = resolve_marketplace_category_id(product.get("global_category_id"))
     return MarketplaceProductPublic(
         id=str(product["_id"]),
         global_category_id=global_category_id,
@@ -525,7 +520,8 @@ def _build_marketplace_products_query(
 ) -> dict[str, Any]:
     extra: dict[str, Any] = {}
     if global_category_id:
-        extra["global_category_id"] = global_category_id
+        source_ids = marketplace_category_source_ids(global_category_id)
+        extra["global_category_id"] = source_ids[0] if len(source_ids) == 1 else {"$in": source_ids}
 
     query = _marketplace_product_query(
         local_seller_ids,
@@ -576,13 +572,14 @@ async def _aggregate_category_stats(
         },
     ]
     results = await products_col.aggregate(pipeline).to_list(length=None)
-    return {
-        str(item["_id"]): {
-            "count": int(item["count"]),
-            "popularity": int(item.get("popularity") or 0),
-        }
-        for item in results
-    }
+    merged: dict[str, dict[str, int]] = {}
+    for item in results:
+        raw_id = str(item["_id"])
+        resolved_id = resolve_marketplace_category_id(raw_id)
+        bucket = merged.setdefault(resolved_id, {"count": 0, "popularity": 0})
+        bucket["count"] += int(item["count"])
+        bucket["popularity"] += int(item.get("popularity") or 0)
+    return merged
 
 
 def _sort_category_ids(stats: dict[str, dict[str, int]]) -> list[str]:
@@ -590,7 +587,6 @@ def _sort_category_ids(stats: dict[str, dict[str, int]]) -> list[str]:
         stats.keys(),
         key=lambda category_id: (
             -stats[category_id]["popularity"],
-            business_category_sort_order(category_id),
             category_sort_order(category_id),
         ),
     )
