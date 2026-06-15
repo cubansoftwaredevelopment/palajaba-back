@@ -265,7 +265,7 @@ def _product_to_public(
             else:
                 pickup_notice = "Sin domicilio a tu municipio"
 
-    global_category_id = normalize_business_category_id(product.get("global_category_id"))
+    global_category_id = str(product.get("global_category_id") or "otros").strip().lower()
     return MarketplaceProductPublic(
         id=str(product["_id"]),
         global_category_id=global_category_id,

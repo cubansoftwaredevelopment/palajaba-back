@@ -16,6 +16,7 @@ from app.services.categories import (
     business_category_name,
     business_category_source_ids,
     normalize_business_category_id,
+    resolve_product_global_category_id,
 )
 from app.services.marketplace import _display_category_name
 
@@ -51,6 +52,16 @@ class BusinessCategoryMappingTests(unittest.TestCase):
         self.assertIn("construccion", source_ids)
         self.assertIn("construccion-herramientas", source_ids)
         self.assertIn("ferreteria", source_ids)
+
+    def test_product_keeps_one_store_category_from_profile(self) -> None:
+        allowed = ["comida", "restaurant", "construccion"]
+        self.assertEqual(resolve_product_global_category_id(allowed, "restaurant"), "restaurant")
+        self.assertEqual(resolve_product_global_category_id(allowed, "comida"), "comida")
+        self.assertEqual(resolve_product_global_category_id(allowed, "construccion"), "construccion")
+
+    def test_product_rejects_category_not_in_store(self) -> None:
+        with self.assertRaises(ValueError):
+            resolve_product_global_category_id(["comida", "restaurant"], "moda")
 
 
 if __name__ == "__main__":

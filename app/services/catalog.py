@@ -12,7 +12,7 @@ from app.database import (
     get_catalog_products_collection,
     get_registrations_collection,
 )
-from app.services.categories import business_category_name, normalize_business_category_id
+from app.services.categories import business_category_name, resolve_product_global_category_id
 from app.services.product_categories import map_local_category_name_to_business_category
 from app.schemas.catalog import (
     CatalogCategoryCreate,
@@ -105,7 +105,7 @@ def _parse_accepted_currencies(raw: str, base_currency: str) -> list[str]:
 
 
 def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
-    global_category_id = normalize_business_category_id(doc.get("global_category_id"))
+    global_category_id = str(doc.get("global_category_id") or "otros").strip().lower()
     return CatalogProductPublic(
         id=str(doc["_id"]),
         category_id=str(doc.get("category_id") or ""),
@@ -167,7 +167,6 @@ async def ensure_catalog_indexes() -> None:
     await products.create_index([("seller_id", 1), ("global_category_id", 1), ("sort_order", 1)])
     await _backfill_category_sort_orders()
     await _backfill_product_categories()
-    await _backfill_canonical_global_category_ids()
 
     from app.services.product_popularity import ensure_popularity_field
 
@@ -221,19 +220,6 @@ async def _backfill_product_categories() -> None:
         )
 
 
-async def _backfill_canonical_global_category_ids() -> None:
-    products_col = get_catalog_products_collection()
-    cursor = products_col.find({}, {"global_category_id": 1})
-    async for product in cursor:
-        raw = product.get("global_category_id")
-        canonical = normalize_business_category_id(raw)
-        if raw != canonical:
-            await products_col.update_one(
-                {"_id": product["_id"]},
-                {"$set": {"global_category_id": canonical}},
-            )
-
-
 async def _get_seller_category_ids(seller_id: str) -> list[str]:
     try:
         seller_oid = ObjectId(seller_id)
@@ -253,21 +239,19 @@ async def _get_seller_category_ids(seller_id: str) -> list[str]:
 
 
 async def _validate_global_category_for_seller(seller_id: str, global_category_id: str) -> str:
-    normalized = global_category_id.strip().lower()
     allowed = await _get_seller_category_ids(seller_id)
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Completa las categorías de tu negocio en el perfil antes de publicar productos.",
         )
-    canonical = normalize_business_category_id(normalized)
-    allowed_canonical = {normalize_business_category_id(item) for item in allowed}
-    if canonical not in allowed_canonical:
+    try:
+        return resolve_product_global_category_id(allowed, global_category_id)
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La categoría global debe ser una de las categorías de tu negocio.",
-        )
-    return canonical
+            detail=str(exc),
+        ) from exc
 
 
 async def _validate_local_category_id(seller_id: str, category_id: str) -> ObjectId:
