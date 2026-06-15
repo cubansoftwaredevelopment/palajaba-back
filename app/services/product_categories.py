@@ -30,25 +30,6 @@ REVOLICO_PRODUCT_CATEGORIES: list[dict[str, Any]] = [
 
 _CATEGORY_BY_ID = {item["id"]: item for item in REVOLICO_PRODUCT_CATEGORIES}
 
-# IDs de categorías de negocio (perfil del vendedor) → taxonomía del marketplace.
-BUSINESS_TO_PRODUCT_CATEGORY_MAP: dict[str, str] = {
-    "comida": "alimentos",
-    "restaurant": "alimentos",
-    "energia": "electrodomesticos",
-    "inmobiliaria": "otros",
-    "moda": "ropa-zapato-accesorios",
-    "belleza": "salud-belleza",
-    "hogar": "muebles-decoracion",
-    "tecnologia": "computadoras-celulares",
-    "salud": "salud-belleza",
-    "artesanias": "arte-antiguedades",
-    "insumos-fiestas": "otros",
-    "construccion": "construccion-herramientas",
-    "articulos-adultos": "otros",
-    "servicios": "otros",
-    "otros": "otros",
-}
-
 _SELLER_CATEGORY_NAME_MAP = {
     "electrodomesticos": "electrodomesticos",
     "electrodomésticos": "electrodomesticos",
@@ -96,22 +77,6 @@ def category_name(category_id: str) -> str:
 
 def category_sort_order(category_id: str) -> int:
     return int(_CATEGORY_BY_ID.get(category_id, {}).get("sort_order", 99))
-
-
-def resolve_marketplace_category_id(category_id: str | None) -> str:
-    normalized = (category_id or "otros").strip().lower()
-    if normalized in _CATEGORY_BY_ID:
-        return normalized
-    return BUSINESS_TO_PRODUCT_CATEGORY_MAP.get(normalized, "otros")
-
-
-def marketplace_category_source_ids(category_id: str) -> list[str]:
-    resolved = resolve_marketplace_category_id(category_id)
-    source_ids = [resolved]
-    for business_id, product_id in BUSINESS_TO_PRODUCT_CATEGORY_MAP.items():
-        if product_id == resolved and business_id not in source_ids:
-            source_ids.append(business_id)
-    return source_ids
 
 
 def map_seller_category_name(name: str | None) -> str:
