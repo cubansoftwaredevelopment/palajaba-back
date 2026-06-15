@@ -9,7 +9,8 @@ from app.schemas.auth import SellerPublic
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerProfileUpdate
 from app.services.cuba_locations import validate_business_area
 from app.utils.phone import phone_display
-from app.services.categories import validate_category_ids
+from app.schemas.seller_profile import CategoryPublic
+from app.services.categories import categories_for_profile, validate_category_ids
 from app.services.plans import (
     normalize_plan_tier,
     seller_has_recommendation_boost,
@@ -156,6 +157,11 @@ async def _get_seller_doc(seller_id: str) -> dict[str, Any]:
 async def get_seller_public(seller_id: str) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
     return document_to_seller(doc)
+
+
+async def get_seller_business_categories(seller_id: str) -> list[CategoryPublic]:
+    doc = await _get_seller_doc(seller_id)
+    return categories_for_profile(doc.get("category_ids") or [])
 
 
 async def update_seller_profile(

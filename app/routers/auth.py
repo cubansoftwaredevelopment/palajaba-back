@@ -13,7 +13,7 @@ from app.schemas.catalog import (
 )
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
-from app.schemas.seller_profile import SellerProfileUpdate
+from app.schemas.seller_profile import CategoryPublic, SellerProfileUpdate
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
 from app.services import auth as auth_service
@@ -51,6 +51,11 @@ async def seller_login(payload: SellerLoginRequest):
 @router.get("/me", response_model=SellerPublic)
 async def seller_me(seller_payload: dict = Depends(require_seller)):
     return await profile_service.get_seller_public(seller_payload["seller_id"])
+
+
+@router.get("/me/business-categories", response_model=list[CategoryPublic])
+async def seller_business_categories(seller_payload: dict = Depends(require_seller)):
+    return await profile_service.get_seller_business_categories(seller_payload["seller_id"])
 
 
 @router.patch("/me/profile", response_model=SellerPublic)
