@@ -1,4 +1,8 @@
-from app.database import get_registrations_collection
+from app.database import (
+    get_catalog_products_collection,
+    get_orders_collection,
+    get_registrations_collection,
+)
 from app.schemas.admin_stats import AdminStatsSummary
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import month_bounds
@@ -37,6 +41,9 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     )
     pending_registrations = await collection.count_documents({"status": "pending"})
 
+    published_products = await get_catalog_products_collection().count_documents({})
+    orders_total = await get_orders_collection().count_documents({})
+
     return AdminStatsSummary(
         year=year,
         month=month,
@@ -44,4 +51,6 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
         payments_count=payments_count,
         active_stores=active_stores,
         pending_registrations=pending_registrations,
+        published_products=published_products,
+        orders_total=orders_total,
     )

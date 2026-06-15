@@ -8,3 +8,5 @@ class AdminStatsSummary(BaseModel):
     payments_count: int
     active_stores: int
     pending_registrations: int
+    published_products: int
+    orders_total: int
