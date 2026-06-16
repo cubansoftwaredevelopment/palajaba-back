@@ -28,7 +28,6 @@ async def connect_to_mongo():
     from app.services.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
-    from app.services.launch_promo import ensure_launch_promo_state
     from app.services.platform_settings import ensure_platform_settings_indexes
     from app.services.seller_profile import ensure_uploads_dir
 
@@ -39,7 +38,6 @@ async def connect_to_mongo():
     await ensure_admin_indexes()
     await ensure_platform_settings_indexes()
     await ensure_exchange_rates_indexes()
-    await ensure_launch_promo_state()
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
     await ensure_catalog_indexes()

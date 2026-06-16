@@ -1,8 +1,6 @@
 from fastapi import APIRouter
 
-from app.schemas.launch_promo import LaunchPromoRegisterRequest
 from app.schemas.registration import RegisterRequest, RegisterResponse
-from app.services import launch_promo as launch_promo_service
 from app.services import registrations as registration_service
 
 router = APIRouter(prefix="/api/register", tags=["register"])
@@ -23,22 +21,5 @@ async def register_seller(payload: RegisterRequest):
         status=registration.status,
         message=(
             "Solicitud recibida. Te notificaremos cuando verifiquemos tu pago."
-        ),
-    )
-
-
-@router.post("/launch-promo", response_model=RegisterResponse, status_code=201)
-async def register_launch_promo(payload: LaunchPromoRegisterRequest):
-    registration = await launch_promo_service.create_launch_promo_registration(
-        store_name=payload.store_name,
-        phone=payload.phone,
-        password=payload.password,
-    )
-    return RegisterResponse(
-        id=registration.id,
-        status=registration.status,
-        message=(
-            "¡Cuenta creada! Tienes Plan Premium gratis por 1 mes. "
-            "Ya puedes iniciar sesión."
         ),
     )

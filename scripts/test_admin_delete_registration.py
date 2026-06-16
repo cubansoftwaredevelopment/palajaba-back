@@ -438,6 +438,22 @@ async def run_tests() -> None:
     assert_ok(status == 404, f"DELETE inexistente debía ser 404, fue {status}")
     print("   OK 404 en ID inexistente")
 
+    print("7. Endpoints de promo eliminados deben responder 404…")
+    status, _ = http_json("GET", f"{BASE_URL}/api/platform/launch-promo")
+    assert_ok(status == 404, f"GET launch-promo debía ser 404, fue {status}")
+
+    status, _ = http_json(
+        "POST",
+        f"{BASE_URL}/api/register/launch-promo",
+        body={
+            "store_name": "Hack Promo",
+            "phone": unique_phone(),
+            "password": "HackPromo1",
+        },
+    )
+    assert_ok(status == 404, f"POST launch-promo debía ser 404, fue {status}")
+    print("   OK promo cerrada en API")
+
 
 async def main() -> None:
     proc = None

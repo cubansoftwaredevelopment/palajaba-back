@@ -70,20 +70,15 @@ async def delete_seller_data(seller_id: str, registration_doc: dict[str, Any]) -
 
 
 async def delete_registration_document(registration_id: str) -> dict[str, str]:
-    from app.services.launch_promo import ensure_launch_promo_state
     from app.services.registrations import _get_document_or_404
 
     collection = get_registrations_collection()
     doc = await _get_document_or_404(collection, registration_id)
     seller_id = str(doc["_id"])
     store_name = doc.get("store_name") or ""
-    was_launch_promo = bool(doc.get("is_launch_promo"))
 
     await delete_seller_data(seller_id, doc)
     await collection.delete_one({"_id": doc["_id"]})
-
-    if was_launch_promo:
-        await ensure_launch_promo_state()
 
     return {
         "id": seller_id,
