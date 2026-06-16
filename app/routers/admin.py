@@ -10,7 +10,7 @@ from app.schemas.notifications import (
     AdminNotificationCreate,
     AdminNotificationSendResult,
 )
-from app.schemas.admin_stats import AdminStatsSummary
+from app.schemas.admin_stats import AdminBusinessesByProvince, AdminStatsSummary
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.utils.dates import parse_subscription_end
@@ -112,6 +112,11 @@ async def stats_summary(
     target_year = year if year is not None else now.year
     target_month = month if month is not None else now.month
     return await admin_stats_service.get_stats_summary(target_year, target_month)
+
+
+@router.get("/stats/businesses-by-province", response_model=AdminBusinessesByProvince)
+async def businesses_by_province(_: dict = Depends(require_admin)):
+    return await admin_stats_service.get_businesses_by_province()
 
 
 @router.post(

@@ -3,7 +3,12 @@ from app.database import (
     get_orders_collection,
     get_registrations_collection,
 )
-from app.schemas.admin_stats import AdminStatsSummary
+from app.schemas.admin_stats import (
+    AdminBusinessesByProvince,
+    AdminProvinceBusinessCount,
+    AdminStatsSummary,
+)
+from app.services.cuba_locations import PROVINCE_NAMES
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import month_bounds
 
@@ -53,4 +58,53 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
         pending_registrations=pending_registrations,
         published_products=published_products,
         orders_total=orders_total,
+    )
+
+
+async def get_businesses_by_province() -> AdminBusinessesByProvince:
+    collection = get_registrations_collection()
+
+    pipeline = [
+        {"$match": {"status": "approved", "business_area.province_id": {"$exists": True, "$ne": ""}}},
+        {
+            "$group": {
+                "_id": "$business_area.province_id",
+                "province_name": {"$first": "$business_area.province_name"},
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+    grouped = await collection.aggregate(pipeline).to_list(length=None)
+    counts_by_id = {row["_id"]: int(row["count"]) for row in grouped}
+
+    provinces: list[AdminProvinceBusinessCount] = []
+    for province_id, province_name in PROVINCE_NAMES.items():
+        count = counts_by_id.get(province_id, 0)
+        if count > 0:
+            provinces.append(
+                AdminProvinceBusinessCount(
+                    province_id=province_id,
+                    province_name=province_name,
+                    count=count,
+                )
+            )
+
+    provinces.sort(key=lambda item: (-item.count, item.province_name))
+
+    without_location = await collection.count_documents(
+        {
+            "status": "approved",
+            "$or": [
+                {"business_area": {"$exists": False}},
+                {"business_area.province_id": {"$exists": False}},
+                {"business_area.province_id": ""},
+            ],
+        }
+    )
+    total_with_location = sum(item.count for item in provinces)
+
+    return AdminBusinessesByProvince(
+        total_with_location=total_with_location,
+        without_location=without_location,
+        provinces=provinces,
     )
