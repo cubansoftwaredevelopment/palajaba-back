@@ -12,7 +12,7 @@ from app.schemas.notifications import (
 )
 from app.schemas.admin_stats import AdminStatsSummary
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
-from app.schemas.registration import BillingPeriod, PlanTier, RegistrationPublic
+from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
@@ -20,6 +20,7 @@ from app.services import admin_stats as admin_stats_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
+from app.services import seller_deletion as seller_deletion_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -62,6 +63,18 @@ async def get_registration(
     _: dict = Depends(require_admin),
 ):
     return await registration_service.get_registration(registration_id)
+
+
+@router.delete(
+    "/registrations/{registration_id}",
+    response_model=RegistrationDeleteResult,
+)
+async def delete_registration(
+    registration_id: str,
+    _: dict = Depends(require_admin),
+):
+    result = await seller_deletion_service.delete_registration_document(registration_id)
+    return RegistrationDeleteResult(**result)
 
 
 @router.post(

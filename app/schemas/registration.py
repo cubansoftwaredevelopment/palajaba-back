@@ -61,3 +61,9 @@ class RegistrationPublic(BaseModel):
     store_slug: str | None = None
     profile_completed: bool = False
 
+
+class RegistrationDeleteResult(BaseModel):
+    id: str
+    store_name: str
+    message: str
+
