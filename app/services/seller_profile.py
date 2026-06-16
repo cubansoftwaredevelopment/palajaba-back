@@ -6,7 +6,7 @@ from fastapi import HTTPException, UploadFile, status
 from app.database import get_registrations_collection
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.schemas.auth import SellerPublic
-from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerProfileUpdate
+from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerPhoneUpdate, SellerProfileUpdate
 from app.services.cuba_locations import validate_business_area
 from app.utils.phone import phone_display
 from app.schemas.seller_profile import CategoryPublic
@@ -216,6 +216,31 @@ async def update_seller_profile(
 
     collection = get_registrations_collection()
     await collection.update_one({"_id": doc["_id"]}, {"$set": update_fields})
+
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def update_seller_phone(seller_id: str, payload: SellerPhoneUpdate) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    new_phone = payload.phone
+
+    if new_phone == doc.get("phone"):
+        return document_to_seller(doc)
+
+    collection = get_registrations_collection()
+    existing = await collection.find_one({"phone": new_phone, "_id": {"$ne": doc["_id"]}})
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ese número ya está registrado en otra tienda.",
+        )
+
+    now = to_utc_naive(utc_now())
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"phone": new_phone, "updated_at": now}},
+    )
 
     updated = await collection.find_one({"_id": doc["_id"]})
     return document_to_seller(updated)

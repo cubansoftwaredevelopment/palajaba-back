@@ -13,7 +13,7 @@ from app.schemas.catalog import (
 )
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
-from app.schemas.seller_profile import CategoryPublic, SellerProfileUpdate
+from app.schemas.seller_profile import CategoryPublic, SellerPhoneUpdate, SellerProfileUpdate
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
 from app.services import auth as auth_service
@@ -64,6 +64,17 @@ async def update_seller_profile(
     seller_payload: dict = Depends(require_seller),
 ):
     return await profile_service.update_seller_profile(
+        seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.patch("/me/phone", response_model=SellerPublic)
+async def update_seller_phone(
+    payload: SellerPhoneUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.update_seller_phone(
         seller_payload["seller_id"],
         payload,
     )

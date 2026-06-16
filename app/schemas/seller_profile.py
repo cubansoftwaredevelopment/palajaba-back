@@ -2,6 +2,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.utils.phone import normalize_phone_digits
+
 
 class BusinessLocation(BaseModel):
     lat: float = Field(..., ge=-90, le=90)
@@ -60,3 +62,12 @@ class SellerProfileUpdate(BaseModel):
         if not normalized:
             raise ValueError("Selecciona al menos una categoría.")
         return normalized
+
+
+class SellerPhoneUpdate(BaseModel):
+    phone: str = Field(..., min_length=8, max_length=20)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return normalize_phone_digits(value)
