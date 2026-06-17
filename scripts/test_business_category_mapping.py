@@ -13,8 +13,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.services.categories import (
+    DEFAULT_CATEGORIES,
     business_category_name,
+    business_category_sort_order,
     business_category_source_ids,
+    categories_for_profile,
     normalize_business_category_id,
     resolve_product_global_category_id,
 )
@@ -62,6 +65,52 @@ class BusinessCategoryMappingTests(unittest.TestCase):
     def test_product_rejects_category_not_in_store(self) -> None:
         with self.assertRaises(ValueError):
             resolve_product_global_category_id(["comida", "restaurant"], "moda")
+
+    def test_medios_transporte_is_registered_category(self) -> None:
+        ids = {item["id"] for item in DEFAULT_CATEGORIES}
+        self.assertIn("medios-transporte", ids)
+        self.assertEqual(business_category_name("medios-transporte"), "Medios de transporte")
+        self.assertEqual(
+            _display_category_name("medios-transporte"),
+            "Medios de transporte",
+        )
+
+    def test_legacy_vehiculos_maps_to_medios_transporte(self) -> None:
+        self.assertEqual(normalize_business_category_id("vehiculos-repuestos"), "medios-transporte")
+        self.assertEqual(normalize_business_category_id("transporte"), "medios-transporte")
+        self.assertEqual(
+            _display_category_name("vehiculos-repuestos"),
+            "Medios de transporte",
+        )
+
+    def test_medios_transporte_source_ids_include_aliases(self) -> None:
+        source_ids = business_category_source_ids("medios-transporte")
+        self.assertIn("medios-transporte", source_ids)
+        self.assertIn("vehiculos-repuestos", source_ids)
+        self.assertIn("transporte", source_ids)
+
+    def test_product_accepts_medios_transporte_for_transport_store(self) -> None:
+        allowed = ["medios-transporte", "servicios"]
+        self.assertEqual(
+            resolve_product_global_category_id(allowed, "medios-transporte"),
+            "medios-transporte",
+        )
+        self.assertEqual(
+            resolve_product_global_category_id(allowed, "vehiculos-repuestos"),
+            "medios-transporte",
+        )
+
+    def test_categories_for_profile_preserves_medios_transporte_id(self) -> None:
+        result = categories_for_profile(["medios-transporte"])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].id, "medios-transporte")
+        self.assertEqual(result[0].name, "Medios de transporte")
+
+    def test_medios_transporte_sort_order_before_servicios(self) -> None:
+        self.assertLess(
+            business_category_sort_order("medios-transporte"),
+            business_category_sort_order("servicios"),
+        )
 
 
 if __name__ == "__main__":

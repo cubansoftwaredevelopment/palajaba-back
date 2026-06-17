@@ -12,7 +12,8 @@ BUSINESS_CATEGORY_SORT_ORDER = {
     "salud": 6,
     "artesanias": 7,
     "construccion": 8,
-    "servicios": 9,
+    "medios-transporte": 9,
+    "servicios": 10,
     "otros": 99,
 }
 
@@ -21,6 +22,7 @@ DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "restaurant", "name": "Restaurant y cafeteria"},
     {"id": "energia", "name": "Paneles, EcoFlow y fuentes de energia"},
     {"id": "inmobiliaria", "name": "Inmobiliaria"},
+    {"id": "medios-transporte", "name": "Medios de transporte"},
     {"id": "moda", "name": "Moda y accesorios"},
     {"id": "belleza", "name": "Belleza y cuidado personal"},
     {"id": "hogar", "name": "Hogar y decoración"},
@@ -54,6 +56,14 @@ CATEGORY_ID_ALIASES: dict[str, str] = {
     "salud-belleza": "belleza",
     "arte-antiguedades": "artesanias",
     "arte-antigüedades": "artesanias",
+    "vehiculos-repuestos": "medios-transporte",
+    "vehiculos": "medios-transporte",
+    "vehículos": "medios-transporte",
+    "transporte": "medios-transporte",
+    "medios-de-transporte": "medios-transporte",
+    "autos": "medios-transporte",
+    "motos": "medios-transporte",
+    "bicicletas": "medios-transporte",
 }
 
 
