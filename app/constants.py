@@ -16,6 +16,7 @@ PLAN_PRICES_USD = {
 SUPPORTED_CURRENCIES = [
     {"code": "CUP", "label": "Peso cubano (CUP)", "symbol": "$"},
     {"code": "USD", "label": "Dólar (USD)", "symbol": "$"},
+    {"code": "EUR", "label": "Euro (EUR)", "symbol": "€"},
     {"code": "MLC", "label": "MLC", "symbol": "$"},
 ]
 
