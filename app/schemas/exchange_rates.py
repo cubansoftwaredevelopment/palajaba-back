@@ -14,3 +14,7 @@ class ExchangeRatesPublic(BaseModel):
     reference_date: str | None = None
     reference_time: str | None = None
     stale: bool = False
+    rates_available: bool = Field(
+        default=False,
+        description="False si no hay tasas reales de elTOQUE ni caché persistido.",
+    )

@@ -22,14 +22,8 @@ ELTOQUE_CURRENCY_MAP = {
     "MLC": "MLC",
 }
 
-FALLBACK_CUP_PER_UNIT: dict[str, float] = {
-    "CUP": 1.0,
-    "USD": 250.0,
-    "EUR": 275.0,
-    "MLC": 250.0,
-}
-
-_cup_per_unit_cache: dict[str, float] = dict(FALLBACK_CUP_PER_UNIT)
+_cup_per_unit_cache: dict[str, float] = {"CUP": 1.0}
+_rates_available: bool = False
 _cache_meta: dict[str, Any] = {
     "updated_at": None,
     "reference_date": None,
@@ -42,6 +36,10 @@ _refresh_task: asyncio.Task | None = None
 
 def get_cup_per_unit() -> dict[str, float]:
     return dict(_cup_per_unit_cache)
+
+
+def rates_are_available() -> bool:
+    return _rates_available
 
 
 def _format_reference_time(payload: dict[str, Any]) -> str | None:
@@ -102,11 +100,13 @@ async def _persist_rates(
     reference_date: str | None,
     reference_time: str | None,
     stale: bool,
+    rates_available: bool,
 ) -> None:
-    global _cup_per_unit_cache, _cache_meta
+    global _cup_per_unit_cache, _cache_meta, _rates_available
 
     updated_at = to_utc_naive(utc_now())
     _cup_per_unit_cache = dict(cup_per_unit)
+    _rates_available = rates_available
     _cache_meta = {
         "updated_at": updated_at,
         "reference_date": reference_date,
@@ -134,7 +134,7 @@ async def _persist_rates(
 
 
 async def _load_persisted_rates() -> bool:
-    global _cup_per_unit_cache, _cache_meta
+    global _cup_per_unit_cache, _cache_meta, _rates_available
 
     doc = await get_exchange_rates_collection().find_one({"_id": CACHE_DOCUMENT_ID})
     if not doc:
@@ -154,6 +154,7 @@ async def _load_persisted_rates() -> bool:
         cup_per_unit[code] = float(value)
 
     _cup_per_unit_cache = cup_per_unit
+    _rates_available = True
     _cache_meta = {
         "updated_at": doc.get("updated_at"),
         "reference_date": doc.get("reference_date"),
@@ -185,6 +186,7 @@ async def refresh_exchange_rates(*, force: bool = False) -> ExchangeRatesPublic:
                 reference_date=reference_date,
                 reference_time=reference_time,
                 stale=False,
+                rates_available=True,
             )
             logger.info(
                 "Tasas elTOQUE actualizadas (USD=%s, EUR=%s, MLC=%s)",
@@ -195,12 +197,8 @@ async def refresh_exchange_rates(*, force: bool = False) -> ExchangeRatesPublic:
         except Exception as exc:
             logger.warning("No se pudieron refrescar tasas de elTOQUE: %s", exc)
             if not await _load_persisted_rates():
-                await _persist_rates(
-                    FALLBACK_CUP_PER_UNIT,
-                    reference_date=None,
-                    reference_time=None,
-                    stale=True,
-                )
+                global _rates_available
+                _rates_available = False
 
         return build_exchange_rates_public()
 
@@ -208,7 +206,7 @@ async def refresh_exchange_rates(*, force: bool = False) -> ExchangeRatesPublic:
 def build_exchange_rates_public() -> ExchangeRatesPublic:
     updated_at = _cache_meta.get("updated_at")
     return ExchangeRatesPublic(
-        cup_per_unit=get_cup_per_unit(),
+        cup_per_unit=get_cup_per_unit() if _rates_available else {"CUP": 1.0},
         currencies=list(SUPPORTED_CURRENCIES),
         updated_at=updated_at,
         source="elTOQUE",
@@ -216,6 +214,7 @@ def build_exchange_rates_public() -> ExchangeRatesPublic:
         reference_date=_cache_meta.get("reference_date"),
         reference_time=_cache_meta.get("reference_time"),
         stale=bool(_cache_meta.get("stale")),
+        rates_available=_rates_available,
     )
 
 
