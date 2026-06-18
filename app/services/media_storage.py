@@ -22,6 +22,12 @@ LOCAL_UPLOADS_ROOT = Path(__file__).resolve().parents[2] / "uploads"
 ImageScope = Literal["products", "profiles"]
 CLOUDINARY_FOLDER_PREFIX = "pala-jaba/"
 
+# Incoming transformation al subir: limita tamaño y comprime antes de guardar.
+_MAX_CLOUDINARY_EDGE: dict[ImageScope, int] = {
+    "products": 1600,
+    "profiles": 800,
+}
+
 _EXTENSION_BY_TYPE = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
@@ -153,6 +159,15 @@ def _remove_image_sync(url: str | None, public_id: str | None) -> None:
         filepath.unlink(missing_ok=True)
 
 
+def _cloudinary_incoming_transformation(scope: ImageScope) -> list[dict[str, int | str]]:
+    max_edge = _MAX_CLOUDINARY_EDGE[scope]
+    return [
+        {"width": max_edge, "height": max_edge, "crop": "limit"},
+        {"quality": "auto:good"},
+        {"fetch_format": "auto"},
+    ]
+
+
 def _upload_to_cloudinary(content: bytes, *, scope: ImageScope, owner_id: str) -> StoredImage:
     folder = f"pala-jaba/{scope}"
     public_id = f"{owner_id}-{uuid.uuid4().hex[:12]}"
@@ -163,6 +178,7 @@ def _upload_to_cloudinary(content: bytes, *, scope: ImageScope, owner_id: str) -
             public_id=public_id,
             resource_type="image",
             overwrite=False,
+            transformation=_cloudinary_incoming_transformation(scope),
         )
     except Exception as exc:
         raise HTTPException(
