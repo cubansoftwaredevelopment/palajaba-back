@@ -60,6 +60,11 @@ class RegistrationPublic(BaseModel):
     is_launch_promo: bool = False
     store_slug: str | None = None
     profile_completed: bool = False
+    total_product_count: int = 0
+    published_product_count: int = 0
+    view_only_product_count: int = 0
+    unavailable_product_count: int = 0
+    marketplace_visibility_notes: list[str] = Field(default_factory=list)
 
 
 class RegistrationDeleteResult(BaseModel):

@@ -8,6 +8,10 @@ from app.constants import REJECTION_REASON_UNCONFIRMED_PAYMENT
 from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
+from app.services.admin_registration_insights import (
+    aggregate_product_counts_by_seller,
+    build_marketplace_visibility_notes,
+)
 from app.services.plans import normalize_plan_tier
 from app.services.seller_profile import is_profile_complete
 from app.utils.datetime import to_utc_naive, utc_now
@@ -24,7 +28,17 @@ def phone_display(digits: str) -> str:
     return f"{PHONE_PREFIX}{digits}"
 
 
-def document_to_public(doc: dict[str, Any]) -> RegistrationPublic:
+def document_to_public(
+    doc: dict[str, Any],
+    *,
+    product_counts: dict[str, int] | None = None,
+    marketplace_visibility_notes: list[str] | None = None,
+) -> RegistrationPublic:
+    counts = product_counts or {}
+    notes = marketplace_visibility_notes
+    if notes is None and doc.get("status") in ("approved", "expired"):
+        notes = build_marketplace_visibility_notes(doc, counts)
+
     return RegistrationPublic(
         id=str(doc["_id"]),
         transfer_id=doc["transfer_id"],
@@ -43,6 +57,42 @@ def document_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         is_launch_promo=bool(doc.get("is_launch_promo")),
         store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         profile_completed=is_profile_complete(doc),
+        total_product_count=int(counts.get("total") or 0),
+        published_product_count=int(counts.get("published") or 0),
+        view_only_product_count=int(counts.get("view_only") or 0),
+        unavailable_product_count=int(counts.get("unavailable") or 0),
+        marketplace_visibility_notes=notes or [],
+    )
+
+
+async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[RegistrationPublic]:
+    seller_ids = [str(doc["_id"]) for doc in documents]
+    counts_by_seller = await aggregate_product_counts_by_seller(seller_ids)
+    return [
+        document_to_public(
+            doc,
+            product_counts=counts_by_seller.get(str(doc["_id"])),
+            marketplace_visibility_notes=build_marketplace_visibility_notes(
+                doc,
+                counts_by_seller.get(str(doc["_id"])),
+            )
+            if doc.get("status") in ("approved", "expired")
+            else [],
+        )
+        for doc in documents
+    ]
+
+
+async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
+    seller_id = str(doc["_id"])
+    counts_by_seller = await aggregate_product_counts_by_seller([seller_id])
+    counts = counts_by_seller.get(seller_id)
+    return document_to_public(
+        doc,
+        product_counts=counts,
+        marketplace_visibility_notes=build_marketplace_visibility_notes(doc, counts)
+        if doc.get("status") in ("approved", "expired")
+        else [],
     )
 
 
@@ -163,13 +213,13 @@ async def list_registrations(status_filter: str | None = None) -> list[Registrat
 
     cursor = collection.find(query).sort("created_at", -1)
     documents = await cursor.to_list(length=500)
-    return [document_to_public(doc) for doc in documents]
+    return await _registrations_to_public(documents)
 
 
 async def get_registration(registration_id: str) -> RegistrationPublic:
     collection = get_registrations_collection()
     doc = await _get_document_or_404(collection, registration_id)
-    return document_to_public(doc)
+    return await _registration_to_public(doc)
 
 
 async def approve_registration(
@@ -221,7 +271,7 @@ async def approve_registration(
     )
 
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_public(updated)
+    return await _registration_to_public(updated)
 
 
 async def update_subscription_end(
@@ -266,7 +316,7 @@ async def update_subscription_end(
     await collection.update_one({"_id": doc["_id"]}, {"$set": updates})
 
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_public(updated)
+    return await _registration_to_public(updated)
 
 
 async def renew_registration(
@@ -328,7 +378,7 @@ async def renew_registration(
     await collection.update_one({"_id": doc["_id"]}, {"$set": updates})
 
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_public(updated)
+    return await _registration_to_public(updated)
 
 
 async def update_payment_amount(
@@ -357,7 +407,7 @@ async def update_payment_amount(
     )
 
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_public(updated)
+    return await _registration_to_public(updated)
 
 
 async def reject_registration(
@@ -391,7 +441,7 @@ async def reject_registration(
     )
 
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_public(updated)
+    return await _registration_to_public(updated)
 
 
 async def _get_document_or_404(collection, registration_id: str) -> dict[str, Any]:
