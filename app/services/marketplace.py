@@ -277,7 +277,7 @@ def _product_to_public(
         accepted_currencies=list(product.get("accepted_currencies") or []),
         offers_delivery=bool(product.get("offers_delivery")),
         is_available=bool(product.get("is_available", True)),
-        view_only=False,
+        view_only=bool(product.get("view_only")),
         pickup_required=pickup_required,
         pickup_municipality_name=pickup_municipality_name,
         pickup_notice=pickup_notice,
@@ -488,7 +488,6 @@ def _seller_store_product_query(
 ) -> dict[str, Any]:
     query: dict[str, Any] = {
         "seller_id": seller_id,
-        "view_only": {"$ne": True},
     }
     if not _seller_is_local_to_municipality(seller, province_id, municipality_id):
         query["offers_delivery"] = True
