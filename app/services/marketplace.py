@@ -490,7 +490,11 @@ def _seller_store_product_query(
         "seller_id": seller_id,
     }
     if not _seller_is_local_to_municipality(seller, province_id, municipality_id):
-        query["offers_delivery"] = True
+        # Catálogo público: productos solo vista se muestran aunque no tengan domicilio.
+        query["$or"] = [
+            {"offers_delivery": True},
+            {"view_only": True},
+        ]
     if extra:
         query.update(extra)
     return query
