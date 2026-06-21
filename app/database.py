@@ -41,6 +41,9 @@ async def connect_to_mongo():
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
     await ensure_catalog_indexes()
+    from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
+
+    await ensure_store_catalog_repairs_on_startup()
     await ensure_seller_stats_indexes()
     await ensure_category_seed()
     await ensure_product_category_seed()

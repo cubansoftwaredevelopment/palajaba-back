@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     )
     eltoque_request_timeout_seconds: float = 20.0
     exchange_rates_refresh_seconds: int = 1200
+    catalog_repair_store_slugs: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
