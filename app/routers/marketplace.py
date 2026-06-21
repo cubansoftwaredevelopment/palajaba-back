@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.schemas.marketplace import (
     JabaSyncPublic,
     JabaSyncRequest,
+    MarketplaceBusinessesPublic,
     MarketplaceCategoryProductsPublic,
     MarketplaceHomeFeedPublic,
     MarketplaceSearchPublic,
@@ -32,6 +33,33 @@ async def get_marketplace_home_feed(
             province_id.strip(),
             municipality_id.strip(),
             limit_per_category=limit_per_category,
+            municipios_adicionales=municipios_adicionales,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/businesses", response_model=MarketplaceBusinessesPublic)
+async def list_marketplace_businesses(
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+    q: str = Query(default=""),
+    category_id: str | None = Query(default=None),
+    municipios_adicionales: list[str] | None = Query(default=None),
+):
+    try:
+        return await marketplace_service.list_businesses(
+            province_id.strip(),
+            municipality_id.strip(),
+            limit=limit,
+            offset=offset,
+            query=q,
+            category_id=category_id,
             municipios_adicionales=municipios_adicionales,
         )
     except ValueError as exc:

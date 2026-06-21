@@ -8,11 +8,14 @@ from app.database import (
     get_catalog_categories_collection,
     get_catalog_products_collection,
     get_registrations_collection,
+    get_seller_profile_views_collection,
 )
 from app.schemas.marketplace import (
     JabaRemovedProductPublic,
     JabaSyncPublic,
     JabaSyncRequest,
+    MarketplaceBusinessPublic,
+    MarketplaceBusinessesPublic,
     MarketplaceCategoryProductsPublic,
     MarketplaceCategorySectionPublic,
     MarketplaceHomeFeedPublic,
@@ -24,6 +27,7 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+from app.services.admin_registration_insights import aggregate_product_counts_by_seller
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.services.categories import (
     DEFAULT_CATEGORIES,
@@ -1038,6 +1042,211 @@ async def list_store_category_products(
         limit=page_size,
         offset=safe_offset,
         has_more=loaded < total_in_category,
+    )
+
+
+def _business_pickup_info(
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+) -> tuple[bool, str | None, str | None]:
+    pickup_required, municipality_name = _product_pickup_info(
+        {"offers_delivery": seller.get("offers_delivery")},
+        seller,
+        province_id,
+        municipality_id,
+    )
+    pickup_notice = None
+    if pickup_required:
+        if municipality_name:
+            pickup_notice = (
+                f"Sin domicilio a tu municipio · Recoger en {municipality_name}"
+            )
+        else:
+            pickup_notice = "Sin domicilio a tu municipio"
+    return pickup_required, municipality_name, pickup_notice
+
+
+def _seller_matches_business_search(seller: dict[str, Any], query_text: str) -> bool:
+    normalized = query_text.strip()
+    if not normalized:
+        return True
+    pattern = normalized.casefold()
+    store_name = (seller.get("store_name") or "").casefold()
+    biography = (seller.get("biography") or "").casefold()
+    return pattern in store_name or pattern in biography
+
+
+def _seller_matches_business_category(
+    seller: dict[str, Any],
+    category_id: str | None,
+) -> bool:
+    if not category_id:
+        return True
+    canonical_id = normalize_business_category_id(category_id)
+    source_ids = set(business_category_source_ids(canonical_id))
+    for raw_id in seller.get("category_ids") or []:
+        if normalize_business_category_id(str(raw_id)) == canonical_id:
+            return True
+        if str(raw_id) in source_ids:
+            return True
+    return False
+
+
+def _business_to_public(
+    seller: dict[str, Any],
+    *,
+    popularity: int,
+    is_local: bool,
+    published_product_count: int = 0,
+    province_id: str,
+    municipality_id: str,
+) -> MarketplaceBusinessPublic:
+    category_ids = list(seller.get("category_ids") or [])
+    pickup_required, pickup_municipality_name, pickup_notice = _business_pickup_info(
+        seller,
+        province_id,
+        municipality_id,
+    )
+    return MarketplaceBusinessPublic(
+        store=_store_to_public(seller),
+        business_area=_parse_business_area(seller.get("business_area")),
+        offers_delivery=seller.get("offers_delivery"),
+        categories=[
+            CategoryPublic(id=category_id, name=business_category_name(category_id))
+            for category_id in category_ids
+        ],
+        popularity=popularity,
+        is_local=is_local,
+        published_product_count=published_product_count,
+        pickup_required=pickup_required,
+        pickup_municipality_name=pickup_municipality_name,
+        pickup_notice=pickup_notice,
+    )
+
+
+async def _aggregate_seller_popularity(seller_ids: list[str]) -> dict[str, int]:
+    if not seller_ids:
+        return {}
+
+    views_col = get_seller_profile_views_collection()
+    pipeline = [
+        {"$match": {"seller_id": {"$in": seller_ids}}},
+        {"$group": {"_id": "$seller_id", "popularity": {"$sum": 1}}},
+    ]
+    rows = await views_col.aggregate(pipeline).to_list(length=None)
+    return {str(row["_id"]): int(row.get("popularity") or 0) for row in rows}
+
+
+def _listable_product_count(stats: dict[str, int] | None) -> int:
+    """Productos disponibles en catálogo, incluyendo solo vista."""
+    if not stats:
+        return 0
+    return int(stats.get("published") or 0) + int(stats.get("view_only") or 0)
+
+
+async def list_businesses(
+    province_id: str,
+    municipality_id: str,
+    *,
+    limit: int = DEFAULT_PAGE_SIZE,
+    offset: int = 0,
+    query: str = "",
+    category_id: str | None = None,
+    municipios_adicionales: list[str] | None = None,
+) -> MarketplaceBusinessesPublic:
+    province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
+    page_size = _normalize_page_size(limit)
+    safe_offset = max(0, offset)
+
+    normalized_query = query.strip()
+    normalized_category_id = None
+    if category_id and category_id.strip():
+        normalized_category_id = normalize_business_category_id(category_id.strip())
+
+    if normalized_query and len(normalized_query) < 2 and not normalized_category_id:
+        raise ValueError("Escribe al menos 2 caracteres o elige una categoría.")
+
+    seller_by_id, _, _, _ = await _build_marketplace_seller_context(
+        province_id,
+        municipality_id,
+        municipios_adicionales=municipios_adicionales,
+    )
+    if not seller_by_id:
+        return MarketplaceBusinessesPublic(
+            province_id=province_id,
+            province_name=province_name,
+            municipality_id=municipality_id,
+            municipality_name=municipality_name,
+            query=normalized_query,
+            category_id=normalized_category_id,
+            category_name=_display_category_name(normalized_category_id)
+            if normalized_category_id
+            else None,
+            businesses=[],
+            total_businesses=0,
+            limit=page_size,
+            offset=safe_offset,
+            has_more=False,
+        )
+
+    popularity_by_seller = await _aggregate_seller_popularity(list(seller_by_id.keys()))
+    product_counts_by_seller = await aggregate_product_counts_by_seller(list(seller_by_id.keys()))
+    ranked: list[tuple[int, str, dict[str, Any], bool]] = []
+    for seller_id, seller in seller_by_id.items():
+        if not _seller_matches_business_search(seller, normalized_query):
+            continue
+        if not _seller_matches_business_category(seller, normalized_category_id):
+            continue
+
+        listable_count = _listable_product_count(product_counts_by_seller.get(seller_id))
+        if listable_count < 1:
+            continue
+
+        is_local = _seller_is_local_to_municipality(seller, province_id, municipality_id)
+        popularity = popularity_by_seller.get(seller_id, 0)
+        ranked.append(
+            (
+                -popularity,
+                seller.get("store_name", "").casefold(),
+                seller,
+                is_local,
+            )
+        )
+
+    ranked.sort(key=lambda item: (item[0], item[1]))
+    total_businesses = len(ranked)
+    page_rows = ranked[safe_offset : safe_offset + page_size]
+    businesses = [
+        _business_to_public(
+            seller,
+            popularity=-popularity,
+            is_local=is_local,
+            published_product_count=_listable_product_count(
+                product_counts_by_seller.get(str(seller["_id"]))
+            ),
+            province_id=province_id,
+            municipality_id=municipality_id,
+        )
+        for popularity, _, seller, is_local in page_rows
+    ]
+
+    loaded = safe_offset + len(businesses)
+    return MarketplaceBusinessesPublic(
+        province_id=province_id,
+        province_name=province_name,
+        municipality_id=municipality_id,
+        municipality_name=municipality_name,
+        query=normalized_query,
+        category_id=normalized_category_id,
+        category_name=_display_category_name(normalized_category_id)
+        if normalized_category_id
+        else None,
+        businesses=businesses,
+        total_businesses=total_businesses,
+        limit=page_size,
+        offset=safe_offset,
+        has_more=loaded < total_businesses,
     )
 
 

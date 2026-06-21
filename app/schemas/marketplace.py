@@ -11,6 +11,34 @@ class MarketplaceStorePublic(BaseModel):
     profile_photo_url: str | None = None
 
 
+class MarketplaceBusinessPublic(BaseModel):
+    store: MarketplaceStorePublic
+    business_area: BusinessArea | None = None
+    offers_delivery: bool | None = None
+    categories: list[CategoryPublic] = Field(default_factory=list)
+    popularity: int = 0
+    is_local: bool = False
+    published_product_count: int = 0
+    pickup_required: bool = False
+    pickup_municipality_name: str | None = None
+    pickup_notice: str | None = None
+
+
+class MarketplaceBusinessesPublic(BaseModel):
+    province_id: str
+    province_name: str
+    municipality_id: str
+    municipality_name: str
+    query: str = ""
+    category_id: str | None = None
+    category_name: str | None = None
+    businesses: list[MarketplaceBusinessPublic] = Field(default_factory=list)
+    total_businesses: int = 0
+    limit: int
+    offset: int
+    has_more: bool = False
+
+
 class MarketplaceProductPublic(BaseModel):
     id: str
     global_category_id: str
