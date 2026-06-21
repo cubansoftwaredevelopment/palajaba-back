@@ -145,7 +145,7 @@ class ViewOnlyStoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(self.no_delivery_id), product_ids)
         self.assertIn(str(self.with_delivery_id), product_ids)
 
-    async def test_remote_buyer_sees_view_only_without_delivery(self) -> None:
+    async def test_remote_buyer_sees_all_catalog_products_with_pickup_notice(self) -> None:
         catalog = await get_store_catalog(
             STORE_SLUG,
             PROVINCE_ID,
@@ -155,7 +155,15 @@ class ViewOnlyStoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn(str(self.view_only_id), product_ids)
         self.assertIn(str(self.with_delivery_id), product_ids)
-        self.assertNotIn(str(self.no_delivery_id), product_ids)
+        self.assertIn(str(self.no_delivery_id), product_ids)
+
+        pickup_product = next(
+            product
+            for section in catalog.sections
+            for product in section.products
+            if product.id == str(self.no_delivery_id)
+        )
+        self.assertTrue(pickup_product.pickup_required)
 
         view_only_product = next(
             product
@@ -176,7 +184,7 @@ class ViewOnlyStoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         product_ids = {product.id for product in page.products}
         self.assertIn(str(self.view_only_id), product_ids)
-        self.assertNotIn(str(self.no_delivery_id), product_ids)
+        self.assertIn(str(self.no_delivery_id), product_ids)
 
     async def test_marketplace_still_hides_view_only_products(self) -> None:
         seller_by_id = await _get_visible_sellers(PROVINCE_ID, REMOTE_MUNICIPALITY_ID)
@@ -246,7 +254,7 @@ class ViewOnlyStoreCatalogApiIntegrationTests(unittest.TestCase):
         }
         self.assertIn(str(self.fixtures["view_only_id"]), product_ids)
         self.assertIn(str(self.fixtures["with_delivery_id"]), product_ids)
-        self.assertNotIn(str(self.fixtures["no_delivery_id"]), product_ids)
+        self.assertIn(str(self.fixtures["no_delivery_id"]), product_ids)
 
         view_only_payload = next(
             product
@@ -271,7 +279,7 @@ class ViewOnlyStoreCatalogApiIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         product_ids = {product["id"] for product in response.json().get("products", [])}
         self.assertIn(str(self.fixtures["view_only_id"]), product_ids)
-        self.assertNotIn(str(self.fixtures["no_delivery_id"]), product_ids)
+        self.assertIn(str(self.fixtures["no_delivery_id"]), product_ids)
 
 
 if __name__ == "__main__":

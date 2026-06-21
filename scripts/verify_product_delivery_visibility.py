@@ -68,9 +68,11 @@ async def main() -> None:
             buyer_municipality,
         )
         store_visible = await products_col.find(store_query).to_list(50)
-        store_leaked = [p for p in without_delivery if p["_id"] in {v["_id"] for v in store_visible}]
-        if store_leaked:
-            print(f"    ERROR catálogo tienda: {[p['name'] for p in store_leaked]}")
+        store_pickup_only = [p for p in without_delivery if p["_id"] in {v["_id"] for v in store_visible}]
+        if store_pickup_only:
+            print(
+                f"    OK catálogo tienda: {len(store_pickup_only)} producto(s) solo recogida visibles"
+            )
         else:
             print("    OK catálogo tienda público")
 

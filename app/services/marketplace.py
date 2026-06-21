@@ -490,18 +490,66 @@ def _seller_store_product_query(
     *,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    _ = seller, province_id, municipality_id
     query: dict[str, Any] = {
         "seller_id": seller_id,
+        "is_available": True,
     }
-    if not _seller_is_local_to_municipality(seller, province_id, municipality_id):
-        # Catálogo público: productos solo vista se muestran aunque no tengan domicilio.
-        query["$or"] = [
-            {"offers_delivery": True},
-            {"view_only": True},
-        ]
     if extra:
         query.update(extra)
     return query
+
+
+async def _store_catalog_category_docs(
+    seller_id: str,
+    seller: dict[str, Any],
+    province_id: str,
+    municipality_id: str,
+) -> list[dict[str, Any]]:
+    categories_col = get_catalog_categories_collection()
+    products_col = get_catalog_products_collection()
+
+    category_docs = await categories_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
+    if category_docs:
+        known_ids = {doc["_id"] for doc in category_docs}
+        base_query = _seller_store_product_query(
+            seller_id,
+            seller,
+            province_id,
+            municipality_id,
+        )
+        orphan_category_ids = await products_col.distinct("category_id", base_query)
+        for category_oid in orphan_category_ids:
+            if category_oid is None or category_oid in known_ids:
+                continue
+            category_docs.append(
+                {
+                    "_id": category_oid,
+                    "seller_id": seller_id,
+                    "name": "Otros",
+                    "sort_order": 9999,
+                }
+            )
+        return category_docs
+
+    if await products_col.count_documents(
+        _seller_store_product_query(
+            seller_id,
+            seller,
+            province_id,
+            municipality_id,
+        )
+    ) <= 0:
+        return []
+
+    return [
+        {
+            "_id": None,
+            "seller_id": seller_id,
+            "name": "Catálogo",
+            "sort_order": 0,
+        }
+    ]
 
 
 def _search_text_filter(query_text: str) -> dict[str, Any] | None:
@@ -919,38 +967,57 @@ async def get_store_catalog(
     store_public = _store_to_public(seller)
     profile_fields = _store_profile_fields(seller)
 
-    categories_col = get_catalog_categories_collection()
     products_col = get_catalog_products_collection()
 
-    category_docs = await categories_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
+    category_docs = await _store_catalog_category_docs(
+        seller_id,
+        seller,
+        province_id,
+        municipality_id,
+    )
 
     sections: list[MarketplaceStoreLocalSectionPublic] = []
     total_products = 0
 
     for category_doc in category_docs:
-        category_id = str(category_doc["_id"])
-        category_oid = category_doc["_id"]
+        category_id = str(category_doc["_id"]) if category_doc.get("_id") is not None else "__all__"
+        category_oid = category_doc.get("_id")
+        category_filter = (
+            {}
+            if category_oid is None
+            else {"category_id": category_oid}
+        )
         total_in_category = await products_col.count_documents(
             _seller_store_product_query(
                 seller_id,
                 seller,
                 province_id,
                 municipality_id,
-                extra={"category_id": category_oid},
+                extra=category_filter or None,
             )
         )
         if total_in_category <= 0:
             continue
 
-        product_docs = await _list_store_local_product_docs(
-            seller_id,
-            seller,
-            province_id,
-            municipality_id,
-            category_oid,
-            limit=page_size,
-            offset=0,
-        )
+        if category_oid is None:
+            product_docs = await products_col.find(
+                _seller_store_product_query(
+                    seller_id,
+                    seller,
+                    province_id,
+                    municipality_id,
+                )
+            ).sort(MARKETPLACE_PRODUCT_SORT).limit(page_size).to_list(length=page_size)
+        else:
+            product_docs = await _list_store_local_product_docs(
+                seller_id,
+                seller,
+                province_id,
+                municipality_id,
+                category_oid,
+                limit=page_size,
+                offset=0,
+            )
         products = [
             item
             for doc in product_docs

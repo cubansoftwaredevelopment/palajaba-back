@@ -17,6 +17,10 @@ PRODUCT_PURCHASABLE_NO_DELIVERY = "TEST comprable sin domicilio"
 PRODUCT_PURCHASABLE_WITH_DELIVERY = "TEST comprable con domicilio"
 
 
+def _unique_phone(seed: ObjectId) -> str:
+    return f"{int(str(seed), 16) % 100000000:08d}"
+
+
 def seller_document(seller_id: ObjectId | None = None) -> dict:
     now = to_utc_naive(utc_now())
     oid = seller_id or ObjectId()
@@ -25,7 +29,8 @@ def seller_document(seller_id: ObjectId | None = None) -> dict:
         "status": "approved",
         "store_name": STORE_NAME,
         "store_slug": STORE_SLUG,
-        "phone": "58888888",
+        "transfer_id": f"TEST-VIEWONLY-{MARKER}",
+        "phone": _unique_phone(oid),
         "profile_photo_url": "https://example.com/photo.jpg",
         "category_ids": ["food"],
         "offers_delivery": True,

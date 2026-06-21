@@ -151,12 +151,13 @@ async def _test_products_for_buyer(
                 errors.append(
                     f"{store_name} catálogo en {municipality_label}: «{TEST_WITH_DELIVERY}» debe verse"
                 )
-            if catalog_no:
+            if not catalog_no:
                 errors.append(
-                    f"{store_name} catálogo en {municipality_label}: «{TEST_WITHOUT_DELIVERY}» NO debe verse"
+                    f"{store_name} catálogo en {municipality_label}: «{TEST_WITHOUT_DELIVERY}» "
+                    "debe verse (solo recogida, con aviso en UI)"
                 )
-            if market_yes and not market_no and catalog_yes and not catalog_no:
-                print("    OK envío: solo TEST con domicilio visible")
+            if market_yes and not market_no and catalog_yes and catalog_no:
+                print("    OK envío: marketplace solo con domicilio; catálogo muestra ambos")
 
     return errors
 

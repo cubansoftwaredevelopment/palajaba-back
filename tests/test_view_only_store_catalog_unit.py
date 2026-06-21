@@ -12,7 +12,6 @@ from tests.helpers import (
     PROVINCE_ID,
     REMOTE_MUNICIPALITY_ID,
     SELLER_MUNICIPALITY_ID,
-    STORE_SLUG,
     product_document,
     seller_document,
 )
@@ -23,16 +22,19 @@ class SellerStoreProductQueryTests(unittest.TestCase):
         self.seller = seller_document()
         self.seller_id = str(self.seller["_id"])
 
-    def test_local_buyer_query_does_not_filter_view_only_or_delivery(self) -> None:
+    def test_local_buyer_query_filters_available_products(self) -> None:
         query = _seller_store_product_query(
             self.seller_id,
             self.seller,
             PROVINCE_ID,
             SELLER_MUNICIPALITY_ID,
         )
-        self.assertEqual(query, {"seller_id": self.seller_id})
+        self.assertEqual(
+            query,
+            {"seller_id": self.seller_id, "is_available": True},
+        )
 
-    def test_remote_buyer_query_allows_delivery_or_view_only(self) -> None:
+    def test_remote_buyer_query_matches_local_and_includes_pickup_only(self) -> None:
         query = _seller_store_product_query(
             self.seller_id,
             self.seller,
@@ -40,12 +42,8 @@ class SellerStoreProductQueryTests(unittest.TestCase):
             REMOTE_MUNICIPALITY_ID,
         )
         self.assertEqual(query["seller_id"], self.seller_id)
-        self.assertEqual(
-            query["$or"],
-            [{"offers_delivery": True}, {"view_only": True}],
-        )
-        self.assertNotIn("view_only", query)
-        self.assertNotIn("offers_delivery", query)
+        self.assertEqual(query["is_available"], True)
+        self.assertNotIn("$or", query)
 
     def test_remote_buyer_query_keeps_category_filter(self) -> None:
         category_id = ObjectId()
@@ -57,7 +55,7 @@ class SellerStoreProductQueryTests(unittest.TestCase):
             extra={"category_id": category_id},
         )
         self.assertEqual(query["category_id"], category_id)
-        self.assertIn("$or", query)
+        self.assertNotIn("$or", query)
 
 
 class MarketplaceProductQueryTests(unittest.TestCase):
