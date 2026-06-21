@@ -14,12 +14,14 @@ from app.schemas.catalog import (
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import CategoryPublic, SellerPhoneUpdate, SellerProfileUpdate
+from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import notifications as notification_service
 from app.services import orders as orders_service
+from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
 from app.services import seller_stats as seller_stats_service
 from app.services.seller_stats import Granularity
@@ -75,6 +77,17 @@ async def update_seller_phone(
     seller_payload: dict = Depends(require_seller),
 ):
     return await profile_service.update_seller_phone(
+        seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.post("/me/feedback", response_model=SellerFeedbackSubmitResult, status_code=201)
+async def submit_seller_feedback(
+    payload: SellerFeedbackCreate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await seller_feedback_service.submit_seller_feedback(
         seller_payload["seller_id"],
         payload,
     )

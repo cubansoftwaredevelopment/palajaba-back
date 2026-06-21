@@ -13,6 +13,11 @@ from app.schemas.notifications import (
 from app.schemas.admin_stats import AdminBusinessesByProvince, AdminStatsSummary
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
+from app.schemas.seller_feedback import (
+    AdminFeedbackDeleteResult,
+    AdminFeedbackPublic,
+    AdminFeedbackUnreadCount,
+)
 from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
@@ -20,6 +25,7 @@ from app.services import admin_stats as admin_stats_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
+from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -208,6 +214,35 @@ async def update_payment(
         registration_id,
         payment_amount_cup,
     )
+
+
+@router.get("/feedback", response_model=list[AdminFeedbackPublic])
+async def list_feedback(
+    filter: Literal["all", "unread", "complaint", "suggestion"] = Query(default="all"),
+    _: dict = Depends(require_admin),
+):
+    return await seller_feedback_service.list_admin_feedback(feedback_filter=filter)
+
+
+@router.get("/feedback/unread-count", response_model=AdminFeedbackUnreadCount)
+async def feedback_unread_count(_: dict = Depends(require_admin)):
+    return await seller_feedback_service.get_admin_feedback_unread_count()
+
+
+@router.patch("/feedback/{feedback_id}/read", response_model=AdminFeedbackPublic)
+async def mark_feedback_read(
+    feedback_id: str,
+    _: dict = Depends(require_admin),
+):
+    return await seller_feedback_service.mark_admin_feedback_read(feedback_id)
+
+
+@router.delete("/feedback/{feedback_id}", response_model=AdminFeedbackDeleteResult)
+async def delete_feedback(
+    feedback_id: str,
+    _: dict = Depends(require_admin),
+):
+    return await seller_feedback_service.delete_admin_feedback(feedback_id)
 
 
 @router.get("/notifications", response_model=list[AdminNotificationBroadcastPublic])
