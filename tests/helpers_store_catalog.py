@@ -25,6 +25,7 @@ PRODUCT_VIEW_ONLY = "SC view only"
 PRODUCT_PICKUP_ONLY = "SC pickup only"
 PRODUCT_WITH_DELIVERY = "SC with delivery"
 PRODUCT_UNAVAILABLE = "SC unavailable"
+PRODUCT_VIEW_ONLY_UNAVAILABLE = "SC view only unavailable"
 PRODUCT_ORPHAN = "SC orphan category"
 PRODUCT_NO_OFFERS_FIELD = "SC missing offers_delivery field"
 

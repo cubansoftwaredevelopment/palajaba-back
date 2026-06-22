@@ -34,6 +34,7 @@ from tests.helpers_store_catalog import (
     PRODUCT_PICKUP_ONLY,
     PRODUCT_UNAVAILABLE,
     PRODUCT_VIEW_ONLY,
+    PRODUCT_VIEW_ONLY_UNAVAILABLE,
     PRODUCT_WITH_DELIVERY,
     STORE_NAME,
     STORE_NAME_NO_CATEGORIES,
@@ -60,6 +61,7 @@ class StoreCatalogSeed:
     pickup_only_id: ObjectId
     with_delivery_id: ObjectId
     unavailable_id: ObjectId
+    view_only_unavailable_id: ObjectId
     pickup_only_seller_id: str
     pickup_only_category_id: ObjectId
     pickup_only_product_id: ObjectId
@@ -92,6 +94,7 @@ async def seed_store_catalog_test_data() -> StoreCatalogSeed:
     seed.pickup_only_id = ObjectId()
     seed.with_delivery_id = ObjectId()
     seed.unavailable_id = ObjectId()
+    seed.view_only_unavailable_id = ObjectId()
 
     registrations = get_registrations_collection()
     categories = get_catalog_categories_collection()
@@ -107,6 +110,7 @@ async def seed_store_catalog_test_data() -> StoreCatalogSeed:
         (seed.pickup_only_id, PRODUCT_PICKUP_ONLY, False, False, True),
         (seed.with_delivery_id, PRODUCT_WITH_DELIVERY, False, True, True),
         (seed.unavailable_id, PRODUCT_UNAVAILABLE, False, True, False),
+        (seed.view_only_unavailable_id, PRODUCT_VIEW_ONLY_UNAVAILABLE, True, False, False),
     ]
     for product_id, name, view_only, offers_delivery, is_available in product_specs:
         await products.insert_one(
@@ -244,7 +248,7 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         await cleanup_store_catalog_test_data()
         await close_mongo_connection()
 
-    async def test_local_buyer_sees_all_available_products(self) -> None:
+    async def test_local_buyer_sees_available_and_sold_out_products(self) -> None:
         catalog = await get_store_catalog(
             STORE_SLUG,
             PROVINCE_ID,
@@ -254,7 +258,14 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(str(self.seed.view_only_id), product_ids)
         self.assertIn(str(self.seed.pickup_only_id), product_ids)
         self.assertIn(str(self.seed.with_delivery_id), product_ids)
-        self.assertNotIn(str(self.seed.unavailable_id), product_ids)
+        self.assertIn(str(self.seed.unavailable_id), product_ids)
+        unavailable = next(
+            product
+            for section in catalog.sections
+            for product in section.products
+            if product.id == str(self.seed.unavailable_id)
+        )
+        self.assertFalse(unavailable.is_available)
 
     async def test_remote_buyer_sees_pickup_only_products(self) -> None:
         catalog = await get_store_catalog(
@@ -305,14 +316,36 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(delivery_product.pickup_required)
 
-    async def test_unavailable_products_are_excluded(self) -> None:
+    async def test_unavailable_products_appear_as_sold_out(self) -> None:
         catalog = await get_store_catalog(
             STORE_SLUG,
             PROVINCE_ID,
             SELLER_MUNICIPALITY_ID,
         )
         product_ids = _catalog_product_ids(catalog)
-        self.assertNotIn(str(self.seed.unavailable_id), product_ids)
+        self.assertIn(str(self.seed.unavailable_id), product_ids)
+        unavailable = next(
+            product
+            for section in catalog.sections
+            for product in section.products
+            if product.id == str(self.seed.unavailable_id)
+        )
+        self.assertFalse(unavailable.is_available)
+
+    async def test_view_only_unavailable_product_appears_in_catalog(self) -> None:
+        catalog = await get_store_catalog(
+            STORE_SLUG,
+            PROVINCE_ID,
+            REMOTE_MUNICIPALITY_ID,
+        )
+        product = next(
+            item
+            for section in catalog.sections
+            for item in section.products
+            if item.id == str(self.seed.view_only_unavailable_id)
+        )
+        self.assertTrue(product.view_only)
+        self.assertFalse(product.is_available)
 
     async def test_pickup_only_store_visible_for_remote_buyer(self) -> None:
         catalog = await get_store_catalog(
@@ -369,9 +402,13 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         product_ids = {product.id for product in page.products}
         self.assertIn(str(self.seed.pickup_only_id), product_ids)
-        self.assertNotIn(str(self.seed.unavailable_id), product_ids)
+        self.assertIn(str(self.seed.unavailable_id), product_ids)
+        unavailable = next(
+            product for product in page.products if product.id == str(self.seed.unavailable_id)
+        )
+        self.assertFalse(unavailable.is_available)
 
-    async def test_list_store_category_products_reports_total_without_unavailable(self) -> None:
+    async def test_list_store_category_products_reports_total_including_unavailable(self) -> None:
         page = await list_store_category_products(
             STORE_SLUG,
             PROVINCE_ID,
@@ -380,7 +417,9 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
             limit=20,
             offset=0,
         )
-        self.assertGreaterEqual(page.total_products, 4)
+        self.assertGreaterEqual(page.total_products, 5)
+        product_ids = {product.id for product in page.products}
+        self.assertIn(str(self.seed.unavailable_id), product_ids)
 
     async def test_marketplace_still_hides_pickup_only_for_remote(self) -> None:
         seller_by_id = await _get_visible_sellers(PROVINCE_ID, REMOTE_MUNICIPALITY_ID)
@@ -393,6 +432,20 @@ class StoreCatalogIntegrationTests(unittest.IsolatedAsyncioTestCase):
         products = get_catalog_products_collection()
         self.assertEqual(
             await products.count_documents({**query, "_id": self.seed.pickup_only_id}),
+            0,
+        )
+
+    async def test_marketplace_still_hides_unavailable_products(self) -> None:
+        seller_by_id = await _get_visible_sellers(PROVINCE_ID, REMOTE_MUNICIPALITY_ID)
+        local_ids, delivery_ids = _split_sellers_by_locality(
+            seller_by_id,
+            PROVINCE_ID,
+            REMOTE_MUNICIPALITY_ID,
+        )
+        query = _build_marketplace_products_query(local_ids, delivery_ids)
+        products = get_catalog_products_collection()
+        self.assertEqual(
+            await products.count_documents({**query, "_id": self.seed.unavailable_id}),
             0,
         )
 
@@ -532,7 +585,14 @@ class StoreCatalogApiIntegrationTests(unittest.TestCase):
             for product in section.get("products", [])
         }
         self.assertIn(str(self.seed.pickup_only_id), product_ids)
-        self.assertNotIn(str(self.seed.unavailable_id), product_ids)
+        self.assertIn(str(self.seed.unavailable_id), product_ids)
+        unavailable = next(
+            product
+            for section in response.json().get("sections", [])
+            for product in section.get("products", [])
+            if product["id"] == str(self.seed.unavailable_id)
+        )
+        self.assertFalse(unavailable["is_available"])
 
     def test_http_catalog_pickup_only_store_not_empty(self) -> None:
         with TestClient(app) as client:

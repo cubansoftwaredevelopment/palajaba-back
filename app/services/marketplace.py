@@ -490,11 +490,9 @@ def _seller_store_product_query(
     *,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Catálogo público de una tienda: incluye agotados; el marketplace usa otra query."""
     _ = seller, province_id, municipality_id
-    query: dict[str, Any] = {
-        "seller_id": seller_id,
-        "is_available": True,
-    }
+    query: dict[str, Any] = {"seller_id": seller_id}
     if extra:
         query.update(extra)
     return query

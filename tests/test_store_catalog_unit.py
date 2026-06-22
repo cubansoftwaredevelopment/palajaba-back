@@ -20,17 +20,15 @@ class SellerStoreProductQueryTests(unittest.TestCase):
         self.seller = seller_document()
         self.seller_id = str(self.seller["_id"])
 
-    def test_local_buyer_query_filters_available_products(self) -> None:
+    def test_local_buyer_query_includes_all_seller_products(self) -> None:
         query = _seller_store_product_query(
             self.seller_id,
             self.seller,
             PROVINCE_ID,
             SELLER_MUNICIPALITY_ID,
         )
-        self.assertEqual(
-            query,
-            {"seller_id": self.seller_id, "is_available": True},
-        )
+        self.assertEqual(query, {"seller_id": self.seller_id})
+        self.assertNotIn("is_available", query)
 
     def test_remote_buyer_query_matches_local_buyer(self) -> None:
         local = _seller_store_product_query(
@@ -68,7 +66,7 @@ class SellerStoreProductQueryTests(unittest.TestCase):
             extra={"category_id": category_id},
         )
         self.assertEqual(query["category_id"], category_id)
-        self.assertEqual(query["is_available"], True)
+        self.assertNotIn("is_available", query)
 
     def test_query_merges_extra_filters(self) -> None:
         query = _seller_store_product_query(
@@ -90,17 +88,17 @@ class SellerStoreProductQueryTests(unittest.TestCase):
             PROVINCE_ID,
             REMOTE_MUNICIPALITY_ID,
         )
-        self.assertEqual(query["is_available"], True)
+        self.assertNotIn("is_available", query)
         self.assertNotIn("$or", query)
 
-    def test_query_without_extra_has_only_base_keys(self) -> None:
+    def test_query_without_extra_has_only_seller_id(self) -> None:
         query = _seller_store_product_query(
             self.seller_id,
             self.seller,
             PROVINCE_ID,
             SELLER_MUNICIPALITY_ID,
         )
-        self.assertEqual(set(query.keys()), {"seller_id", "is_available"})
+        self.assertEqual(set(query.keys()), {"seller_id"})
 
 
 class ProductPickupInfoTests(unittest.TestCase):
