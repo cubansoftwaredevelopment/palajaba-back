@@ -91,8 +91,8 @@ async def approve_registration(
     registration_id: str,
     payment_amount_cup: int = Query(
         ...,
-        gt=0,
-        description="Monto real transferido en CUP",
+        ge=0,
+        description="Monto real transferido en CUP (0 = acceso gratuito)",
     ),
     subscription_ends_at: str | None = Query(
         default=None,
@@ -175,8 +175,8 @@ async def renew_registration(
     registration_id: str,
     payment_amount_cup: int = Query(
         ...,
-        gt=0,
-        description="Monto transferido en CUP",
+        ge=0,
+        description="Monto transferido en CUP (0 = acceso gratuito)",
     ),
     subscription_ends_at: str | None = Query(
         default=None,
@@ -205,8 +205,8 @@ async def update_payment(
     registration_id: str,
     payment_amount_cup: int = Query(
         ...,
-        gt=0,
-        description="Monto transferido en CUP",
+        ge=0,
+        description="Monto transferido en CUP (0 = acceso gratuito)",
     ),
     _: dict = Depends(require_admin),
 ):

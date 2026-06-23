@@ -249,10 +249,10 @@ async def approve_registration(
             detail="La fecha de fin de suscripción debe ser futura.",
         )
 
-    if payment_amount_cup < 1:
+    if payment_amount_cup < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El monto pagado debe ser mayor que cero.",
+            detail="El monto pagado no puede ser negativo.",
         )
 
     await collection.update_one(
@@ -350,10 +350,10 @@ async def renew_registration(
             detail="La fecha de fin de suscripción debe ser futura.",
         )
 
-    if payment_amount_cup < 1:
+    if payment_amount_cup < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El monto pagado debe ser mayor que cero.",
+            detail="El monto pagado no puede ser negativo.",
         )
 
     updates: dict[str, Any] = {
@@ -394,10 +394,10 @@ async def update_payment_amount(
             detail="Solo se puede registrar el pago de tiendas aprobadas.",
         )
 
-    if payment_amount_cup < 1:
+    if payment_amount_cup < 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El monto pagado debe ser mayor que cero.",
+            detail="El monto pagado no puede ser negativo.",
         )
 
     now = to_utc_naive(utc_now())
