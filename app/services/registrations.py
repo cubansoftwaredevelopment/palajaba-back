@@ -12,7 +12,8 @@ from app.services.admin_registration_insights import (
     aggregate_product_counts_by_seller,
     build_marketplace_visibility_notes,
 )
-from app.services.plans import normalize_plan_tier
+from app.services.plans import normalize_billing_period, normalize_plan_tier
+from app.services.discount_codes import validate_discount_code
 from app.services.seller_profile import is_profile_complete
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
@@ -26,6 +27,14 @@ def normalize_transfer_id(value: str) -> str:
 
 def phone_display(digits: str) -> str:
     return f"{PHONE_PREFIX}{digits}"
+
+
+def _legacy_timestamp(doc: dict[str, Any], *fields: str) -> datetime:
+    """Solo para registros de prueba locales sin created_at/updated_at."""
+    for field in fields:
+        if field in doc:
+            return to_utc_naive(doc[field])
+    return to_utc_naive(utc_now())
 
 
 def document_to_public(
@@ -44,16 +53,31 @@ def document_to_public(
         transfer_id=doc["transfer_id"],
         store_name=doc["store_name"],
         phone=phone_display(doc["phone"]),
-        billing_period=doc["billing_period"],
+        billing_period=(
+            normalize_billing_period(doc["billing_period"])
+            if "billing_period" in doc
+            else "monthly"
+        ),
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
         status=doc["status"],
         subscription_starts_at=doc.get("subscription_starts_at"),
         subscription_ends_at=doc.get("subscription_ends_at"),
         rejection_reason=doc.get("rejection_reason"),
-        created_at=doc["created_at"],
-        updated_at=doc["updated_at"],
+        created_at=(
+            doc["created_at"]
+            if "created_at" in doc
+            else _legacy_timestamp(doc, "approved_at", "subscription_starts_at")
+        ),
+        updated_at=(
+            doc["updated_at"]
+            if "updated_at" in doc
+            else _legacy_timestamp(doc, "created_at", "approved_at", "subscription_starts_at")
+        ),
         approved_at=doc.get("approved_at"),
         payment_amount_cup=doc.get("payment_amount_cup"),
+        discount_code=doc.get("discount_code"),
+        discount_percent=doc.get("discount_percent"),
+        expected_payment_cup=doc.get("expected_payment_cup"),
         is_launch_promo=bool(doc.get("is_launch_promo")),
         store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         profile_completed=is_profile_complete(doc),
@@ -110,6 +134,7 @@ async def create_registration(
     password: str,
     billing_period: str,
     plan_tier: str = "standard",
+    discount_code: str | None = None,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     normalized_transfer_id = normalize_transfer_id(transfer_id)
@@ -156,6 +181,9 @@ async def create_registration(
         "updated_at": now,
         "approved_at": None,
         "payment_amount_cup": None,
+        "discount_code": None,
+        "discount_percent": None,
+        "expected_payment_cup": None,
         "profile_photo_url": None,
         "business_location": None,
         "biography": None,
@@ -165,6 +193,16 @@ async def create_registration(
         "offers_delivery": None,
         "profile_completed_at": None,
     }
+
+    if discount_code:
+        validation = await validate_discount_code(
+            discount_code,
+            plan_tier=plan_tier,
+            billing_period=billing_period,
+        )
+        document["discount_code"] = validation.code
+        document["discount_percent"] = validation.percent_off
+        document["expected_payment_cup"] = validation.discounted_amount_cup
 
     result = await collection.insert_one(document)
     document["_id"] = result.inserted_id
@@ -239,7 +277,12 @@ async def approve_registration(
     now = to_utc_naive(utc_now())
     ends_at = subscription_ends_at
     if ends_at is None:
-        ends_at = default_subscription_end(now, doc["billing_period"])
+        ends_at = default_subscription_end(
+            now,
+            normalize_billing_period(doc["billing_period"])
+            if "billing_period" in doc
+            else "monthly",
+        )
     else:
         ends_at = to_utc_naive(ends_at)
 
@@ -337,7 +380,11 @@ async def renew_registration(
         )
 
     now = to_utc_naive(utc_now())
-    billing = billing_period or doc["billing_period"]
+    billing = billing_period or (
+        normalize_billing_period(doc["billing_period"])
+        if "billing_period" in doc
+        else "monthly"
+    )
     ends_at = subscription_ends_at
     if ends_at is None:
         ends_at = default_subscription_end(now, billing)

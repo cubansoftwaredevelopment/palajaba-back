@@ -4,6 +4,12 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query
 
 from app.dependencies import require_admin
+from app.schemas.discount_code import (
+    DiscountCodeCreate,
+    DiscountCodeDeleteResult,
+    DiscountCodePublic,
+    DiscountCodeUpdate,
+)
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse
 from app.schemas.notifications import (
     AdminNotificationBroadcastPublic,
@@ -22,6 +28,7 @@ from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import admin_stats as admin_stats_service
+from app.services import discount_codes as discount_codes_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
@@ -214,6 +221,40 @@ async def update_payment(
         registration_id,
         payment_amount_cup,
     )
+
+
+@router.get("/discount-codes", response_model=list[DiscountCodePublic])
+async def list_discount_codes(_: dict = Depends(require_admin)):
+    return await discount_codes_service.list_discount_codes()
+
+
+@router.post("/discount-codes", response_model=DiscountCodePublic, status_code=201)
+async def create_discount_code(
+    payload: DiscountCodeCreate,
+    _: dict = Depends(require_admin),
+):
+    return await discount_codes_service.create_discount_code(
+        code=payload.code,
+        percent_off=payload.percent_off,
+        is_active=payload.is_active,
+    )
+
+
+@router.patch("/discount-codes/{discount_code_id}", response_model=DiscountCodePublic)
+async def update_discount_code(
+    discount_code_id: str,
+    payload: DiscountCodeUpdate,
+    _: dict = Depends(require_admin),
+):
+    return await discount_codes_service.update_discount_code(discount_code_id, payload)
+
+
+@router.delete("/discount-codes/{discount_code_id}", response_model=DiscountCodeDeleteResult)
+async def delete_discount_code(
+    discount_code_id: str,
+    _: dict = Depends(require_admin),
+):
+    return await discount_codes_service.delete_discount_code(discount_code_id)
 
 
 @router.get("/feedback", response_model=list[AdminFeedbackPublic])

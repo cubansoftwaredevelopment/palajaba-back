@@ -16,6 +16,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=128)
     billing_period: BillingPeriod
     plan_tier: PlanTier = "standard"
+    discount_code: str | None = None
 
     @field_validator("transfer_id", "store_name")
     @classmethod
@@ -34,6 +35,16 @@ class RegisterRequest(BaseModel):
         if len(digits) != 8:
             raise ValueError("El teléfono debe tener 8 dígitos.")
         return digits
+
+    @field_validator("discount_code")
+    @classmethod
+    def normalize_discount_code(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            return None
+        return stripped
 
 
 class RegisterResponse(BaseModel):
@@ -57,6 +68,9 @@ class RegistrationPublic(BaseModel):
     updated_at: UtcDateTime
     approved_at: UtcDateTime | None = None
     payment_amount_cup: int | None = None
+    discount_code: str | None = None
+    discount_percent: int | None = None
+    expected_payment_cup: int | None = None
     is_launch_promo: bool = False
     store_slug: str | None = None
     profile_completed: bool = False
