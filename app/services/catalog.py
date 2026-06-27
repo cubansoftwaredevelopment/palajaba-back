@@ -16,11 +16,18 @@ from app.services.categories import business_category_name, resolve_product_glob
 from app.services.product_categories import map_local_category_name_to_business_category
 from app.schemas.catalog import (
     CatalogCategoryCreate,
+    CatalogCategoryProductSortUpdate,
     CatalogCategoryPublic,
     CatalogCategoryReorder,
     CatalogProductPublic,
+    CatalogProductReorder,
     CatalogSummaryPublic,
     CurrencyPublic,
+)
+from app.services.catalog_product_sort import (
+    DEFAULT_PRODUCT_SORT_MODE,
+    normalize_product_sort_mode,
+    sort_product_docs,
 )
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.utils.datetime import to_utc_naive, utc_now
@@ -120,6 +127,8 @@ def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
         offers_delivery=bool(doc.get("offers_delivery")),
         view_only=bool(doc.get("view_only")),
         is_available=bool(doc.get("is_available", True)),
+        popularity=int(doc.get("popularity") or 0),
+        sort_order=int(doc.get("sort_order") or 0),
     )
 
 
@@ -128,6 +137,7 @@ def document_to_category(doc: dict[str, Any], products: list[CatalogProductPubli
         id=str(doc["_id"]),
         name=doc["name"],
         product_count=int(doc.get("product_count") or 0),
+        product_sort_mode=normalize_product_sort_mode(doc.get("product_sort_mode")),
         products=products or [],
     )
 
@@ -283,17 +293,19 @@ async def get_catalog_summary(seller_id: str) -> CatalogSummaryPublic:
     products_col = get_catalog_products_collection()
 
     category_docs = await categories_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
-    product_docs = await products_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
+    product_docs = await products_col.find({"seller_id": seller_id}).to_list(length=None)
 
-    products_by_category: dict[str, list[CatalogProductPublic]] = {}
+    products_by_category: dict[str, list[dict[str, Any]]] = {}
     for doc in product_docs:
         category_key = str(doc.get("category_id") or "")
-        products_by_category.setdefault(category_key, []).append(document_to_product(doc))
+        products_by_category.setdefault(category_key, []).append(doc)
 
     categories: list[CatalogCategoryPublic] = []
     for category_doc in category_docs:
         category_id = str(category_doc["_id"])
-        products = products_by_category.get(category_id, [])
+        mode = normalize_product_sort_mode(category_doc.get("product_sort_mode"))
+        raw_products = sort_product_docs(products_by_category.get(category_id, []), mode)
+        products = [document_to_product(doc) for doc in raw_products]
         categories.append(
             document_to_category(
                 {**category_doc, "product_count": len(products)},
@@ -328,6 +340,7 @@ async def create_catalog_category(seller_id: str, payload: CatalogCategoryCreate
         "name": name,
         "product_count": 0,
         "sort_order": existing_count,
+        "product_sort_mode": DEFAULT_PRODUCT_SORT_MODE,
         "created_at": now,
         "updated_at": now,
     }
@@ -398,6 +411,130 @@ async def reorder_catalog_categories(
             {"$set": {"sort_order": index, "updated_at": now}},
         )
 
+    return await get_catalog_summary(seller_id)
+
+
+async def _apply_product_sort_order(
+    seller_id: str,
+    category_oid: ObjectId,
+    ordered_product_ids: list[str],
+) -> None:
+    products_col = get_catalog_products_collection()
+    now = to_utc_naive(utc_now())
+    for index, product_id in enumerate(ordered_product_ids):
+        try:
+            product_oid = ObjectId(product_id)
+        except InvalidId as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista contiene productos inválidos.",
+            ) from exc
+        result = await products_col.update_one(
+            {
+                "_id": product_oid,
+                "seller_id": seller_id,
+                "category_id": category_oid,
+            },
+            {"$set": {"sort_order": index, "updated_at": now}},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista contiene productos inválidos o duplicados.",
+            )
+
+
+async def _snapshot_category_product_order(
+    seller_id: str,
+    category_doc: dict[str, Any],
+) -> None:
+    products_col = get_catalog_products_collection()
+    category_oid = category_doc["_id"]
+    mode = normalize_product_sort_mode(category_doc.get("product_sort_mode"))
+    product_docs = await products_col.find(
+        {"seller_id": seller_id, "category_id": category_oid},
+    ).to_list(length=None)
+    if not product_docs:
+        return
+    ordered_ids = [str(doc["_id"]) for doc in sort_product_docs(product_docs, mode)]
+    await _apply_product_sort_order(seller_id, category_oid, ordered_ids)
+
+
+async def update_category_product_sort_mode(
+    seller_id: str,
+    category_id: str,
+    payload: CatalogCategoryProductSortUpdate,
+) -> CatalogSummaryPublic:
+    category_oid = _parse_category_id(category_id)
+    categories_col = get_catalog_categories_collection()
+    category_doc = await categories_col.find_one({"_id": category_oid, "seller_id": seller_id})
+    if not category_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada.",
+        )
+
+    current_mode = normalize_product_sort_mode(category_doc.get("product_sort_mode"))
+    next_mode = normalize_product_sort_mode(payload.product_sort_mode)
+    now = to_utc_naive(utc_now())
+
+    if next_mode == "manual" and current_mode != "manual":
+        await _snapshot_category_product_order(seller_id, category_doc)
+
+    await categories_col.update_one(
+        {"_id": category_oid, "seller_id": seller_id},
+        {"$set": {"product_sort_mode": next_mode, "updated_at": now}},
+    )
+
+    return await get_catalog_summary(seller_id)
+
+
+async def reorder_catalog_products(
+    seller_id: str,
+    category_id: str,
+    payload: CatalogProductReorder,
+) -> CatalogSummaryPublic:
+    category_oid = _parse_category_id(category_id)
+    categories_col = get_catalog_categories_collection()
+    category_doc = await categories_col.find_one({"_id": category_oid, "seller_id": seller_id})
+    if not category_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Categoría no encontrada.",
+        )
+
+    mode = normalize_product_sort_mode(category_doc.get("product_sort_mode"))
+    if mode != "manual":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Solo puedes reordenar productos cuando el modo es manual.",
+        )
+
+    products_col = get_catalog_products_collection()
+    existing_docs = await products_col.find(
+        {"seller_id": seller_id, "category_id": category_oid},
+    ).to_list(length=None)
+    existing_ids = {str(doc["_id"]) for doc in existing_docs}
+
+    if not existing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esta categoría no tiene productos para ordenar.",
+        )
+
+    if len(payload.product_ids) != len(existing_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista debe incluir todos los productos de la categoría.",
+        )
+
+    if set(payload.product_ids) != existing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista contiene productos inválidos o duplicados.",
+        )
+
+    await _apply_product_sort_order(seller_id, category_oid, payload.product_ids)
     return await get_catalog_summary(seller_id)
 
 

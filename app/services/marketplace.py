@@ -38,6 +38,7 @@ from app.services.categories import (
 )
 from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
+from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
 from app.services.seller_profile import is_profile_complete
 from app.services.subscriptions import is_subscription_active
 from app.utils.phone import phone_display
@@ -927,22 +928,32 @@ async def _list_store_local_product_docs(
     seller: dict[str, Any],
     province_id: str,
     municipality_id: str,
-    category_oid: ObjectId,
+    category_doc: dict[str, Any] | None,
     *,
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
+    category_oid = category_doc["_id"] if category_doc else None
     query = _seller_store_product_query(
         seller_id,
         seller,
         province_id,
         municipality_id,
-        extra={"category_id": category_oid},
+        extra={"category_id": category_oid} if category_oid is not None else None,
     )
+    sort_spec = mongo_sort_for_product_mode(
+        category_doc.get("product_sort_mode") if category_doc else "popularity",
+    )
+    mode = category_doc.get("product_sort_mode") if category_doc else "popularity"
+    if sort_spec is None:
+        product_docs = await products_col.find(query).to_list(length=None)
+        sorted_docs = sort_product_docs(product_docs, mode)
+        return sorted_docs[offset : offset + limit]
+
     cursor = (
         products_col.find(query)
-        .sort(MARKETPLACE_PRODUCT_SORT)
+        .sort(sort_spec)
         .skip(offset)
         .limit(limit)
     )
@@ -1012,7 +1023,7 @@ async def get_store_catalog(
                 seller,
                 province_id,
                 municipality_id,
-                category_oid,
+                category_doc,
                 limit=page_size,
                 offset=0,
             )
@@ -1084,7 +1095,7 @@ async def list_store_category_products(
         seller,
         province_id,
         municipality_id,
-        category_oid,
+        category_doc,
         limit=page_size,
         offset=safe_offset,
     )

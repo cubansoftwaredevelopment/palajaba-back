@@ -5,9 +5,11 @@ from app.dependencies import require_seller
 from app.schemas.auth import SellerLoginRequest, SellerLoginResponse, SellerPublic, SubscriptionExpiredPublic
 from app.schemas.catalog import (
     CatalogCategoryCreate,
+    CatalogCategoryProductSortUpdate,
     CatalogCategoryPublic,
     CatalogCategoryReorder,
     CatalogProductPublic,
+    CatalogProductReorder,
     CatalogSummaryPublic,
     CurrencyPublic,
 )
@@ -166,6 +168,35 @@ async def reorder_my_catalog_categories(
 ):
     return await catalog_service.reorder_catalog_categories(
         seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.patch("/me/catalog/categories/{category_id}/product-sort", response_model=CatalogSummaryPublic)
+async def update_my_catalog_category_product_sort(
+    category_id: str,
+    payload: CatalogCategoryProductSortUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await catalog_service.update_category_product_sort_mode(
+        seller_payload["seller_id"],
+        category_id,
+        payload,
+    )
+
+
+@router.put(
+    "/me/catalog/categories/{category_id}/products/order",
+    response_model=CatalogSummaryPublic,
+)
+async def reorder_my_catalog_products(
+    category_id: str,
+    payload: CatalogProductReorder,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await catalog_service.reorder_catalog_products(
+        seller_payload["seller_id"],
+        category_id,
         payload,
     )
 
