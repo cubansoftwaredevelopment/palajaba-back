@@ -9,6 +9,7 @@ class MarketplaceStorePublic(BaseModel):
     store_slug: str
     phone: str
     profile_photo_url: str | None = None
+    business_area: BusinessArea | None = None
 
 
 class MarketplaceBusinessPublic(BaseModel):
