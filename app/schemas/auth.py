@@ -66,6 +66,7 @@ class SellerPublic(BaseModel):
     subscription_active: bool = True
     subscription_days_remaining: int | None = None
     subscription_hours_remaining: int | None = None
+    catalog_theme: str = "default"
 
 
 class SubscriptionExpiredPublic(BaseModel):

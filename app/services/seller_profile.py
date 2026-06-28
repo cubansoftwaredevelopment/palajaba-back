@@ -6,11 +6,10 @@ from fastapi import HTTPException, UploadFile, status
 from app.database import get_registrations_collection
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.schemas.auth import SellerPublic
-from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerPhoneUpdate, SellerProfileUpdate
-from app.services.cuba_locations import validate_business_area
-from app.utils.phone import phone_display
-from app.schemas.seller_profile import CategoryPublic
+from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic, SellerPhoneUpdate, SellerProfileUpdate
+from app.services.catalog_theme import normalize_catalog_theme
 from app.services.categories import categories_for_profile, validate_category_ids
+from app.services.cuba_locations import validate_business_area
 from app.services.plans import (
     normalize_plan_tier,
     seller_has_recommendation_boost,
@@ -23,6 +22,7 @@ from app.services.subscriptions import (
     subscription_hours_remaining,
 )
 from app.utils.datetime import to_utc_naive, utc_now
+from app.utils.phone import phone_display
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "profiles"
 
@@ -130,6 +130,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         subscription_active=active,
         subscription_days_remaining=days_remaining,
         subscription_hours_remaining=hours_remaining,
+        catalog_theme=normalize_catalog_theme(doc.get("catalog_theme")),
     )
 
 

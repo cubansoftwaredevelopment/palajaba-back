@@ -116,6 +116,7 @@ class MarketplaceStoreCatalogPublic(BaseModel):
     offers_delivery: bool | None = None
     sections: list[MarketplaceStoreLocalSectionPublic] = Field(default_factory=list)
     total_products: int = 0
+    catalog_theme: str = "default"
 
 
 class MarketplaceStoreCategoryProductsPublic(BaseModel):

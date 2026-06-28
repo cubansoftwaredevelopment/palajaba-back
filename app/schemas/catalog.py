@@ -85,6 +85,21 @@ class CatalogSummaryPublic(BaseModel):
     total_products: int = 0
 
 
+class CatalogThemeUpdate(BaseModel):
+    catalog_theme: str = Field(..., min_length=1, max_length=32)
+
+    @field_validator("catalog_theme")
+    @classmethod
+    def validate_theme(cls, value: str) -> str:
+        from app.services.catalog_theme import parse_catalog_theme
+
+        return parse_catalog_theme(value)
+
+
+class CatalogThemePublic(BaseModel):
+    catalog_theme: str
+
+
 class CurrencyPublic(BaseModel):
     code: str
     label: str

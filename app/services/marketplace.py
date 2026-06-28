@@ -39,6 +39,7 @@ from app.services.categories import (
 from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
 from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
+from app.services.catalog_theme import normalize_catalog_theme
 from app.services.seller_profile import is_profile_complete
 from app.services.subscriptions import is_subscription_active
 from app.utils.phone import phone_display
@@ -160,6 +161,7 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
             for category_id in category_ids
         ],
         "offers_delivery": seller.get("offers_delivery"),
+        "catalog_theme": normalize_catalog_theme(seller.get("catalog_theme")),
     }
 
 

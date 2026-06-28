@@ -11,6 +11,8 @@ from app.schemas.catalog import (
     CatalogProductPublic,
     CatalogProductReorder,
     CatalogSummaryPublic,
+    CatalogThemePublic,
+    CatalogThemeUpdate,
     CurrencyPublic,
 )
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
@@ -21,6 +23,7 @@ from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart
 from app.security import create_seller_token
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
+from app.services import catalog_theme_settings as catalog_theme_service
 from app.services import notifications as notification_service
 from app.services import orders as orders_service
 from app.services import seller_feedback as seller_feedback_service
@@ -199,6 +202,18 @@ async def reorder_my_catalog_products(
         category_id,
         payload,
     )
+
+
+@router.patch("/me/catalog/theme", response_model=CatalogThemePublic)
+async def update_my_catalog_theme(
+    payload: CatalogThemeUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    theme = await catalog_theme_service.update_seller_catalog_theme(
+        seller_payload["seller_id"],
+        payload.catalog_theme,
+    )
+    return CatalogThemePublic(catalog_theme=theme)
 
 
 @router.get("/me/catalog/currencies", response_model=list[CurrencyPublic])

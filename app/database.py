@@ -43,10 +43,12 @@ async def connect_to_mongo():
     await ensure_catalog_indexes()
     from app.services.seller_feedback import ensure_seller_feedback_indexes
     from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
+    from app.services.catalog_theme_settings import ensure_catalog_theme_defaults_on_startup
     from app.services.discount_codes import ensure_discount_code_indexes
 
     await ensure_seller_feedback_indexes()
     await ensure_discount_code_indexes()
+    await ensure_catalog_theme_defaults_on_startup()
     await ensure_store_catalog_repairs_on_startup()
     await ensure_seller_stats_indexes()
     await ensure_category_seed()
