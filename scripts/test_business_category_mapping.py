@@ -112,6 +112,59 @@ class BusinessCategoryMappingTests(unittest.TestCase):
             business_category_sort_order("servicios"),
         )
 
+    def test_articulos_limpieza_is_registered_category(self) -> None:
+        ids = {item["id"] for item in DEFAULT_CATEGORIES}
+        self.assertIn("articulos-limpieza", ids)
+        self.assertEqual(business_category_name("articulos-limpieza"), "Articulos de limpieza")
+        self.assertEqual(
+            _display_category_name("articulos-limpieza"),
+            "Articulos de limpieza",
+        )
+
+    def test_suplementos_gimnasio_is_registered_category(self) -> None:
+        ids = {item["id"] for item in DEFAULT_CATEGORIES}
+        self.assertIn("suplementos-gimnasio", ids)
+        self.assertEqual(
+            business_category_name("suplementos-gimnasio"),
+            "Suplementos y articulos de gimnasio",
+        )
+        self.assertEqual(
+            _display_category_name("suplementos-gimnasio"),
+            "Suplementos y articulos de gimnasio",
+        )
+
+    def test_product_accepts_new_categories_for_matching_store(self) -> None:
+        allowed = ["articulos-limpieza", "hogar"]
+        self.assertEqual(
+            resolve_product_global_category_id(allowed, "articulos-limpieza"),
+            "articulos-limpieza",
+        )
+        allowed_gym = ["suplementos-gimnasio", "salud"]
+        self.assertEqual(
+            resolve_product_global_category_id(allowed_gym, "suplementos-gimnasio"),
+            "suplementos-gimnasio",
+        )
+
+    def test_categories_for_profile_includes_new_globals(self) -> None:
+        result = categories_for_profile(["articulos-limpieza", "suplementos-gimnasio"])
+        self.assertEqual(
+            [(item.id, item.name) for item in result],
+            [
+                ("articulos-limpieza", "Articulos de limpieza"),
+                ("suplementos-gimnasio", "Suplementos y articulos de gimnasio"),
+            ],
+        )
+
+    def test_new_categories_sort_before_otros(self) -> None:
+        self.assertLess(
+            business_category_sort_order("articulos-limpieza"),
+            business_category_sort_order("otros"),
+        )
+        self.assertLess(
+            business_category_sort_order("suplementos-gimnasio"),
+            business_category_sort_order("otros"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

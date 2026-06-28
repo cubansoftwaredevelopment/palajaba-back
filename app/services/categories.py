@@ -14,6 +14,8 @@ BUSINESS_CATEGORY_SORT_ORDER = {
     "construccion": 8,
     "medios-transporte": 9,
     "servicios": 10,
+    "articulos-limpieza": 11,
+    "suplementos-gimnasio": 12,
     "otros": 99,
 }
 
@@ -32,6 +34,8 @@ DEFAULT_CATEGORIES: list[dict[str, str]] = [
     {"id": "insumos-fiestas", "name": "Insumos para fiestas"},
     {"id": "construccion", "name": "Materiales y herramientas de construcción"},
     {"id": "articulos-adultos", "name": "Articulos +18"},
+    {"id": "articulos-limpieza", "name": "Articulos de limpieza"},
+    {"id": "suplementos-gimnasio", "name": "Suplementos y articulos de gimnasio"},
     {"id": "servicios", "name": "Servicios"},
     {"id": "otros", "name": "Otros"},
 ]
