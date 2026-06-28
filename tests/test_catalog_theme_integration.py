@@ -173,6 +173,16 @@ class CatalogThemeApiIntegrationTests(unittest.TestCase):
 
         asyncio.run(finalize())
 
+    def test_patch_catalog_theme_persists_green(self) -> None:
+        with TestClient(app) as client:
+            response = client.patch(
+                "/api/auth/me/catalog/theme",
+                headers=seller_auth_header(self.seed.seller_id),
+                json={"catalog_theme": "green"},
+            )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["catalog_theme"], "green")
+
     def test_patch_catalog_theme_persists_pink(self) -> None:
         with TestClient(app) as client:
             response = client.patch(

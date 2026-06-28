@@ -1,9 +1,9 @@
 from typing import Literal
 
-CatalogTheme = Literal["default", "grey", "red", "pink"]
+CatalogTheme = Literal["default", "grey", "red", "pink", "green"]
 DEFAULT_CATALOG_THEME: CatalogTheme = "default"
 
-CATALOG_THEMES: tuple[CatalogTheme, ...] = ("default", "grey", "red", "pink")
+CATALOG_THEMES: tuple[CatalogTheme, ...] = ("default", "grey", "red", "pink", "green")
 
 
 def _coerce_catalog_theme(value: str | None) -> str:
