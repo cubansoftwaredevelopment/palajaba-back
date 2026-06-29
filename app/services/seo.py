@@ -40,6 +40,7 @@ async def list_indexable_store_entries() -> list[dict[str, Any]]:
             "phone": {"$exists": True, "$nin": [None, ""]},
         },
         {
+            "status": 1,
             "store_slug": 1,
             "store_name": 1,
             "updated_at": 1,

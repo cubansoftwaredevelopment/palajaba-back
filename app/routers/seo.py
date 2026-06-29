@@ -41,8 +41,30 @@ async def get_robots_txt():
     return "\n".join(lines) + "\n"
 
 
+@router.get("/store/{store_slug}.html")
+async def get_store_seo_html(store_slug: str):
+    try:
+        html = await seo_store_page_service.build_store_page_document(
+            store_slug,
+            site_url=settings.public_site_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+    return Response(content=html, media_type="text/html; charset=utf-8")
+
+
 @router.get("/store/{store_slug}", response_model=SeoStorePagePublic)
 async def get_store_seo_page(store_slug: str):
+    if store_slug.endswith(".html"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tienda no encontrada.",
+        )
+
     try:
         catalog = await seo_store_page_service.load_seo_store_catalog(store_slug)
     except ValueError as exc:
@@ -61,19 +83,3 @@ async def get_store_seo_page(store_slug: str):
         head_html=seo_store_page_service.build_store_head_html(catalog, site_url=site_url),
         body_html=seo_store_page_service.build_store_body_html(catalog),
     )
-
-
-@router.get("/store/{store_slug}.html")
-async def get_store_seo_html(store_slug: str):
-    try:
-        html = await seo_store_page_service.build_store_page_document(
-            store_slug,
-            site_url=settings.public_site_url,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
-        ) from exc
-
-    return Response(content=html, media_type="text/html; charset=utf-8")

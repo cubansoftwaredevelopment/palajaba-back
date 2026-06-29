@@ -104,6 +104,39 @@ class SeoStoreListingTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entries[0]["slug"], "tienda-valida")
         self.assertEqual(entries[0]["lastmod"], "2026-06-02")
 
+    async def test_list_indexable_store_entries_requires_status_in_projection(self) -> None:
+        doc = {
+            "store_slug": "tienda-valida",
+            "store_name": "Tienda Valida",
+            "updated_at": datetime(2026, 6, 2),
+            "profile_photo_url": "https://example.com/b.jpg",
+            "category_ids": ["food"],
+            "offers_delivery": False,
+            "business_area": {
+                "province_id": "la-habana",
+                "province_name": "La Habana",
+                "municipality_id": "playa",
+                "municipality_name": "Playa",
+            },
+            "subscription_starts_at": datetime(2026, 5, 1),
+            "subscription_ends_at": datetime(2027, 5, 1),
+        }
+
+        class FakeCursor:
+            def __aiter__(self):
+                async def generator():
+                    yield doc
+
+                return generator()
+
+        fake_collection = MagicMock()
+        fake_collection.find.return_value = FakeCursor()
+
+        with patch("app.services.seo.get_registrations_collection", return_value=fake_collection):
+            entries = await seo_service.list_indexable_store_entries()
+
+        self.assertEqual(entries, [])
+
 
 if __name__ == "__main__":
     unittest.main()
