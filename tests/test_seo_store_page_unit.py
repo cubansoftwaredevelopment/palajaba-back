@@ -82,7 +82,7 @@ class SeoStorePageAsyncTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertIn("<article class=\"seo-store-page\">", html)
-        self.assertIn('<div id="root"></div>', html)
+        self.assertIn('<div id="root">', html)
         self.assertIn("/assets/index.js", html)
         self.assertIn("Panadería La Habana", html)
 

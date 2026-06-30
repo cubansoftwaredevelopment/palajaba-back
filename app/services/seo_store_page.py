@@ -251,8 +251,13 @@ async def build_store_page_document(
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <script>document.documentElement.classList.add('js')</script>
     <style>
+      html.js .seo-store-page {{ display: none !important; }}
       .seo-store-page {{ max-width: 42rem; margin: 0 auto; padding: 1.25rem; font-family: Georgia, serif; color: #2d5016; line-height: 1.5; }}
       .seo-store-page h1 {{ font-size: 1.75rem; margin-bottom: 0.5rem; }}
       .seo-store-page h2 {{ font-size: 1.15rem; margin-top: 1.5rem; }}
@@ -263,8 +268,9 @@ async def build_store_page_document(
     {asset_tags}
   </head>
   <body>
-    {body}
-    <div id="root"></div>
+    <div id="root">
+      {body}
+    </div>
   </body>
 </html>
 """
