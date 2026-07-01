@@ -71,3 +71,15 @@ class SellerPhoneUpdate(BaseModel):
     @classmethod
     def normalize_phone(cls, value: str) -> str:
         return normalize_phone_digits(value)
+
+
+class SellerStoreNameUpdate(BaseModel):
+    store_name: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("store_name")
+    @classmethod
+    def strip_store_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Este campo es obligatorio.")
+        return stripped

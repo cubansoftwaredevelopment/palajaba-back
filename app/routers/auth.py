@@ -17,7 +17,12 @@ from app.schemas.catalog import (
 )
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
-from app.schemas.seller_profile import CategoryPublic, SellerPhoneUpdate, SellerProfileUpdate
+from app.schemas.seller_profile import (
+    CategoryPublic,
+    SellerPhoneUpdate,
+    SellerProfileUpdate,
+    SellerStoreNameUpdate,
+)
 from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
@@ -82,6 +87,17 @@ async def update_seller_phone(
     seller_payload: dict = Depends(require_seller),
 ):
     return await profile_service.update_seller_phone(
+        seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.patch("/me/store-name", response_model=SellerPublic)
+async def update_seller_store_name(
+    payload: SellerStoreNameUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.update_seller_store_name(
         seller_payload["seller_id"],
         payload,
     )

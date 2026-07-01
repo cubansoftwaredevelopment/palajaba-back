@@ -6,7 +6,14 @@ from fastapi import HTTPException, UploadFile, status
 from app.database import get_registrations_collection
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.schemas.auth import SellerPublic
-from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic, SellerPhoneUpdate, SellerProfileUpdate
+from app.schemas.seller_profile import (
+    BusinessArea,
+    BusinessLocation,
+    CategoryPublic,
+    SellerPhoneUpdate,
+    SellerProfileUpdate,
+    SellerStoreNameUpdate,
+)
 from app.services.catalog_theme import normalize_catalog_theme
 from app.services.categories import categories_for_profile, validate_category_ids
 from app.services.cuba_locations import validate_business_area
@@ -23,6 +30,7 @@ from app.services.subscriptions import (
 )
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
+from app.utils.store_slug import store_name_to_slug
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "profiles"
 
@@ -217,6 +225,46 @@ async def update_seller_profile(
 
     collection = get_registrations_collection()
     await collection.update_one({"_id": doc["_id"]}, {"$set": update_fields})
+
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def update_seller_store_name(
+    seller_id: str,
+    payload: SellerStoreNameUpdate,
+) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    new_store_name = payload.store_name
+    current_store_name = doc.get("store_name") or ""
+
+    if current_store_name.lower() == new_store_name.lower():
+        return document_to_seller(doc)
+
+    collection = get_registrations_collection()
+    existing = await collection.find_one(
+        {
+            "store_name": {"$regex": f"^{new_store_name}$", "$options": "i"},
+            "_id": {"$ne": doc["_id"]},
+        }
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ese nombre ya está ocupado.",
+        )
+
+    now = to_utc_naive(utc_now())
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {
+            "$set": {
+                "store_name": new_store_name,
+                "store_slug": store_name_to_slug(new_store_name),
+                "updated_at": now,
+            }
+        },
+    )
 
     updated = await collection.find_one({"_id": doc["_id"]})
     return document_to_seller(updated)
