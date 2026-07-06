@@ -1,6 +1,6 @@
 from typing import Literal
 
-CatalogTheme = Literal["default", "grey", "red", "pink", "green", "blue", "purple", "orange"]
+CatalogTheme = Literal["default", "grey", "red", "pink", "green", "blue", "purple", "orange", "yellow"]
 DEFAULT_CATALOG_THEME: CatalogTheme = "default"
 
 CATALOG_THEMES: tuple[CatalogTheme, ...] = (
@@ -12,6 +12,7 @@ CATALOG_THEMES: tuple[CatalogTheme, ...] = (
     "blue",
     "purple",
     "orange",
+    "yellow",
 )
 
 
