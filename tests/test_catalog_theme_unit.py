@@ -33,6 +33,8 @@ class NormalizeCatalogThemeTests(unittest.TestCase):
         self.assertEqual(parse_catalog_theme(" BLUE "), "blue")
         self.assertEqual(normalize_catalog_theme(" PURPLE "), "purple")
         self.assertEqual(parse_catalog_theme(" PURPLE "), "purple")
+        self.assertEqual(normalize_catalog_theme(" ORANGE "), "orange")
+        self.assertEqual(parse_catalog_theme(" ORANGE "), "orange")
 
     def test_parse_rejects_unknown_theme(self) -> None:
         with self.assertRaises(ValueError):
