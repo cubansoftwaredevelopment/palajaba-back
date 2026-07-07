@@ -15,6 +15,7 @@ from app.schemas.orders import (
 )
 from app.services import notifications as notification_service
 from app.services.subscriptions import is_subscription_active
+from app.services.order_totals import compute_order_products_revenue
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now
 
@@ -248,9 +249,17 @@ async def update_seller_order(
 
             updates["status"] = "completed"
             updates["completed_at"] = now
+            merged_doc = {**doc, **updates}
+            revenue = compute_order_products_revenue(merged_doc)
+            if revenue is not None:
+                _, collected_total = revenue
+                updates["collected_total"] = collected_total
+            else:
+                updates["collected_total"] = None
         else:
             updates["status"] = payload.status
             updates["completed_at"] = None
+            updates["collected_total"] = None
 
     if len(updates) == 1 and updates.get("updated_at"):
         return _doc_to_public(doc)

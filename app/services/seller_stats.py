@@ -10,14 +10,17 @@ from app.database import (
 )
 from app.schemas.seller_stats import (
     CurrencyRevenueSeries,
+    CurrencyTotal,
     ProductsSoldDataPoint,
     RevenueDataPoint,
     SellerProductsSoldChart,
     SellerRevenueChart,
+    SellerRevenueTotals,
     SellerStatsPeriod,
     SellerStatsSummary,
     SellerTopProductItem,
     SellerTopProducts,
+    STAT_REVENUE_CURRENCIES,
 )
 from app.services.order_totals import compute_order_products_revenue
 from app.services.plans import seller_has_statistics
@@ -72,11 +75,118 @@ async def ensure_seller_stats_indexes() -> None:
 
     orders = get_orders_collection()
     await orders.create_index([("seller_id", 1), ("status", 1), ("completed_at", -1)])
+    await orders.create_index(
+        [("seller_id", 1), ("status", 1), ("payment_currency", 1)],
+        name="seller_completed_payment_currency",
+    )
 
     products = get_catalog_products_collection()
     await products.create_index(
         [("seller_id", 1), ("is_available", 1), ("view_only", 1)],
         name="seller_active_products",
+    )
+
+    await backfill_order_collected_totals()
+
+
+def normalize_currency_totals(rows: list[dict[str, Any]]) -> tuple[list[CurrencyTotal], int]:
+    """Normaliza filas de agregación MongoDB a las cuatro monedas con 0 por defecto."""
+    by_currency = {
+        str(row.get("_id")): row
+        for row in rows
+        if row.get("_id") in STAT_REVENUE_CURRENCIES
+    }
+    totals: list[CurrencyTotal] = []
+    orders_count = 0
+    for code in STAT_REVENUE_CURRENCIES:
+        row = by_currency.get(code, {})
+        amount = round(float(row.get("total", 0.0)), 2)
+        if code == "CUP":
+            amount = float(round(amount))
+        totals.append(CurrencyTotal(currency=code, amount=amount))
+        orders_count += int(row.get("orders_count", 0))
+    return totals, orders_count
+
+
+async def backfill_order_collected_totals() -> int:
+    """Persiste collected_total en pedidos completados legacy (solo productos, sin domicilio)."""
+    orders = get_orders_collection()
+    cursor = orders.find(
+        {
+            "status": "completed",
+            "$or": [
+                {"collected_total": {"$exists": False}},
+                {"collected_total": None},
+            ],
+        },
+        projection={
+            "status": 1,
+            "items": 1,
+            "payment_currency": 1,
+        },
+    )
+
+    updated = 0
+    async for doc in cursor:
+        revenue = compute_order_products_revenue(doc)
+        if revenue is None:
+            continue
+        _, amount = revenue
+        await orders.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {"collected_total": amount}},
+        )
+        updated += 1
+    return updated
+
+
+async def get_seller_revenue_totals(
+    seller_id: str,
+    seller_doc: dict,
+    *,
+    year: int | None = None,
+    month: int | None = None,
+) -> SellerRevenueTotals:
+    if not seller_has_statistics(seller_doc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Las estadísticas están disponibles en el plan Premium.",
+        )
+
+    target_year, target_month = year, month
+    if target_year is None or target_month is None:
+        target_year, target_month = current_month_year()
+
+    _validate_stats_month(seller_doc, target_year, target_month)
+    start, end = month_bounds(target_year, target_month)
+
+    pipeline = [
+        {
+            "$match": {
+                "seller_id": seller_id,
+                "status": "completed",
+                "completed_at": {"$gte": start, "$lt": end},
+                "payment_currency": {"$in": list(STAT_REVENUE_CURRENCIES)},
+                "collected_total": {"$gt": 0},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$payment_currency",
+                "total": {"$sum": "$collected_total"},
+                "orders_count": {"$sum": 1},
+            }
+        },
+    ]
+
+    rows = await get_orders_collection().aggregate(pipeline).to_list(length=None)
+    totals, orders_count = normalize_currency_totals(rows)
+
+    return SellerRevenueTotals(
+        year=target_year,
+        month=target_month,
+        totals=totals,
+        orders_count=orders_count,
     )
 
 
