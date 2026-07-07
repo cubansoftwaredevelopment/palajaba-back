@@ -24,7 +24,7 @@ from app.schemas.seller_profile import (
     SellerStoreNameUpdate,
 )
 from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
-from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerRevenueTotals, SellerStatsSummary, SellerTopProducts
+from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
 from app.security import create_seller_token
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
@@ -430,32 +430,6 @@ async def seller_products_sold_chart(
         seller_payload["seller_id"],
         seller,
         granularity=granularity,
-        year=year,
-        month=month,
-    )
-
-
-@router.get("/me/stats/revenue-totals", response_model=SellerRevenueTotals)
-async def seller_revenue_totals(
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    seller_payload: dict = Depends(require_seller),
-):
-    from app.database import get_registrations_collection
-    from bson import ObjectId
-
-    seller = await get_registrations_collection().find_one(
-        {"_id": ObjectId(seller_payload["seller_id"])},
-    )
-    if seller is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tienda no encontrada.",
-        )
-
-    return await seller_stats_service.get_seller_revenue_totals(
-        seller_payload["seller_id"],
-        seller,
         year=year,
         month=month,
     )

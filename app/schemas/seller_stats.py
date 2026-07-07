@@ -2,9 +2,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-STAT_REVENUE_CURRENCIES = ("USD", "MLC", "EUR", "CUP")
-StatRevenueCurrency = Literal["USD", "MLC", "EUR", "CUP"]
-
 
 class SellerStatsPeriod(BaseModel):
     earliest_year: int
@@ -82,15 +79,3 @@ class SellerTopProductItem(BaseModel):
 class SellerTopProducts(BaseModel):
     most_popular: list[SellerTopProductItem] = Field(default_factory=list)
     most_sold: list[SellerTopProductItem] = Field(default_factory=list)
-
-
-class CurrencyTotal(BaseModel):
-    currency: StatRevenueCurrency
-    amount: float = 0.0
-
-
-class SellerRevenueTotals(BaseModel):
-    year: int
-    month: int
-    totals: list[CurrencyTotal] = Field(default_factory=list)
-    orders_count: int = 0

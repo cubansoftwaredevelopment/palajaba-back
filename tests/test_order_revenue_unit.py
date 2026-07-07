@@ -1,31 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from datetime import datetime
 
 from app.services.order_totals import compute_order_grand_total, compute_order_products_revenue
-from app.services.seller_stats import normalize_currency_totals
-
-
-class NormalizeCurrencyTotalsTests(unittest.TestCase):
-    def test_returns_all_currencies_with_zero_defaults(self) -> None:
-        totals, orders_count = normalize_currency_totals([])
-        self.assertEqual(orders_count, 0)
-        self.assertEqual([item.currency for item in totals], ["USD", "MLC", "EUR", "CUP"])
-        self.assertTrue(all(item.amount == 0.0 for item in totals))
-
-    def test_maps_aggregation_rows_to_currency_totals(self) -> None:
-        rows = [
-            {"_id": "USD", "total": 120.5, "orders_count": 2},
-            {"_id": "CUP", "total": 3000.4, "orders_count": 1},
-        ]
-        totals, orders_count = normalize_currency_totals(rows)
-        by_currency = {item.currency: item.amount for item in totals}
-        self.assertEqual(by_currency["USD"], 120.5)
-        self.assertEqual(by_currency["CUP"], 3000.0)
-        self.assertEqual(by_currency["MLC"], 0.0)
-        self.assertEqual(by_currency["EUR"], 0.0)
-        self.assertEqual(orders_count, 3)
 
 
 class OrderRevenueTotalsTests(unittest.TestCase):
