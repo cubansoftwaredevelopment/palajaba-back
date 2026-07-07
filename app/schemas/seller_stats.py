@@ -29,10 +29,22 @@ class RevenueDataPoint(BaseModel):
     amount: float
 
 
+class PeriodComparison(BaseModel):
+    current_total: float = 0.0
+    previous_total: float = 0.0
+    change_percent: float | None = None
+    comparison_available: bool = True
+    period_label: str = ""
+    previous_period_label: str = ""
+    comparison_label: str = ""
+    direction: Literal["up", "down", "flat", "unavailable"] = "unavailable"
+
+
 class CurrencyRevenueSeries(BaseModel):
     currency: str
     total: float
     points: list[RevenueDataPoint] = Field(default_factory=list)
+    comparison: PeriodComparison | None = None
 
 
 class SellerRevenueChart(BaseModel):
@@ -56,6 +68,7 @@ class SellerProductsSoldChart(BaseModel):
     months_available: int
     total: int
     points: list[ProductsSoldDataPoint] = Field(default_factory=list)
+    comparison: PeriodComparison | None = None
 
 
 class SellerTopProductItem(BaseModel):

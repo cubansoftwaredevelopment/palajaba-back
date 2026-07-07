@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
+from typing import Any, Literal, NamedTuple
 
 from fastapi import HTTPException, status
 
@@ -11,6 +11,7 @@ from app.database import (
 from app.schemas.seller_stats import (
     CurrencyRevenueSeries,
     CurrencyTotal,
+    PeriodComparison,
     ProductsSoldDataPoint,
     RevenueDataPoint,
     SellerProductsSoldChart,
@@ -253,6 +254,266 @@ def _month_label(year: int, month: int) -> str:
     return f"{SPANISH_MONTHS_FULL[month - 1].capitalize()} {year}"
 
 
+class ComparisonWindow(NamedTuple):
+    current_start: datetime
+    current_end: datetime
+    previous_start: datetime
+    previous_end: datetime
+    period_label: str
+    previous_period_label: str
+    comparison_label: str
+
+
+def _start_of_day(value: datetime) -> datetime:
+    return datetime(value.year, value.month, value.day)
+
+
+def _start_of_week_monday(value: datetime) -> datetime:
+    day = _start_of_day(value)
+    return day - timedelta(days=day.weekday())
+
+
+def _previous_month(year: int, month: int) -> tuple[int, int]:
+    if month == 1:
+        return year - 1, 12
+    return year, month - 1
+
+
+def resolve_comparison_window(
+    granularity: Granularity,
+    *,
+    reference: datetime | None = None,
+) -> ComparisonWindow:
+    """Ventanas para comparar hoy/ayer, esta semana/anterior o este mes/anterior."""
+    now = reference if reference is not None else to_utc_naive(utc_now())
+    today = _start_of_day(now)
+
+    if granularity == "daily":
+        current_start = today
+        current_end = today + timedelta(days=1)
+        previous_start = today - timedelta(days=1)
+        previous_end = today
+        period_label = _day_label(today.day, today.month)
+        previous_period_label = _day_label(previous_start.day, previous_start.month)
+        comparison_label = "vs ayer"
+    elif granularity == "weekly":
+        week_start = _start_of_week_monday(today)
+        elapsed_days = (today - week_start).days + 1
+        current_start = week_start
+        current_end = today + timedelta(days=1)
+        previous_start = week_start - timedelta(days=7)
+        previous_end = previous_start + timedelta(days=elapsed_days)
+        period_label = f"Semana del {_day_label(week_start.day, week_start.month)}"
+        previous_period_label = (
+            f"Semana del {_day_label(previous_start.day, previous_start.month)}"
+        )
+        comparison_label = "vs semana pasada"
+    else:
+        current_year, current_month = today.year, today.month
+        current_start, _ = month_bounds(current_year, current_month)
+        current_end = today + timedelta(days=1)
+        elapsed_days = (today - current_start).days + 1
+
+        prev_year, prev_month = _previous_month(current_year, current_month)
+        previous_start, prev_month_end = month_bounds(prev_year, prev_month)
+        previous_end = previous_start + timedelta(days=elapsed_days)
+        if previous_end > prev_month_end:
+            previous_end = prev_month_end
+
+        period_label = _month_label(current_year, current_month)
+        previous_period_label = _month_label(prev_year, prev_month)
+        comparison_label = "vs mes pasado"
+
+    return ComparisonWindow(
+        current_start=current_start,
+        current_end=current_end,
+        previous_start=previous_start,
+        previous_end=previous_end,
+        period_label=period_label,
+        previous_period_label=previous_period_label,
+        comparison_label=comparison_label,
+    )
+
+
+def compute_change_percent(current: float, previous: float) -> float:
+    if previous == 0:
+        if current == 0:
+            return 0.0
+        return 100.0
+    return round((current - previous) / previous * 100, 1)
+
+
+def comparison_available_for_seller(
+    window: ComparisonWindow,
+    seller_doc: dict[str, Any],
+) -> bool:
+    joined_at = seller_doc.get("approved_at") or seller_doc.get("created_at")
+    if not isinstance(joined_at, datetime):
+        return True
+    if joined_at.tzinfo is not None:
+        joined_at = to_utc_naive(joined_at)
+    return joined_at < window.previous_start
+
+
+def build_period_comparison(
+    current_total: float,
+    previous_total: float,
+    window: ComparisonWindow,
+    *,
+    available: bool,
+) -> PeriodComparison:
+    if not available:
+        return PeriodComparison(
+            current_total=current_total,
+            previous_total=previous_total,
+            change_percent=None,
+            comparison_available=False,
+            period_label=window.period_label,
+            previous_period_label=window.previous_period_label,
+            comparison_label=window.comparison_label,
+            direction="unavailable",
+        )
+
+    change_percent = compute_change_percent(current_total, previous_total)
+    if change_percent > 0:
+        direction: Literal["up", "down", "flat", "unavailable"] = "up"
+    elif change_percent < 0:
+        direction = "down"
+    else:
+        direction = "flat"
+
+    return PeriodComparison(
+        current_total=current_total,
+        previous_total=previous_total,
+        change_percent=change_percent,
+        comparison_available=True,
+        period_label=window.period_label,
+        previous_period_label=window.previous_period_label,
+        comparison_label=window.comparison_label,
+        direction=direction,
+    )
+
+
+def _revenue_rows_to_map(rows: list[dict[str, Any]]) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for row in rows:
+        currency = str(row.get("_id") or "").strip()
+        if not currency:
+            continue
+        amount = float(row.get("total") or 0.0)
+        if currency == "CUP":
+            amount = float(round(amount))
+        else:
+            amount = round(amount, 2)
+        totals[currency] = amount
+    return totals
+
+
+def _units_from_facet_rows(rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    return int(rows[0].get("total") or 0)
+
+
+async def aggregate_period_comparison(
+    seller_id: str,
+    window: ComparisonWindow,
+) -> tuple[dict[str, float], dict[str, float], int, int]:
+    pipeline = [
+        {
+            "$match": {
+                "seller_id": seller_id,
+                "status": "completed",
+                "completed_at": {
+                    "$gte": window.previous_start,
+                    "$lt": window.current_end,
+                },
+            }
+        },
+        {
+            "$facet": {
+                "current_revenue": [
+                    {
+                        "$match": {
+                            "completed_at": {
+                                "$gte": window.current_start,
+                                "$lt": window.current_end,
+                            }
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": "$payment_currency",
+                            "total": {"$sum": {"$ifNull": ["$collected_total", 0]}},
+                        }
+                    },
+                ],
+                "previous_revenue": [
+                    {
+                        "$match": {
+                            "completed_at": {
+                                "$gte": window.previous_start,
+                                "$lt": window.previous_end,
+                            }
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": "$payment_currency",
+                            "total": {"$sum": {"$ifNull": ["$collected_total", 0]}},
+                        }
+                    },
+                ],
+                "current_units": [
+                    {
+                        "$match": {
+                            "completed_at": {
+                                "$gte": window.current_start,
+                                "$lt": window.current_end,
+                            }
+                        }
+                    },
+                    {"$unwind": "$items"},
+                    {
+                        "$group": {
+                            "_id": None,
+                            "total": {"$sum": "$items.quantity"},
+                        }
+                    },
+                ],
+                "previous_units": [
+                    {
+                        "$match": {
+                            "completed_at": {
+                                "$gte": window.previous_start,
+                                "$lt": window.previous_end,
+                            }
+                        }
+                    },
+                    {"$unwind": "$items"},
+                    {
+                        "$group": {
+                            "_id": None,
+                            "total": {"$sum": "$items.quantity"},
+                        }
+                    },
+                ],
+            }
+        },
+    ]
+
+    rows = await get_orders_collection().aggregate(pipeline).to_list(length=1)
+    if not rows:
+        return {}, {}, 0, 0
+
+    facet = rows[0]
+    current_revenue = _revenue_rows_to_map(facet.get("current_revenue") or [])
+    previous_revenue = _revenue_rows_to_map(facet.get("previous_revenue") or [])
+    current_units = _units_from_facet_rows(facet.get("current_units") or [])
+    previous_units = _units_from_facet_rows(facet.get("previous_units") or [])
+    return current_revenue, previous_revenue, current_units, previous_units
+
+
 def _week_ranges_in_month(year: int, month: int, *, cap_at: datetime | None) -> list[tuple[str, str, datetime, datetime]]:
     month_start, month_end = month_bounds(year, month)
     ranges: list[tuple[str, str, datetime, datetime]] = []
@@ -458,6 +719,26 @@ def _series_from_buckets(
     return series
 
 
+def _attach_revenue_comparisons(
+    series: list[CurrencyRevenueSeries],
+    *,
+    window: ComparisonWindow,
+    available: bool,
+    current_revenue: dict[str, float],
+    previous_revenue: dict[str, float],
+) -> list[CurrencyRevenueSeries]:
+    enriched: list[CurrencyRevenueSeries] = []
+    for item in series:
+        comparison = build_period_comparison(
+            current_revenue.get(item.currency, 0.0),
+            previous_revenue.get(item.currency, 0.0),
+            window,
+            available=available,
+        )
+        enriched.append(item.model_copy(update={"comparison": comparison}))
+    return enriched
+
+
 async def get_seller_stats_summary(
     seller_id: str,
     seller_doc: dict,
@@ -544,6 +825,20 @@ async def get_seller_revenue_chart(
     buckets = _bucket_completed_orders(orders, ranges)
     series = _series_from_buckets(buckets, ordered_keys)
 
+    window = resolve_comparison_window(granularity)
+    available = comparison_available_for_seller(window, seller_doc)
+    current_revenue, previous_revenue, _, _ = await aggregate_period_comparison(
+        seller_id,
+        window,
+    )
+    series = _attach_revenue_comparisons(
+        series,
+        window=window,
+        available=available,
+        current_revenue=current_revenue,
+        previous_revenue=previous_revenue,
+    )
+
     return SellerRevenueChart(
         granularity=granularity,
         year=chart_year,
@@ -591,6 +886,19 @@ async def get_seller_products_sold_chart(
         total += count
         points.append(ProductsSoldDataPoint(key=key, label=label, count=count))
 
+    window = resolve_comparison_window(granularity)
+    available = comparison_available_for_seller(window, seller_doc)
+    _, _, current_units, previous_units = await aggregate_period_comparison(
+        seller_id,
+        window,
+    )
+    comparison = build_period_comparison(
+        float(current_units),
+        float(previous_units),
+        window,
+        available=available,
+    )
+
     return SellerProductsSoldChart(
         granularity=granularity,
         year=chart_year,
@@ -598,6 +906,7 @@ async def get_seller_products_sold_chart(
         months_available=period.months_available,
         total=total,
         points=points,
+        comparison=comparison,
     )
 
 
