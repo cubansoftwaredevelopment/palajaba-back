@@ -70,6 +70,7 @@ class CatalogProductPublic(BaseModel):
     is_available: bool = True
     popularity: int = 0
     sort_order: int = 0
+    stock_quantity: int | None = None
 
 
 class CatalogCategoryPublic(BaseModel):

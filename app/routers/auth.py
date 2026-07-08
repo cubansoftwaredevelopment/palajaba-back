@@ -16,7 +16,7 @@ from app.schemas.catalog import (
     CurrencyPublic,
 )
 from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
-from app.schemas.orders import InvoiceType, OrderPublic, UpdateOrderRequest
+from app.schemas.orders import CreateSellerManualOrderRequest, InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import (
     CategoryPublic,
     SellerPhoneUpdate,
@@ -315,6 +315,23 @@ async def delete_my_catalog_product(
 @router.get("/me/orders", response_model=list[OrderPublic])
 async def list_my_orders(seller_payload: dict = Depends(require_seller)):
     return await orders_service.list_seller_orders(seller_payload["seller_id"])
+
+
+@router.post("/me/orders", response_model=OrderPublic, status_code=201)
+async def create_my_manual_order(
+    payload: CreateSellerManualOrderRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    try:
+        return await orders_service.create_seller_manual_order(
+            seller_payload["seller_id"],
+            payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.patch("/me/orders/{order_id}", response_model=OrderPublic)

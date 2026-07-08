@@ -129,6 +129,11 @@ def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
         is_available=bool(doc.get("is_available", True)),
         popularity=int(doc.get("popularity") or 0),
         sort_order=int(doc.get("sort_order") or 0),
+        stock_quantity=(
+            int(doc["stock_quantity"])
+            if doc.get("stock_quantity") is not None
+            else None
+        ),
     )
 
 

@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field, field_validator
 
 OrderStatus = Literal["pending_confirmation", "completed"]
 InvoiceType = Literal["store", "transporter"]
-PAYMENT_CURRENCIES = ("CUP", "USD", "MLC")
+OrderOrigin = Literal["platform", "manual"]
+PAYMENT_CURRENCIES = ("CUP", "USD", "EUR", "MLC")
 
 
 class OrderItemCreate(BaseModel):
@@ -99,6 +100,23 @@ class CreateOrderRequest(BaseModel):
         return normalized
 
 
+class CreateSellerManualOrderRequest(BaseModel):
+    items: list[OrderItemCreate] = Field(..., min_length=1)
+    delivery: DeliveryInfo | None = None
+    buyer_zone: BuyerZone | None = None
+    payment_currency: str | None = Field(default=None, min_length=3, max_length=8)
+
+    @field_validator("payment_currency")
+    @classmethod
+    def normalize_payment_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized not in PAYMENT_CURRENCIES:
+            raise ValueError("Moneda de pago no válida.")
+        return normalized
+
+
 class OrderItemPublic(BaseModel):
     product_id: str
     name: str
@@ -126,6 +144,7 @@ class OrderPublic(BaseModel):
     delivery_currency: str | None = None
     payment_currency: str | None = None
     buyer_zone: BuyerZone | None = None
+    origin: OrderOrigin = "platform"
     created_at: UtcDateTime
     updated_at: UtcDateTime
     completed_at: UtcDateTime | None = None

@@ -4,9 +4,10 @@ from typing import Any, Literal
 from bson import ObjectId
 from bson.errors import InvalidId
 
-from app.database import get_orders_collection, get_registrations_collection
+from app.database import get_catalog_products_collection, get_orders_collection, get_registrations_collection
 from app.schemas.orders import (
     CreateOrderRequest,
+    CreateSellerManualOrderRequest,
     DeliveryInfo,
     OrderItemPublic,
     OrderPublic,
@@ -14,6 +15,7 @@ from app.schemas.orders import (
     UpdateOrderRequest,
 )
 from app.services import notifications as notification_service
+from app.services.product_popularity import bump_products_on_order_completed
 from app.services.subscriptions import is_subscription_active
 from app.services.order_totals import compute_order_products_revenue
 from app.utils.currency_conversion import VALID_CURRENCIES
@@ -71,6 +73,7 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         delivery_currency=doc.get("delivery_currency"),
         payment_currency=doc.get("payment_currency"),
         buyer_zone=buyer_zone,
+        origin=doc.get("origin") or "platform",
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         completed_at=doc.get("completed_at"),
@@ -109,11 +112,8 @@ async def _get_order_doc(seller_id: str, order_id: str) -> dict[str, Any]:
     return doc
 
 
-async def create_order(payload: CreateOrderRequest) -> OrderPublic:
-    seller = await _get_seller_doc(payload.store_id)
-    seller_id = str(seller["_id"])
-
-    items = [
+def _items_from_create_payload(items: list) -> list[dict[str, Any]]:
+    return [
         {
             "product_id": item.product_id,
             "name": item.name,
@@ -121,35 +121,157 @@ async def create_order(payload: CreateOrderRequest) -> OrderPublic:
             "unit_price": float(item.unit_price),
             "currency": item.currency,
         }
-        for item in payload.items
+        for item in items
     ]
 
-    normalized_items = _normalize_items(items)
+
+def _resolve_payment_currency(
+    normalized_items: list[dict[str, Any]],
+    payment_currency: str | None,
+) -> str | None:
     item_currencies = {item["currency"] for item in normalized_items}
-    payment_currency = payload.payment_currency
-    if payment_currency is None and len(item_currencies) == 1:
-        payment_currency = next(iter(item_currencies))
-    if payment_currency and payment_currency not in VALID_CURRENCIES:
+    resolved = payment_currency
+    if resolved is None and len(item_currencies) == 1:
+        resolved = next(iter(item_currencies))
+    if resolved and resolved not in VALID_CURRENCIES:
         raise ValueError("Moneda de pago no válida.")
+    return resolved
 
-    now = to_utc_naive(utc_now())
 
-    doc = {
-        "seller_id": seller_id,
+def _build_order_document(
+    seller: dict[str, Any],
+    *,
+    normalized_items: list[dict[str, Any]],
+    payment_currency: str | None,
+    delivery: DeliveryInfo | None,
+    buyer_zone,
+    origin: str,
+    now,
+) -> dict[str, Any]:
+    return {
+        "seller_id": str(seller["_id"]),
         "store_name": seller["store_name"],
         "status": "pending_confirmation",
         "items": normalized_items,
         "subtotals": [entry.model_dump() for entry in _calc_subtotals(normalized_items)],
-        "delivery_requested": payload.delivery is not None,
-        "delivery": payload.delivery.model_dump() if payload.delivery else None,
+        "delivery_requested": delivery is not None,
+        "delivery": delivery.model_dump() if delivery else None,
         "delivery_price": None,
         "delivery_currency": None,
         "payment_currency": payment_currency,
-        "buyer_zone": payload.buyer_zone.model_dump() if payload.buyer_zone else None,
+        "buyer_zone": buyer_zone.model_dump() if buyer_zone else None,
+        "origin": origin,
         "created_at": now,
         "updated_at": now,
         "completed_at": None,
     }
+
+
+async def _rollback_stock_decrements(
+    adjustments: list[tuple[ObjectId, int]],
+) -> None:
+    if not adjustments:
+        return
+
+    products_col = get_catalog_products_collection()
+    now = to_utc_naive(utc_now())
+    for product_oid, quantity in reversed(adjustments):
+        await products_col.update_one(
+            {"_id": product_oid},
+            {
+                "$inc": {"stock_quantity": quantity},
+                "$set": {"is_available": True, "updated_at": now},
+            },
+        )
+
+
+async def _decrement_product_stock(
+    seller_id: str,
+    normalized_items: list[dict[str, Any]],
+) -> list[tuple[ObjectId, int]]:
+    products_col = get_catalog_products_collection()
+    now = to_utc_naive(utc_now())
+    qty_by_product: dict[str, int] = {}
+    for item in normalized_items:
+        product_id = str(item["product_id"])
+        qty_by_product[product_id] = qty_by_product.get(product_id, 0) + int(item["quantity"])
+
+    product_oids: list[ObjectId] = []
+    for product_id in qty_by_product:
+        try:
+            product_oids.append(ObjectId(product_id))
+        except InvalidId as exc:
+            raise ValueError("Producto no válido.") from exc
+
+    product_docs = await products_col.find(
+        {"_id": {"$in": product_oids}},
+    ).to_list(length=len(product_oids))
+    docs_by_id = {str(doc["_id"]): doc for doc in product_docs}
+
+    for product_id in qty_by_product:
+        doc = docs_by_id.get(product_id)
+        if doc is None:
+            raise ValueError("Producto no encontrado.")
+        if doc.get("seller_id") != seller_id:
+            raise ValueError("No puedes registrar productos de otra tienda.")
+        if not doc.get("is_available", True) or doc.get("view_only"):
+            raise ValueError(f"«{doc.get('name', 'Producto')}» no está disponible para la venta.")
+
+    applied: list[tuple[ObjectId, int]] = []
+    try:
+        for product_id, quantity in qty_by_product.items():
+            doc = docs_by_id[product_id]
+            if doc.get("stock_quantity") is None:
+                continue
+
+            product_oid = ObjectId(product_id)
+            result = await products_col.update_one(
+                {
+                    "_id": product_oid,
+                    "seller_id": seller_id,
+                    "stock_quantity": {"$gte": quantity},
+                },
+                [
+                    {
+                        "$set": {
+                            "stock_quantity": {"$subtract": ["$stock_quantity", quantity]},
+                            "updated_at": now,
+                        }
+                    },
+                    {
+                        "$set": {
+                            "is_available": {"$gt": ["$stock_quantity", 0]},
+                        }
+                    },
+                ],
+            )
+            if result.modified_count != 1:
+                raise ValueError(
+                    f"Stock insuficiente para «{doc.get('name', 'producto')}»."
+                )
+            applied.append((product_oid, quantity))
+    except Exception:
+        await _rollback_stock_decrements(applied)
+        raise
+
+    return applied
+
+
+async def create_order(payload: CreateOrderRequest) -> OrderPublic:
+    seller = await _get_seller_doc(payload.store_id)
+    normalized_items = _normalize_items(_items_from_create_payload(payload.items))
+    payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
+    now = to_utc_naive(utc_now())
+
+    doc = _build_order_document(
+        seller,
+        normalized_items=normalized_items,
+        payment_currency=payment_currency,
+        delivery=payload.delivery,
+        buyer_zone=payload.buyer_zone,
+        origin="platform",
+        now=now,
+    )
 
     result = await get_orders_collection().insert_one(doc)
     doc["_id"] = result.inserted_id
@@ -162,6 +284,44 @@ async def create_order(payload: CreateOrderRequest) -> OrderPublic:
         delivery_requested=bool(doc["delivery_requested"]),
     )
 
+    return _doc_to_public(doc)
+
+
+async def create_seller_manual_order(
+    seller_id: str,
+    payload: CreateSellerManualOrderRequest,
+) -> OrderPublic:
+    try:
+        seller_oid = ObjectId(seller_id.strip())
+    except InvalidId as exc:
+        raise ValueError("Tienda no válida.") from exc
+
+    seller = await get_registrations_collection().find_one({"_id": seller_oid})
+    if seller is None or not is_subscription_active(seller):
+        raise ValueError("Tienda no encontrada o no disponible.")
+
+    normalized_items = _normalize_items(_items_from_create_payload(payload.items))
+    payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
+    stock_adjustments = await _decrement_product_stock(seller_id, normalized_items)
+    now = to_utc_naive(utc_now())
+
+    doc = _build_order_document(
+        seller,
+        normalized_items=normalized_items,
+        payment_currency=payment_currency,
+        delivery=payload.delivery,
+        buyer_zone=payload.buyer_zone,
+        origin="manual",
+        now=now,
+    )
+
+    try:
+        result = await get_orders_collection().insert_one(doc)
+    except Exception:
+        await _rollback_stock_decrements(stock_adjustments)
+        raise
+
+    doc["_id"] = result.inserted_id
     return _doc_to_public(doc)
 
 
