@@ -119,6 +119,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
     return SellerPublic(
         id=str(doc["_id"]),
         store_name=doc["store_name"],
+        store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         phone=phone_display(doc["phone"]),
         billing_period=doc["billing_period"],
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),

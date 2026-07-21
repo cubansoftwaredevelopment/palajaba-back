@@ -47,6 +47,7 @@ class SellerLoginRequest(BaseModel):
 class SellerPublic(BaseModel):
     id: str
     store_name: str
+    store_slug: str | None = None
     phone: str
     billing_period: str
     plan_tier: str = "standard"
