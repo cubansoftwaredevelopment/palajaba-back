@@ -69,3 +69,60 @@ def decode_seller_token(token: str) -> dict | None:
         return None
 
     return payload
+
+
+def create_gestor_token(*, gestor_id: str, seller_id: str, username: str) -> str:
+    payload = {
+        "sub": username,
+        "gestor_id": gestor_id,
+        "seller_id": seller_id,
+        "username": username,
+        "role": "gestor",
+        "exp": _token_expiration_timestamp(),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def decode_gestor_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+    if payload.get("role") != "gestor":
+        return None
+
+    return payload
+
+
+def create_gestor_setup_token(
+    *,
+    gestor_id: str,
+    seller_id: str,
+    username: str,
+    store_name: str,
+    expire_minutes: int = 30,
+) -> str:
+    expire_at = datetime.now(UTC) + timedelta(minutes=expire_minutes)
+    payload = {
+        "sub": username,
+        "gestor_id": gestor_id,
+        "seller_id": seller_id,
+        "username": username,
+        "store_name": store_name,
+        "role": "gestor_setup",
+        "exp": int(expire_at.timestamp()),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def decode_gestor_setup_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+
+    if payload.get("role") != "gestor_setup":
+        return None
+
+    return payload

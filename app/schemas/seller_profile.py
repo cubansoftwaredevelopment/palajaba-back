@@ -33,6 +33,7 @@ class SellerProfileUpdate(BaseModel):
     social_facebook: str | None = Field(default=None, max_length=120)
     category_ids: list[str] = Field(..., min_length=1, max_length=5)
     offers_delivery: bool
+    gestores_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_delivery_areas(self):

@@ -74,6 +74,8 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         payment_currency=doc.get("payment_currency"),
         buyer_zone=buyer_zone,
         origin=doc.get("origin") or "platform",
+        gestor_id=doc.get("gestor_id"),
+        gestor_username=doc.get("gestor_username"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         completed_at=doc.get("completed_at"),
@@ -147,6 +149,8 @@ def _build_order_document(
     buyer_zone,
     origin: str,
     now,
+    gestor_id: str | None = None,
+    gestor_username: str | None = None,
 ) -> dict[str, Any]:
     return {
         "seller_id": str(seller["_id"]),
@@ -161,6 +165,8 @@ def _build_order_document(
         "payment_currency": payment_currency,
         "buyer_zone": buyer_zone.model_dump() if buyer_zone else None,
         "origin": origin,
+        "gestor_id": gestor_id,
+        "gestor_username": gestor_username,
         "created_at": now,
         "updated_at": now,
         "completed_at": None,
@@ -271,6 +277,8 @@ async def create_order(payload: CreateOrderRequest) -> OrderPublic:
         buyer_zone=payload.buyer_zone,
         origin="platform",
         now=now,
+        gestor_id=payload.gestor_id,
+        gestor_username=payload.gestor_username,
     )
 
     result = await get_orders_collection().insert_one(doc)

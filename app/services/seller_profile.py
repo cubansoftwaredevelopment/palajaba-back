@@ -17,6 +17,7 @@ from app.schemas.seller_profile import (
 from app.services.catalog_theme import normalize_catalog_theme
 from app.services.categories import categories_for_profile, validate_category_ids
 from app.services.cuba_locations import validate_business_area
+from app.services.gestores import parse_gestor_catalog_access
 from app.services.plans import (
     normalize_plan_tier,
     seller_has_recommendation_boost,
@@ -133,12 +134,14 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         social_facebook=doc.get("social_facebook"),
         category_ids=doc.get("category_ids") or [],
         offers_delivery=doc.get("offers_delivery"),
+        gestores_enabled=bool(doc.get("gestores_enabled")),
         profile_completed=completed,
         profile_completed_at=doc.get("profile_completed_at"),
         subscription_active=active,
         subscription_days_remaining=days_remaining,
         subscription_hours_remaining=hours_remaining,
         catalog_theme=normalize_catalog_theme(doc.get("catalog_theme")),
+        gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
     )
 
 
@@ -200,6 +203,7 @@ async def update_seller_profile(
         "social_facebook": payload.social_facebook,
         "category_ids": payload.category_ids,
         "offers_delivery": payload.offers_delivery,
+        "gestores_enabled": bool(payload.gestores_enabled),
         "business_area": business_area,
         "delivery_areas": delivery_areas,
         "updated_at": now,

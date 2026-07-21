@@ -5,6 +5,8 @@ from app.schemas.marketplace import (
     JabaSyncRequest,
     MarketplaceBusinessesPublic,
     MarketplaceCategoryProductsPublic,
+    MarketplaceGestorStoreCatalogPublic,
+    MarketplaceGestorStoreCategoryProductsPublic,
     MarketplaceHomeFeedPublic,
     MarketplaceSearchPublic,
     MarketplaceStoreCatalogPublic,
@@ -161,6 +163,32 @@ async def get_marketplace_store_catalog(
 
 
 @router.get(
+    "/stores/{store_slug}/gestores/{gestor_username}/catalog",
+    response_model=MarketplaceGestorStoreCatalogPublic,
+)
+async def get_marketplace_gestor_store_catalog(
+    store_slug: str,
+    gestor_username: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    limit_per_category: int = Query(20, ge=1, le=50),
+):
+    try:
+        return await marketplace_service.get_gestor_store_catalog(
+            store_slug,
+            gestor_username.strip(),
+            province_id.strip(),
+            municipality_id.strip(),
+            limit_per_category=limit_per_category,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
     "/stores/{store_slug}/categories/{category_id}/products",
     response_model=MarketplaceStoreCategoryProductsPublic,
 )
@@ -175,6 +203,36 @@ async def list_marketplace_store_category_products(
     try:
         return await marketplace_service.list_store_category_products(
             store_slug,
+            province_id.strip(),
+            municipality_id.strip(),
+            category_id.strip(),
+            limit=limit,
+            offset=offset,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
+    "/stores/{store_slug}/gestores/{gestor_username}/categories/{category_id}/products",
+    response_model=MarketplaceGestorStoreCategoryProductsPublic,
+)
+async def list_marketplace_gestor_store_category_products(
+    store_slug: str,
+    gestor_username: str,
+    category_id: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        return await marketplace_service.list_gestor_store_category_products(
+            store_slug,
+            gestor_username.strip(),
             province_id.strip(),
             municipality_id.strip(),
             category_id.strip(),

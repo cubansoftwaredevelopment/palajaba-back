@@ -1,6 +1,18 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+
+
+class MarketplaceCheckoutPhonePublic(BaseModel):
+    """Opción de WhatsApp en el checkout del catálogo del negocio (no catálogo de gestor)."""
+
+    key: str
+    kind: Literal["store", "gestor"]
+    label: str
+    phone: str
+    username: str | None = None
 
 
 class MarketplaceStorePublic(BaseModel):
@@ -10,6 +22,7 @@ class MarketplaceStorePublic(BaseModel):
     phone: str
     profile_photo_url: str | None = None
     business_area: BusinessArea | None = None
+    checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)
 
 
 class MarketplaceBusinessPublic(BaseModel):
@@ -57,6 +70,21 @@ class MarketplaceProductPublic(BaseModel):
     pickup_notice: str | None = None
     store: MarketplaceStorePublic
     category_name: str
+
+
+class MarketplaceGestorPublic(BaseModel):
+    """Referencia pública del gestor en catálogos atribuidos (no marketplace general)."""
+
+    id: str
+    username: str
+    phone: str
+
+
+class MarketplaceGestorProductPublic(MarketplaceProductPublic):
+    """Producto del catálogo público de un gestor (precio con margen + atribución)."""
+
+    gestor_id: str
+    gestor_username: str
 
 
 class MarketplaceCategorySectionPublic(BaseModel):
@@ -118,6 +146,33 @@ class MarketplaceStoreCatalogPublic(BaseModel):
     sections: list[MarketplaceStoreLocalSectionPublic] = Field(default_factory=list)
     total_products: int = 0
     catalog_theme: str = "default"
+    checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)
+
+
+class MarketplaceGestorStoreLocalSectionPublic(BaseModel):
+    category_id: str
+    category_name: str
+    products: list[MarketplaceGestorProductPublic] = Field(default_factory=list)
+    total_products: int = 0
+    has_more: bool = False
+
+
+class MarketplaceGestorStoreCatalogPublic(BaseModel):
+    """Catálogo público de un gestor: aislado del marketplace y de la tienda del negocio."""
+
+    store: MarketplaceStorePublic
+    biography: str | None = None
+    social_instagram: str | None = None
+    social_facebook: str | None = None
+    business_location: BusinessLocation | None = None
+    business_area: BusinessArea | None = None
+    delivery_areas: list[BusinessArea] = Field(default_factory=list)
+    categories: list[CategoryPublic] = Field(default_factory=list)
+    offers_delivery: bool | None = None
+    sections: list[MarketplaceGestorStoreLocalSectionPublic] = Field(default_factory=list)
+    total_products: int = 0
+    catalog_theme: str = "default"
+    gestor: MarketplaceGestorPublic
 
 
 class MarketplaceStoreCategoryProductsPublic(BaseModel):
@@ -128,6 +183,17 @@ class MarketplaceStoreCategoryProductsPublic(BaseModel):
     limit: int
     offset: int
     has_more: bool = False
+
+
+class MarketplaceGestorStoreCategoryProductsPublic(BaseModel):
+    category_id: str
+    category_name: str
+    products: list[MarketplaceGestorProductPublic] = Field(default_factory=list)
+    total_products: int = 0
+    limit: int
+    offset: int
+    has_more: bool = False
+    gestor: MarketplaceGestorPublic
 
 
 class JabaSyncItemRequest(BaseModel):

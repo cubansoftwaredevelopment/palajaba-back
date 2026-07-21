@@ -88,6 +88,8 @@ class CreateOrderRequest(BaseModel):
     delivery: DeliveryInfo | None = None
     buyer_zone: BuyerZone | None = None
     payment_currency: str | None = Field(default=None, min_length=3, max_length=8)
+    gestor_id: str | None = Field(default=None, min_length=1, max_length=64)
+    gestor_username: str | None = Field(default=None, min_length=2, max_length=32)
 
     @field_validator("payment_currency")
     @classmethod
@@ -98,6 +100,22 @@ class CreateOrderRequest(BaseModel):
         if normalized not in PAYMENT_CURRENCIES:
             raise ValueError("Moneda de pago no válida.")
         return normalized
+
+    @field_validator("gestor_username")
+    @classmethod
+    def normalize_gestor_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip().lower()
+        return stripped or None
+
+    @field_validator("gestor_id")
+    @classmethod
+    def strip_gestor_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
 
 class CreateSellerManualOrderRequest(BaseModel):
@@ -145,6 +163,8 @@ class OrderPublic(BaseModel):
     payment_currency: str | None = None
     buyer_zone: BuyerZone | None = None
     origin: OrderOrigin = "platform"
+    gestor_id: str | None = None
+    gestor_username: str | None = None
     created_at: UtcDateTime
     updated_at: UtcDateTime
     completed_at: UtcDateTime | None = None

@@ -31,6 +31,7 @@ class SeoSitemapTests(unittest.TestCase):
     def test_reserved_store_slug_blocks_indexing(self) -> None:
         self.assertTrue(is_reserved_store_slug("admin"))
         self.assertTrue(is_reserved_store_slug("comprar"))
+        self.assertTrue(is_reserved_store_slug("g"))
         self.assertFalse(is_reserved_store_slug("mi-tienda"))
 
 

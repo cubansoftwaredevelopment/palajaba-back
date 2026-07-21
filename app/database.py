@@ -45,9 +45,15 @@ async def connect_to_mongo():
     from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
     from app.services.catalog_theme_settings import ensure_catalog_theme_defaults_on_startup
     from app.services.discount_codes import ensure_discount_code_indexes
+    from app.services.gestores import (
+        ensure_gestor_indexes,
+        ensure_seller_gestor_catalog_defaults,
+    )
 
     await ensure_seller_feedback_indexes()
     await ensure_discount_code_indexes()
+    await ensure_gestor_indexes()
+    await ensure_seller_gestor_catalog_defaults()
     await ensure_catalog_theme_defaults_on_startup()
     await ensure_store_catalog_repairs_on_startup()
     await ensure_seller_stats_indexes()
@@ -141,3 +147,9 @@ def get_discount_codes_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["discount_codes"]
+
+
+def get_gestores_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["gestores"]

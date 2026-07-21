@@ -25,10 +25,21 @@ from app.schemas.seller_profile import (
 )
 from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
+from app.schemas.gestores import (
+    GestorAllowedProductPublic,
+    GestorCatalogAccess,
+    GestorCatalogAccessUpdate,
+    GestorCheckoutPhones,
+    GestorCheckoutPhonesUpdate,
+    GestorCreateRequest,
+    GestorDeleteResult,
+    GestorPublic,
+)
 from app.security import create_seller_token
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import catalog_theme_settings as catalog_theme_service
+from app.services import gestores as gestores_service
 from app.services import notifications as notification_service
 from app.services import orders as orders_service
 from app.services import seller_feedback as seller_feedback_service
@@ -157,6 +168,71 @@ async def mark_my_notification_read(
 async def get_my_catalog(seller_payload: dict = Depends(require_seller)):
     return await catalog_service.get_catalog_summary(seller_payload["seller_id"])
 
+
+@router.get("/me/gestores", response_model=list[GestorPublic])
+async def list_my_gestores(seller_payload: dict = Depends(require_seller)):
+    return await gestores_service.list_seller_gestores(seller_payload["seller_id"])
+
+
+@router.post("/me/gestores", response_model=GestorPublic, status_code=201)
+async def create_my_gestor(
+    payload: GestorCreateRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await gestores_service.create_seller_gestor(
+        seller_payload["seller_id"],
+        payload.username,
+    )
+
+
+@router.get("/me/gestores/catalog-access", response_model=GestorCatalogAccess)
+async def get_my_gestor_catalog_access(seller_payload: dict = Depends(require_seller)):
+    return await gestores_service.get_seller_gestor_catalog_access(seller_payload["seller_id"])
+
+
+@router.put("/me/gestores/catalog-access", response_model=GestorCatalogAccess)
+async def update_my_gestor_catalog_access(
+    payload: GestorCatalogAccessUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await gestores_service.update_seller_gestor_catalog_access(
+        seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.get("/me/gestores/checkout-phones", response_model=GestorCheckoutPhones)
+async def get_my_gestor_checkout_phones(seller_payload: dict = Depends(require_seller)):
+    return await gestores_service.get_seller_checkout_phones(seller_payload["seller_id"])
+
+
+@router.put("/me/gestores/checkout-phones", response_model=GestorCheckoutPhones)
+async def update_my_gestor_checkout_phones(
+    payload: GestorCheckoutPhonesUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await gestores_service.update_seller_checkout_phones(
+        seller_payload["seller_id"],
+        payload,
+    )
+
+
+@router.get("/me/gestores/network-products", response_model=list[GestorAllowedProductPublic])
+async def list_my_gestor_network_products(seller_payload: dict = Depends(require_seller)):
+    return await gestores_service.list_allowed_products_for_seller_network(
+        seller_payload["seller_id"]
+    )
+
+
+@router.delete("/me/gestores/{gestor_id}", response_model=GestorDeleteResult)
+async def delete_my_gestor(
+    gestor_id: str,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await gestores_service.delete_seller_gestor(
+        seller_payload["seller_id"],
+        gestor_id,
+    )
 
 @router.post("/me/catalog/categories", response_model=CatalogCategoryPublic, status_code=201)
 async def create_my_catalog_category(

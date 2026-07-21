@@ -191,7 +191,14 @@ async def create_registration(
         "social_facebook": None,
         "category_ids": [],
         "offers_delivery": None,
+        "gestores_enabled": False,
         "profile_completed_at": None,
+        "gestor_catalog_access": {
+            "mode": "selected",
+            "product_ids": [],
+        },
+        "checkout_gestor_ids": [],
+        "checkout_include_store_phone": True,
     }
 
     if discount_code:
