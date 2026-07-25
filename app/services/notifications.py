@@ -242,25 +242,72 @@ def _audience_empty_message(audience: NotificationAudienceInput) -> str:
     )
 
 
+async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
+    try:
+        seller_oid = ObjectId(seller_id.strip())
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Identificador de negocio no válido.",
+        ) from exc
+
+    seller = await get_registrations_collection().find_one(
+        {
+            "_id": seller_oid,
+            "status": {"$in": ["approved", "expired"]},
+        },
+        {
+            "_id": 1,
+            "store_name": 1,
+            "status": 1,
+            "subscription_ends_at": 1,
+            "plan_tier": 1,
+            "billing_period": 1,
+        },
+    )
+    if seller is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Negocio no encontrado o no disponible para notificar.",
+        )
+    return seller
+
+
 async def send_notification_to_sellers(
     admin_id: str,
     title: str,
     content: str,
     audience: NotificationAudienceInput = "all",
+    *,
+    seller_id: str | None = None,
 ) -> AdminNotificationSendResult:
     registrations = get_registrations_collection()
-    sellers = await registrations.find(
-        {"status": "approved"},
-        {
-            "_id": 1,
-            "subscription_ends_at": 1,
-            "status": 1,
-            "plan_tier": 1,
-            "billing_period": 1,
-        },
-    ).to_list(length=None)
-    sellers = [seller for seller in sellers if is_subscription_active(seller)]
-    sellers = _filter_sellers_by_audience(sellers, audience)
+    target_store_name: str | None = None
+
+    if seller_id:
+        seller = await _resolve_single_seller(seller_id)
+        sellers = [seller]
+        audience = "single"
+        target_store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
+    else:
+        if audience == "single":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indica el negocio destinatario.",
+            )
+        sellers = await registrations.find(
+            {"status": "approved"},
+            {
+                "_id": 1,
+                "subscription_ends_at": 1,
+                "status": 1,
+                "plan_tier": 1,
+                "billing_period": 1,
+                "store_name": 1,
+            },
+        ).to_list(length=None)
+        sellers = [seller for seller in sellers if is_subscription_active(seller)]
+        sellers = _filter_sellers_by_audience(sellers, audience)
 
     if not sellers:
         raise HTTPException(
@@ -288,6 +335,7 @@ async def send_notification_to_sellers(
             "title": title_clean,
             "content": content_clean,
             "audience": audience,
+            "target_store_name": target_store_name,
             "read_at": None,
             "created_at": now,
             "created_by_admin_id": admin_object_id,
@@ -305,6 +353,7 @@ async def send_notification_to_sellers(
         audience=audience,
         recipient_count=len(documents),
         created_at=now,
+        target_store_name=target_store_name,
     )
 
 
@@ -320,6 +369,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "title": {"$first": "$title"},
                 "content": {"$first": "$content"},
                 "audience": {"$first": "$audience"},
+                "target_store_name": {"$first": "$target_store_name"},
                 "created_at": {"$first": "$created_at"},
                 "recipient_count": {"$sum": 1},
             }
@@ -336,6 +386,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             audience=row.get("audience") or "all",
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
+            target_store_name=row.get("target_store_name"),
         )
         for row in rows
     ]

@@ -417,6 +417,7 @@ async def send_notification(
         payload.title,
         payload.content,
         payload.audience,
+        seller_id=payload.seller_id,
     )
 
 
