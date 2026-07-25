@@ -15,6 +15,11 @@ from app.services.admin_registration_insights import (
 from app.services.plans import normalize_billing_period, normalize_plan_tier
 from app.services.discount_codes import validate_discount_code
 from app.services.seller_profile import is_profile_complete
+from app.services.subscription_payments import (
+    record_subscription_payment,
+    registration_id_str,
+    upsert_latest_subscription_payment,
+)
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
 
@@ -320,6 +325,15 @@ async def approve_registration(
         },
     )
 
+    await record_subscription_payment(
+        registration_id=registration_id_str(doc),
+        amount_cup=payment_amount_cup,
+        kind="approval",
+        recorded_at=now,
+        plan_tier=doc.get("plan_tier"),
+        billing_period=doc.get("billing_period"),
+    )
+
     updated = await collection.find_one({"_id": doc["_id"]})
     return await _registration_to_public(updated)
 
@@ -431,6 +445,15 @@ async def renew_registration(
 
     await collection.update_one({"_id": doc["_id"]}, {"$set": updates})
 
+    await record_subscription_payment(
+        registration_id=registration_id_str(doc),
+        amount_cup=payment_amount_cup,
+        kind="renewal",
+        recorded_at=now,
+        plan_tier=updates.get("plan_tier", doc.get("plan_tier")),
+        billing_period=updates.get("billing_period", billing),
+    )
+
     updated = await collection.find_one({"_id": doc["_id"]})
     return await _registration_to_public(updated)
 
@@ -458,6 +481,14 @@ async def update_payment_amount(
     await collection.update_one(
         {"_id": doc["_id"]},
         {"$set": {"payment_amount_cup": payment_amount_cup, "updated_at": now}},
+    )
+
+    await upsert_latest_subscription_payment(
+        registration_id=registration_id_str(doc),
+        amount_cup=payment_amount_cup,
+        fallback_recorded_at=doc.get("approved_at") or now,
+        plan_tier=doc.get("plan_tier"),
+        billing_period=doc.get("billing_period"),
     )
 
     updated = await collection.find_one({"_id": doc["_id"]})

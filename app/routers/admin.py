@@ -16,7 +16,11 @@ from app.schemas.notifications import (
     AdminNotificationCreate,
     AdminNotificationSendResult,
 )
-from app.schemas.admin_stats import AdminBusinessesByProvince, AdminStatsSummary
+from app.schemas.admin_stats import (
+    AdminBusinessesByProvince,
+    AdminRevenueChart,
+    AdminStatsSummary,
+)
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.schemas.seller_feedback import (
@@ -34,6 +38,7 @@ from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
+from app.services.seller_stats import Granularity
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -130,6 +135,23 @@ async def stats_summary(
 @router.get("/stats/businesses-by-province", response_model=AdminBusinessesByProvince)
 async def businesses_by_province(_: dict = Depends(require_admin)):
     return await admin_stats_service.get_businesses_by_province()
+
+
+@router.get("/stats/revenue", response_model=AdminRevenueChart)
+async def stats_revenue(
+    granularity: Granularity,
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    _: dict = Depends(require_admin),
+):
+    now = datetime.now(UTC)
+    target_year = year if year is not None else now.year
+    target_month = month if month is not None else now.month
+    return await admin_stats_service.get_revenue_chart(
+        granularity=granularity,
+        year=None if granularity == "monthly" else target_year,
+        month=None if granularity == "monthly" else target_month,
+    )
 
 
 @router.post(
