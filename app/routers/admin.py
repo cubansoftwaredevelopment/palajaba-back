@@ -21,6 +21,12 @@ from app.schemas.admin_stats import (
     AdminRevenueChart,
     AdminStatsSummary,
 )
+from app.schemas.admin_order_stats import (
+    AdminOrdersByLocation,
+    AdminOrdersChart,
+    AdminTopBusinesses,
+    OrdersGranularity,
+)
 from app.schemas.marketplace_traffic import (
     AdminTrafficByLocation,
     AdminTrafficChart,
@@ -39,6 +45,7 @@ from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import admin_stats as admin_stats_service
 from app.services import discount_codes as discount_codes_service
+from app.services import admin_order_stats as admin_order_stats_service
 from app.services import marketplace_traffic as marketplace_traffic_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
@@ -206,6 +213,39 @@ async def stats_traffic_patterns(
         year=target_year,
         month=target_month,
     )
+
+
+@router.get("/stats/orders", response_model=AdminOrdersChart)
+async def stats_orders(
+    granularity: OrdersGranularity,
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    _: dict = Depends(require_admin),
+):
+    now = datetime.now(UTC)
+    target_year = year if year is not None else now.year
+    target_month = month if month is not None else now.month
+    return await admin_order_stats_service.get_orders_chart(
+        granularity=granularity,
+        year=None if granularity == "monthly" else target_year,
+        month=None if granularity == "monthly" else target_month,
+    )
+
+
+@router.get("/stats/orders/top-businesses", response_model=AdminTopBusinesses)
+async def stats_orders_top_businesses(
+    granularity: OrdersGranularity = Query(default="monthly"),
+    _: dict = Depends(require_admin),
+):
+    return await admin_order_stats_service.get_top_businesses(granularity=granularity)
+
+
+@router.get("/stats/orders/locations", response_model=AdminOrdersByLocation)
+async def stats_orders_locations(
+    granularity: OrdersGranularity = Query(default="monthly"),
+    _: dict = Depends(require_admin),
+):
+    return await admin_order_stats_service.get_orders_by_location(granularity=granularity)
 
 
 @router.post(
