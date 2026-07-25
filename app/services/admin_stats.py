@@ -17,6 +17,7 @@ from app.schemas.admin_stats import (
 )
 from app.schemas.seller_stats import RevenueDataPoint
 from app.services.cuba_locations import PROVINCE_NAMES
+from app.services import marketplace_traffic as marketplace_traffic_service
 from app.services.seller_stats import (
     Granularity,
     build_period_comparison,
@@ -316,6 +317,7 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
 
     published_products = await get_catalog_products_collection().count_documents({})
     orders_total = await get_orders_collection().count_documents({})
+    marketplace_visits = await marketplace_traffic_service.count_visits_in_month(year, month)
 
     return AdminStatsSummary(
         year=year,
@@ -326,6 +328,7 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
         pending_registrations=pending_registrations,
         published_products=published_products,
         orders_total=orders_total,
+        marketplace_visits=marketplace_visits,
     )
 
 

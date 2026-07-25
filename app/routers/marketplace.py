@@ -14,8 +14,10 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.orders import CreateOrderRequest, OrderPublic
+from app.schemas.marketplace_traffic import MarketplaceVisitRecordResult, MarketplaceVisitRequest
 from app.schemas.popularity import ProductPopularityEventRequest
 from app.services import marketplace as marketplace_service
+from app.services import marketplace_traffic as marketplace_traffic_service
 from app.services import orders as orders_service
 from app.services import product_popularity as popularity_service
 from app.services import seller_stats as seller_stats_service
@@ -121,6 +123,11 @@ async def search_marketplace_products(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.post("/visits", response_model=MarketplaceVisitRecordResult)
+async def record_marketplace_visit(payload: MarketplaceVisitRequest):
+    return await marketplace_traffic_service.record_marketplace_visit(payload)
 
 
 @router.post("/stores/{store_slug}/view", status_code=status.HTTP_204_NO_CONTENT)

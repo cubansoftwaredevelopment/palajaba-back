@@ -28,6 +28,7 @@ async def connect_to_mongo():
     from app.services.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
     from app.services.subscription_payments import ensure_subscription_payment_indexes
+    from app.services.marketplace_traffic import ensure_marketplace_visit_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.services.platform_settings import ensure_platform_settings_indexes
     from app.services.seller_profile import ensure_uploads_dir
@@ -59,6 +60,7 @@ async def connect_to_mongo():
     await ensure_store_catalog_repairs_on_startup()
     await ensure_seller_stats_indexes()
     await ensure_subscription_payment_indexes()
+    await ensure_marketplace_visit_indexes()
     await ensure_category_seed()
     await ensure_product_category_seed()
     await seed_default_admin()
@@ -161,3 +163,9 @@ def get_subscription_payments_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["subscription_payments"]
+
+
+def get_marketplace_visits_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["marketplace_visits"]

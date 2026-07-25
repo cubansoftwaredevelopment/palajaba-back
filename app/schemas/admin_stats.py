@@ -14,6 +14,7 @@ class AdminStatsSummary(BaseModel):
     pending_registrations: int
     published_products: int
     orders_total: int
+    marketplace_visits: int = 0
 
 
 class AdminProvinceBusinessCount(BaseModel):

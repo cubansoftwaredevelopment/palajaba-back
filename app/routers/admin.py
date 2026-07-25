@@ -21,6 +21,12 @@ from app.schemas.admin_stats import (
     AdminRevenueChart,
     AdminStatsSummary,
 )
+from app.schemas.marketplace_traffic import (
+    AdminTrafficByLocation,
+    AdminTrafficChart,
+    AdminTrafficPatterns,
+    TrafficGranularity,
+)
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.schemas.seller_feedback import (
@@ -33,6 +39,7 @@ from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import admin_stats as admin_stats_service
 from app.services import discount_codes as discount_codes_service
+from app.services import marketplace_traffic as marketplace_traffic_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
@@ -151,6 +158,53 @@ async def stats_revenue(
         granularity=granularity,
         year=None if granularity == "monthly" else target_year,
         month=None if granularity == "monthly" else target_month,
+    )
+
+
+@router.get("/stats/traffic", response_model=AdminTrafficChart)
+async def stats_traffic(
+    granularity: TrafficGranularity,
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    _: dict = Depends(require_admin),
+):
+    now = datetime.now(UTC)
+    target_year = year if year is not None else now.year
+    target_month = month if month is not None else now.month
+    return await marketplace_traffic_service.get_traffic_chart(
+        granularity=granularity,
+        year=None if granularity == "monthly" else target_year,
+        month=None if granularity == "monthly" else target_month,
+    )
+
+
+@router.get("/stats/traffic/locations", response_model=AdminTrafficByLocation)
+async def stats_traffic_locations(
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    _: dict = Depends(require_admin),
+):
+    now = datetime.now(UTC)
+    target_year = year if year is not None else now.year
+    target_month = month if month is not None else now.month
+    return await marketplace_traffic_service.get_traffic_by_location(
+        year=target_year,
+        month=target_month,
+    )
+
+
+@router.get("/stats/traffic/patterns", response_model=AdminTrafficPatterns)
+async def stats_traffic_patterns(
+    year: int | None = Query(default=None, ge=2020, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
+    _: dict = Depends(require_admin),
+):
+    now = datetime.now(UTC)
+    target_year = year if year is not None else now.year
+    target_month = month if month is not None else now.month
+    return await marketplace_traffic_service.get_traffic_patterns(
+        year=target_year,
+        month=target_month,
     )
 
 
