@@ -9,12 +9,31 @@ BillingPeriod = Literal["monthly", "yearly"]
 STANDARD_PLAN_TIER: PlanTier = "standard"
 PREMIUM_PLAN_TIER: PlanTier = "premium"
 PREMIUM_RECOMMENDATION_MULTIPLIER = 2
+STANDARD_GESTOR_LIMIT = 3
 
 
 def normalize_plan_tier(value: str | None) -> PlanTier:
     if value == PREMIUM_PLAN_TIER:
         return PREMIUM_PLAN_TIER
     return STANDARD_PLAN_TIER
+
+
+def max_gestores_for_plan(plan_tier: str | None) -> int | None:
+    """Tope de gestores por plan. None = ilimitado (Premium)."""
+    if normalize_plan_tier(plan_tier) == PREMIUM_PLAN_TIER:
+        return None
+    return STANDARD_GESTOR_LIMIT
+
+
+def seller_can_add_gestor(plan_tier: str | None, current_count: int) -> bool:
+    limit = max_gestores_for_plan(plan_tier)
+    if limit is None:
+        return True
+    try:
+        count = int(current_count)
+    except (TypeError, ValueError):
+        count = 0
+    return count < limit
 
 
 def normalize_billing_period(value: str | None) -> BillingPeriod:
