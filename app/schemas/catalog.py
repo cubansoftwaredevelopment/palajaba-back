@@ -54,6 +54,21 @@ class CatalogProductReorder(BaseModel):
         return normalized
 
 
+class CatalogProductSuggestion(BaseModel):
+    id: str
+    name: str
+    category_name: str
+    base_price: float
+    base_currency: str
+    stock_quantity: int | None = None
+
+
+class CatalogProductSearchPublic(BaseModel):
+    products: list[CatalogProductSuggestion] = Field(default_factory=list)
+    total: int = 0
+    has_ordered_products: bool = False
+
+
 class CatalogProductPublic(BaseModel):
     id: str
     category_id: str

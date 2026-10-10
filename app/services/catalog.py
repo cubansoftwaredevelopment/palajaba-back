@@ -10,6 +10,7 @@ from app.constants import CURRENCY_CODES, SUPPORTED_CURRENCIES
 from app.database import (
     get_catalog_categories_collection,
     get_catalog_products_collection,
+    get_orders_collection,
     get_registrations_collection,
 )
 from app.services.categories import business_category_name, resolve_product_global_category_id
@@ -21,6 +22,8 @@ from app.schemas.catalog import (
     CatalogCategoryReorder,
     CatalogProductPublic,
     CatalogProductReorder,
+    CatalogProductSearchPublic,
+    CatalogProductSuggestion,
     CatalogSummaryPublic,
     CurrencyPublic,
 )
@@ -34,6 +37,8 @@ from app.utils.datetime import to_utc_naive, utc_now
 
 MAX_CATEGORIES_PER_SELLER = 20
 MAX_PRODUCTS_PER_CATEGORY = 100
+ORDERED_PRODUCT_PREVIEW_LIMIT = 12
+ORDERED_PRODUCT_SEARCH_LIMIT = 40
 
 
 def _normalize_name(name: str) -> str:
@@ -293,6 +298,105 @@ async def _sync_local_category_product_count(seller_id: str, category_oid: Objec
     )
 
 
+def parse_ordered_product_ids(raw_ids: list) -> list[ObjectId]:
+    parsed: list[ObjectId] = []
+    seen: set[ObjectId] = set()
+    for raw in raw_ids:
+        try:
+            product_id = ObjectId(str(raw))
+        except (InvalidId, TypeError):
+            continue
+        if product_id in seen:
+            continue
+        seen.add(product_id)
+        parsed.append(product_id)
+    return parsed
+
+
+def ordered_product_search_limit(query: str) -> int:
+    if query.strip():
+        return ORDERED_PRODUCT_SEARCH_LIMIT
+    return ORDERED_PRODUCT_PREVIEW_LIMIT
+
+
+def ordered_product_search_filter(
+    seller_id: str,
+    product_ids: list[ObjectId],
+    query: str,
+    category_ids: list[ObjectId],
+) -> dict[str, Any] | None:
+    if not product_ids:
+        return None
+
+    product_filter: dict[str, Any] = {
+        "seller_id": seller_id,
+        "_id": {"$in": product_ids},
+        "is_available": True,
+        "view_only": {"$ne": True},
+    }
+    normalized = query.strip()
+    if not normalized:
+        return product_filter
+
+    regex = {"$regex": re.escape(normalized), "$options": "i"}
+    clauses: list[dict[str, Any]] = [{"name": regex}]
+    if category_ids:
+        clauses.append({"category_id": {"$in": category_ids}})
+    product_filter["$or"] = clauses
+    return product_filter
+
+
+async def search_seller_ordered_products(seller_id: str, query: str) -> CatalogProductSearchPublic:
+    raw_ids = await get_orders_collection().distinct("items.product_id", {"seller_id": seller_id})
+    product_ids = parse_ordered_product_ids(raw_ids)
+    if not product_ids:
+        return CatalogProductSearchPublic()
+
+    normalized = query.strip()
+    category_ids: list[ObjectId] = []
+    if normalized:
+        category_ids = await get_catalog_categories_collection().distinct(
+            "_id",
+            {
+                "seller_id": seller_id,
+                "name": {"$regex": re.escape(normalized), "$options": "i"},
+            },
+        )
+
+    product_filter = ordered_product_search_filter(seller_id, product_ids, normalized, category_ids)
+    products_col = get_catalog_products_collection()
+    total = await products_col.count_documents(product_filter)
+    limit = ordered_product_search_limit(normalized)
+    docs = await products_col.find(product_filter).sort("name", 1).limit(limit).to_list(length=limit)
+
+    category_oids = [doc["category_id"] for doc in docs if doc.get("category_id") is not None]
+    category_docs = []
+    if category_oids:
+        category_docs = await get_catalog_categories_collection().find(
+            {"_id": {"$in": category_oids}}
+        ).to_list(length=None)
+    category_names = {doc["_id"]: doc.get("name") or "" for doc in category_docs}
+
+    suggestions = [
+        CatalogProductSuggestion(
+            id=str(doc["_id"]),
+            name=doc["name"],
+            category_name=category_names.get(doc.get("category_id"), ""),
+            base_price=float(doc["base_price"]),
+            base_currency=doc["base_currency"],
+            stock_quantity=(
+                int(doc["stock_quantity"]) if doc.get("stock_quantity") is not None else None
+            ),
+        )
+        for doc in docs
+    ]
+    return CatalogProductSearchPublic(
+        products=suggestions,
+        total=total,
+        has_ordered_products=True,
+    )
+
+
 async def get_catalog_summary(seller_id: str) -> CatalogSummaryPublic:
     categories_col = get_catalog_categories_collection()
     products_col = get_catalog_products_collection()
@@ -376,6 +480,11 @@ async def delete_catalog_category(seller_id: str, category_id: str) -> None:
         )
 
     if product_docs:
+        from app.services.product_popularity import delete_popularity_events_for_products
+
+        await delete_popularity_events_for_products(
+            [str(product_doc["_id"]) for product_doc in product_docs]
+        )
         await products_col.delete_many({"seller_id": seller_id, "category_id": oid})
 
     await categories_col.delete_one({"_id": oid})
@@ -765,6 +874,9 @@ async def update_catalog_product(
 async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     doc = await _get_product_doc(seller_id, product_id)
     products = get_catalog_products_collection()
+    from app.services.product_popularity import delete_popularity_events_for_products
+
+    await delete_popularity_events_for_products([str(doc["_id"])])
     await products.delete_one({"_id": doc["_id"]})
     await _delete_product_image_file(
         doc.get("image_url"),

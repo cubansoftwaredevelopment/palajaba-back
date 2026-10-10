@@ -111,6 +111,12 @@ def get_catalog_products_collection() -> AsyncIOMotorCollection:
     return db["catalog_products"]
 
 
+def get_product_popularity_events_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["product_popularity_events"]
+
+
 def get_product_categories_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")

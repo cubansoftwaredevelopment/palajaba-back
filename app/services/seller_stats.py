@@ -22,6 +22,7 @@ from app.schemas.seller_stats import (
 )
 from app.services.order_totals import compute_order_products_revenue
 from app.services.plans import seller_has_statistics
+from app.services.product_popularity import refresh_popularity_window
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import (
     compare_month,
@@ -864,6 +865,7 @@ async def get_seller_top_products(
         )
 
     products_col = get_catalog_products_collection()
+    await refresh_popularity_window()
 
     popular_docs = await products_col.find(
         {

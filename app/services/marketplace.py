@@ -43,7 +43,7 @@ from app.services.categories import (
     normalize_business_category_id,
 )
 from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
-from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT
+from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
 from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
 from app.services.catalog_theme import normalize_catalog_theme
 from app.services.seller_profile import is_profile_complete
@@ -702,6 +702,7 @@ async def list_home_feed(
 ) -> MarketplaceHomeFeedPublic:
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
+    await refresh_popularity_window()
     seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
         await _build_marketplace_seller_context(
             province_id,
@@ -791,6 +792,7 @@ async def list_category_products(
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
+    await refresh_popularity_window()
 
     seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
         await _build_marketplace_seller_context(
@@ -885,6 +887,7 @@ async def search_products(
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
+    await refresh_popularity_window()
 
     seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
         await _build_marketplace_seller_context(
@@ -993,6 +996,7 @@ async def get_store_catalog(
 ) -> MarketplaceStoreCatalogPublic:
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
+    await refresh_popularity_window()
 
     seller = await _resolve_store_catalog_seller(store_ref)
     seller_id = str(seller["_id"])
@@ -1098,6 +1102,7 @@ async def list_store_category_products(
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
+    await refresh_popularity_window()
 
     seller = await _resolve_store_catalog_seller(store_ref)
     seller_id = str(seller["_id"])
@@ -1226,6 +1231,7 @@ async def get_gestor_store_catalog(
 ) -> MarketplaceGestorStoreCatalogPublic:
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
+    await refresh_popularity_window()
 
     seller = await _resolve_store_catalog_seller(store_ref)
     if not seller_has_gestores_enabled(seller):
@@ -1364,6 +1370,7 @@ async def list_gestor_store_category_products(
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
+    await refresh_popularity_window()
 
     seller = await _resolve_store_catalog_seller(store_ref)
     if not seller_has_gestores_enabled(seller):

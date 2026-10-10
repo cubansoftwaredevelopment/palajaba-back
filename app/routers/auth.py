@@ -10,6 +10,7 @@ from app.schemas.catalog import (
     CatalogCategoryReorder,
     CatalogProductPublic,
     CatalogProductReorder,
+    CatalogProductSearchPublic,
     CatalogSummaryPublic,
     CatalogThemePublic,
     CatalogThemeUpdate,
@@ -311,6 +312,14 @@ async def update_my_catalog_theme(
 @router.get("/me/catalog/currencies", response_model=list[CurrencyPublic])
 async def get_my_catalog_currencies(_seller_payload: dict = Depends(require_seller)):
     return catalog_service.get_supported_currencies()
+
+
+@router.get("/me/catalog/products/search", response_model=CatalogProductSearchPublic)
+async def search_my_catalog_products(
+    q: str = Query(default=""),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await catalog_service.search_seller_ordered_products(seller_payload["seller_id"], q)
 
 
 @router.post("/me/catalog/products", response_model=CatalogProductPublic, status_code=201)

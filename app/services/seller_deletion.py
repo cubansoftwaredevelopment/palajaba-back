@@ -44,6 +44,9 @@ async def delete_seller_data(seller_id: str, registration_doc: dict[str, Any]) -
 
     product_docs = await products_col.find({"seller_id": seller_id}).to_list(length=None)
     await _remove_product_images(product_docs)
+    from app.services.product_popularity import delete_popularity_events_for_seller
+
+    await delete_popularity_events_for_seller(seller_id)
     await products_col.delete_many({"seller_id": seller_id})
     await categories_col.delete_many({"seller_id": seller_id})
     await orders_col.delete_many({"seller_id": seller_id})

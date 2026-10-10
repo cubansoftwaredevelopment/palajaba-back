@@ -10,6 +10,7 @@ from app.database import (
     close_mongo_connection,
     connect_to_mongo,
     get_catalog_products_collection,
+    get_product_popularity_events_collection,
     get_registrations_collection,
 )
 from app.services.plans import PREMIUM_RECOMMENDATION_MULTIPLIER, recommendation_multiplier
@@ -17,6 +18,8 @@ from app.services.product_popularity import (
     POPULARITY_DELTA,
     bump_product_popularity,
     bump_products_on_order_completed,
+    popularity_cutoff,
+    popularity_score,
 )
 
 
@@ -48,10 +51,14 @@ async def verify_bump(product: dict, multiplier: int, event: str) -> tuple[bool,
 
     after_doc = await get_catalog_products_collection().find_one({"_id": product_id})
     after = int(after_doc.get("popularity") or 0)
-    delta = after - before
-    expected = base * multiplier
-    ok = delta == expected
-    return ok, f"delta={delta}, esperado={expected}"
+    recent_events = await get_product_popularity_events_collection().find(
+        {"product_id": str(product_id), "created_at": {"$gte": popularity_cutoff()}},
+        {"points": 1},
+    ).to_list(length=None)
+    window_points = sum(int(event.get("points") or 0) for event in recent_events)
+    expected = popularity_score(window_points, premium=multiplier > 1)
+    ok = after == expected
+    return ok, f"antes={before}, ahora={after}, ventana={window_points}, esperado={expected}, base={base}"
 
 
 async def main() -> None:

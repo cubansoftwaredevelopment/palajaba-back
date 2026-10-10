@@ -2,6 +2,7 @@ from app.utils.datetime import UtcDateTime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
+from pydantic_core import PydanticCustomError
 
 OrderStatus = Literal["pending_confirmation", "completed"]
 InvoiceType = Literal["store", "transporter"]
@@ -57,6 +58,27 @@ class DeliveryInfo(BaseModel):
     phone_primary: str = Field(..., min_length=8, max_length=20)
     phone_secondary: str | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=500)
+
+    @field_validator("phone_primary", mode="before")
+    @classmethod
+    def validate_phone_primary(cls, value: object) -> str:
+        if not isinstance(value, str):
+            raise PydanticCustomError(
+                "phone_primary_invalid",
+                "Ingresa un teléfono de contacto válido.",
+            )
+        stripped = value.strip()
+        if len(stripped) < 8:
+            raise PydanticCustomError(
+                "phone_primary_too_short",
+                "Ingresa un teléfono de contacto con al menos 8 caracteres.",
+            )
+        if len(stripped) > 20:
+            raise PydanticCustomError(
+                "phone_primary_too_long",
+                "El teléfono de contacto no puede tener más de 20 caracteres.",
+            )
+        return stripped
 
     @field_validator("recipient_name", "address")
     @classmethod
