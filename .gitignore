@@ -10,6 +10,7 @@ ENV/
 .env.production
 .env.local.dev
 !.env.example
+secrets/
 
 # Python
 __pycache__/

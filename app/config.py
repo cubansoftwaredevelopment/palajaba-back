@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = ""
     cloudinary_api_secret: str = ""
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    firebase_service_account_file: str = ""
     eltoque_api_key: str = ""
     eltoque_api_base_url: str = "https://tasas.eltoque.com"
     eltoque_user_agent: str = (
@@ -84,8 +85,11 @@ class Settings(BaseSettings):
         origins: list[str] = []
         for origin in self.cors_origins.split(","):
             normalized = origin.strip().strip('"').strip("'").rstrip("/")
-            if normalized:
+            if normalized and normalized not in origins:
                 origins.append(normalized)
+        for origin in ("https://localhost", "capacitor://localhost"):
+            if origin not in origins:
+                origins.append(origin)
         return origins
 
     @property

@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
+from app.live.hub import publish_seller_notification
 from app.schemas.notifications import (
     AdminNotificationBroadcastPublic,
     AdminNotificationSendResult,
@@ -183,21 +184,21 @@ async def notify_seller_new_order(
         content_lines.append("El cliente solicitó entrega a domicilio.")
 
     collection = get_notifications_collection()
-    await collection.insert_one(
-        {
-            "seller_id": seller_object_id,
-            "batch_id": f"new-order-{order_object_id}",
-            "kind": NOTIFICATION_KIND_NEW_ORDER,
-            "order_id": str(order_object_id),
-            "title": "Nuevo pedido recibido",
-            "content": "\n".join(content_lines),
-            "action_label": "Ver pedidos",
-            "action_type": ACTION_VIEW_ORDERS,
-            "read_at": None,
-            "created_at": to_utc_naive(utc_now()),
-            "created_by_admin_id": None,
-        },
-    )
+    document = {
+        "seller_id": seller_object_id,
+        "batch_id": f"new-order-{order_object_id}",
+        "kind": NOTIFICATION_KIND_NEW_ORDER,
+        "order_id": str(order_object_id),
+        "title": "Nuevo pedido recibido",
+        "content": "\n".join(content_lines),
+        "action_label": "Ver pedidos",
+        "action_type": ACTION_VIEW_ORDERS,
+        "read_at": None,
+        "created_at": to_utc_naive(utc_now()),
+        "created_by_admin_id": None,
+    }
+    await collection.insert_one(document)
+    await publish_seller_notification(str(seller_object_id), _document_to_public(document))
 
 
 AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
@@ -330,6 +331,7 @@ async def send_notification_to_sellers(
 
     documents = [
         {
+            "_id": ObjectId(),
             "seller_id": seller["_id"],
             "batch_id": batch_id,
             "title": title_clean,
@@ -345,6 +347,8 @@ async def send_notification_to_sellers(
 
     collection = get_notifications_collection()
     await collection.insert_many(documents)
+    for document in documents:
+        await publish_seller_notification(str(document["seller_id"]), _document_to_public(document))
 
     return AdminNotificationSendResult(
         batch_id=batch_id,

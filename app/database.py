@@ -171,6 +171,12 @@ def get_subscription_payments_collection() -> AsyncIOMotorCollection:
     return db["subscription_payments"]
 
 
+def get_seller_devices_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["seller_devices"]
+
+
 def get_marketplace_visits_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
