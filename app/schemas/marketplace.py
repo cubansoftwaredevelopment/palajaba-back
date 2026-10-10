@@ -102,6 +102,10 @@ class MarketplaceHomeFeedPublic(BaseModel):
     municipality_name: str
     sections: list[MarketplaceCategorySectionPublic] = Field(default_factory=list)
     total_products: int = 0
+    total_sections: int = 0
+    limit: int = 0
+    offset: int = 0
+    has_more: bool = False
 
 
 class MarketplaceSearchPublic(BaseModel):

@@ -698,10 +698,13 @@ async def list_home_feed(
     municipality_id: str,
     *,
     limit_per_category: int = DEFAULT_PAGE_SIZE,
+    section_limit: int | None = None,
+    section_offset: int = 0,
     municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceHomeFeedPublic:
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
+    safe_offset = max(0, section_offset)
     await refresh_popularity_window()
     seller_by_id, local_seller_ids, delivery_seller_ids, pickup_seller_ids = (
         await _build_marketplace_seller_context(
@@ -719,6 +722,10 @@ async def list_home_feed(
             municipality_name=municipality_name,
             sections=[],
             total_products=0,
+            total_sections=0,
+            limit=section_limit or 0,
+            offset=safe_offset,
+            has_more=False,
         )
 
     stats_by_category = await _aggregate_category_stats(
@@ -726,15 +733,24 @@ async def list_home_feed(
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids or None,
     )
-    category_ids = _sort_category_ids(stats_by_category)
+    category_ids = [
+        category_id
+        for category_id in _sort_category_ids(stats_by_category)
+        if stats_by_category[category_id]["count"] > 0
+    ]
+    total_sections = len(category_ids)
+    total_products = sum(stats_by_category[category_id]["count"] for category_id in category_ids)
+    if section_limit is None:
+        reported_limit = total_sections
+        page_category_ids = category_ids[safe_offset:]
+    else:
+        reported_limit = _normalize_page_size(section_limit)
+        page_category_ids = category_ids[safe_offset : safe_offset + reported_limit]
 
     sections: list[MarketplaceCategorySectionPublic] = []
-    total_products = 0
 
-    for category_id in category_ids:
+    for category_id in page_category_ids:
         total_in_category = stats_by_category[category_id]["count"]
-        if total_in_category <= 0:
-            continue
 
         product_docs = await _list_category_product_docs(
             local_seller_ids,
@@ -764,7 +780,6 @@ async def list_home_feed(
                 has_more=total_in_category > len(products),
             )
         )
-        total_products += total_in_category
 
     return MarketplaceHomeFeedPublic(
         province_id=province_id,
@@ -773,6 +788,10 @@ async def list_home_feed(
         municipality_name=municipality_name,
         sections=sections,
         total_products=total_products,
+        total_sections=total_sections,
+        limit=reported_limit,
+        offset=safe_offset,
+        has_more=safe_offset + len(page_category_ids) < total_sections,
     )
 
 

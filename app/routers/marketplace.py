@@ -30,6 +30,8 @@ async def get_marketplace_home_feed(
     province_id: str = Query(..., min_length=1),
     municipality_id: str = Query(..., min_length=1),
     limit_per_category: int = Query(20, ge=1, le=50),
+    limit: int = Query(4, ge=1, le=50),
+    offset: int = Query(0, ge=0),
     municipios_adicionales: list[str] | None = Query(default=None),
 ):
     try:
@@ -37,6 +39,8 @@ async def get_marketplace_home_feed(
             province_id.strip(),
             municipality_id.strip(),
             limit_per_category=limit_per_category,
+            section_limit=limit,
+            section_offset=offset,
             municipios_adicionales=municipios_adicionales,
         )
     except ValueError as exc:
