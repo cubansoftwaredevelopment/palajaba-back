@@ -8,14 +8,13 @@ from app.constants import REJECTION_REASON_UNCONFIRMED_PAYMENT
 from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
-from app.services.admins import is_admin_username
 from app.services.admin_registration_insights import (
     aggregate_product_counts_by_seller,
     build_marketplace_visibility_notes,
 )
 from app.services.plans import normalize_billing_period, normalize_plan_tier
 from app.services.discount_codes import validate_discount_code
-from app.services.seller_profile import is_profile_complete
+from app.services.seller_profile import ensure_store_name_available, is_profile_complete
 from app.services.subscription_payments import (
     record_subscription_payment,
     registration_id_str,
@@ -162,20 +161,7 @@ async def create_registration(
             detail="Este número de teléfono ya está registrado.",
         )
 
-    if is_admin_username(store_name):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ese nombre de tienda no está disponible.",
-        )
-
-    existing_store = await collection.find_one(
-        {"store_name": {"$regex": f"^{store_name}$", "$options": "i"}}
-    )
-    if existing_store:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe una tienda con ese nombre.",
-        )
+    await ensure_store_name_available(store_name)
 
     document = {
         "transfer_id": normalized_transfer_id,

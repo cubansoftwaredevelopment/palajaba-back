@@ -1,8 +1,10 @@
+import re
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, UploadFile, status
 
+from app.config import settings
 from app.database import get_registrations_collection
 from app.services.admins import is_admin_username
 from app.services.media_storage import read_image_upload, remove_image, store_image
@@ -35,6 +37,43 @@ from app.utils.phone import phone_display
 from app.utils.store_slug import store_name_to_slug
 
 UPLOADS_DIR = Path(__file__).resolve().parents[2] / "uploads" / "profiles"
+STORE_NAME_TAKEN_MESSAGE = "Ya existe una tienda con ese nombre."
+
+
+def _store_name_taken() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=STORE_NAME_TAKEN_MESSAGE,
+    )
+
+
+def _name_matches_admin(store_name: str) -> bool:
+    slug = store_name_to_slug(store_name)
+    admin_slug = store_name_to_slug(settings.admin_username)
+    return is_admin_username(store_name) or bool(slug and slug == admin_slug)
+
+
+async def ensure_store_name_available(
+    store_name: str,
+    *,
+    exclude_seller_id: Any | None = None,
+) -> None:
+    if _name_matches_admin(store_name):
+        raise _store_name_taken()
+
+    slug = store_name_to_slug(store_name)
+    clauses: list[dict[str, Any]] = [
+        {"store_name": {"$regex": f"^{re.escape(store_name.strip())}$", "$options": "i"}},
+    ]
+    if slug:
+        clauses.append({"store_slug": slug})
+    query: dict[str, Any] = {"$or": clauses}
+    if exclude_seller_id is not None:
+        query = {"$and": [query, {"_id": {"$ne": exclude_seller_id}}]}
+
+    existing = await get_registrations_collection().find_one(query)
+    if existing is not None:
+        raise _store_name_taken()
 
 
 def _area_key(area: dict[str, str]) -> str:
@@ -247,25 +286,9 @@ async def update_seller_store_name(
     if current_store_name.lower() == new_store_name.lower():
         return document_to_seller(doc)
 
-    if is_admin_username(new_store_name):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ese nombre de tienda no está disponible.",
-        )
+    await ensure_store_name_available(new_store_name, exclude_seller_id=doc["_id"])
 
     collection = get_registrations_collection()
-    existing = await collection.find_one(
-        {
-            "store_name": {"$regex": f"^{new_store_name}$", "$options": "i"},
-            "_id": {"$ne": doc["_id"]},
-        }
-    )
-    if existing:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Ese nombre ya está ocupado.",
-        )
-
     now = to_utc_naive(utc_now())
     await collection.update_one(
         {"_id": doc["_id"]},
