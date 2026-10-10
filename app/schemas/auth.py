@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.schemas.seller_profile import BusinessArea, BusinessLocation
+from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerSocialLink
 from app.schemas.gestores import GestorCatalogAccess
 from app.utils.datetime import UtcDateTime
 
@@ -61,6 +61,7 @@ class SellerPublic(BaseModel):
     biography: str | None = None
     social_instagram: str | None = None
     social_facebook: str | None = None
+    social_links: list[SellerSocialLink] = Field(default_factory=list)
     category_ids: list[str] = []
     offers_delivery: bool | None = None
     gestores_enabled: bool = False

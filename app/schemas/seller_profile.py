@@ -23,6 +23,50 @@ class CategoryPublic(BaseModel):
     name: str
 
 
+SOCIAL_PLATFORM_IDS = frozenset(
+    {"instagram", "facebook", "tiktok", "youtube", "telegram", "x", "whatsapp", "other"}
+)
+
+
+class SellerSocialLink(BaseModel):
+    platform: str = Field(..., min_length=1, max_length=40)
+    label: str | None = Field(default=None, max_length=40)
+    value: str = Field(..., min_length=1, max_length=200)
+
+    @field_validator("platform")
+    @classmethod
+    def normalize_platform(cls, value: str) -> str:
+        platform = value.strip().lower()
+        if platform not in SOCIAL_PLATFORM_IDS:
+            raise ValueError("Elige una red social válida.")
+        return platform
+
+    @field_validator("value")
+    @classmethod
+    def strip_value(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Escribe el usuario o el enlace de la red social.")
+        return stripped
+
+    @field_validator("label")
+    @classmethod
+    def strip_label(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @model_validator(mode="after")
+    def normalize_link(self):
+        if self.platform == "other":
+            if not self.label:
+                raise ValueError("Escribe el nombre de la red social.")
+        else:
+            self.label = None
+        return self
+
+
 class SellerProfileUpdate(BaseModel):
     business_location: BusinessLocation | None = None
     clear_business_location: bool = False
@@ -31,6 +75,7 @@ class SellerProfileUpdate(BaseModel):
     biography: str | None = Field(default=None, max_length=500)
     social_instagram: str | None = Field(default=None, max_length=80)
     social_facebook: str | None = Field(default=None, max_length=120)
+    social_links: list[SellerSocialLink] = Field(default_factory=list, max_length=12)
     category_ids: list[str] = Field(..., min_length=1, max_length=5)
     offers_delivery: bool
     gestores_enabled: bool = False

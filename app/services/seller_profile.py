@@ -15,6 +15,7 @@ from app.schemas.seller_profile import (
     CategoryPublic,
     SellerPhoneUpdate,
     SellerProfileUpdate,
+    SellerSocialLink,
     SellerStoreNameUpdate,
 )
 from app.services.catalog_theme import normalize_catalog_theme
@@ -141,6 +142,41 @@ def is_profile_complete(doc: dict[str, Any]) -> bool:
     )
 
 
+def social_links_from_document(doc: dict[str, Any]) -> list[SellerSocialLink]:
+    raw = doc.get("social_links")
+    if isinstance(raw, list):
+        links: list[SellerSocialLink] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            try:
+                links.append(SellerSocialLink.model_validate(item))
+            except Exception:
+                continue
+        return links
+
+    links = []
+    instagram = doc.get("social_instagram")
+    facebook = doc.get("social_facebook")
+    if isinstance(instagram, str) and instagram.strip():
+        links.append(SellerSocialLink(platform="instagram", value=instagram))
+    if isinstance(facebook, str) and facebook.strip():
+        links.append(SellerSocialLink(platform="facebook", value=facebook))
+    return links
+
+
+def resolve_profile_social_links(payload: SellerProfileUpdate) -> list[SellerSocialLink]:
+    if payload.social_links:
+        return payload.social_links
+
+    links: list[SellerSocialLink] = []
+    if payload.social_instagram:
+        links.append(SellerSocialLink(platform="instagram", value=payload.social_instagram))
+    if payload.social_facebook:
+        links.append(SellerSocialLink(platform="facebook", value=payload.social_facebook))
+    return links
+
+
 def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
     location = doc.get("business_location")
     business_location = None
@@ -173,6 +209,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         biography=doc.get("biography"),
         social_instagram=doc.get("social_instagram"),
         social_facebook=doc.get("social_facebook"),
+        social_links=social_links_from_document(doc),
         category_ids=doc.get("category_ids") or [],
         offers_delivery=doc.get("offers_delivery"),
         gestores_enabled=bool(doc.get("gestores_enabled")),
@@ -237,11 +274,16 @@ async def update_seller_profile(
         else []
     )
 
+    social_links = resolve_profile_social_links(payload)
+    social_instagram = next((link.value for link in social_links if link.platform == "instagram"), None)
+    social_facebook = next((link.value for link in social_links if link.platform == "facebook"), None)
+
     now = to_utc_naive(utc_now())
     update_fields: dict[str, Any] = {
         "biography": payload.biography,
-        "social_instagram": payload.social_instagram,
-        "social_facebook": payload.social_facebook,
+        "social_instagram": social_instagram,
+        "social_facebook": social_facebook,
+        "social_links": [link.model_dump() for link in social_links],
         "category_ids": payload.category_ids,
         "offers_delivery": payload.offers_delivery,
         "gestores_enabled": bool(payload.gestores_enabled),

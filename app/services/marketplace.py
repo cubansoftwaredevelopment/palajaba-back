@@ -46,7 +46,7 @@ from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
 from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
 from app.services.catalog_theme import normalize_catalog_theme
-from app.services.seller_profile import is_profile_complete
+from app.services.seller_profile import is_profile_complete, social_links_from_document
 from app.services.subscriptions import is_subscription_active
 from app.services.gestores import (
     compute_gestor_display_price,
@@ -168,6 +168,7 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
         "biography": seller.get("biography"),
         "social_instagram": seller.get("social_instagram"),
         "social_facebook": seller.get("social_facebook"),
+        "social_links": social_links_from_document(seller),
         "business_location": _parse_business_location(seller.get("business_location")),
         "business_area": _parse_business_area(seller.get("business_area")),
         "delivery_areas": _parse_delivery_areas(seller.get("delivery_areas")),

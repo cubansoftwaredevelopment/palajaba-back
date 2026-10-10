@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic, SellerSocialLink
 
 
 class MarketplaceCheckoutPhonePublic(BaseModel):
@@ -142,6 +142,7 @@ class MarketplaceStoreCatalogPublic(BaseModel):
     biography: str | None = None
     social_instagram: str | None = None
     social_facebook: str | None = None
+    social_links: list[SellerSocialLink] = Field(default_factory=list)
     business_location: BusinessLocation | None = None
     business_area: BusinessArea | None = None
     delivery_areas: list[BusinessArea] = Field(default_factory=list)
@@ -168,6 +169,7 @@ class MarketplaceGestorStoreCatalogPublic(BaseModel):
     biography: str | None = None
     social_instagram: str | None = None
     social_facebook: str | None = None
+    social_links: list[SellerSocialLink] = Field(default_factory=list)
     business_location: BusinessLocation | None = None
     business_area: BusinessArea | None = None
     delivery_areas: list[BusinessArea] = Field(default_factory=list)
