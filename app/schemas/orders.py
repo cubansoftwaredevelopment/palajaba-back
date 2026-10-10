@@ -1,7 +1,7 @@
 from app.utils.datetime import UtcDateTime
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 OrderStatus = Literal["pending_confirmation", "completed"]
@@ -58,6 +58,8 @@ class DeliveryInfo(BaseModel):
     phone_primary: str = Field(..., min_length=8, max_length=20)
     phone_secondary: str | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=500)
+    latitude: float | None = Field(default=None, ge=-90, le=90)
+    longitude: float | None = Field(default=None, ge=-180, le=180)
 
     @field_validator("phone_primary", mode="before")
     @classmethod
@@ -95,6 +97,13 @@ class DeliveryInfo(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+    @model_validator(mode="after")
+    def keep_location_pair(self):
+        if (self.latitude is None) != (self.longitude is None):
+            self.latitude = None
+            self.longitude = None
+        return self
 
 
 class BuyerZone(BaseModel):
