@@ -31,6 +31,10 @@ async def seed_default_admin() -> bool:
     return True
 
 
+def is_admin_username(value: str) -> bool:
+    return value.strip().casefold() == settings.admin_username.strip().casefold()
+
+
 async def authenticate_admin(username: str, password: str) -> dict[str, Any] | None:
     collection = get_admins_collection()
     admin = await collection.find_one({"username": username, "is_active": True})

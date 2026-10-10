@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import HTTPException, UploadFile, status
 
 from app.database import get_registrations_collection
+from app.services.admins import is_admin_username
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.schemas.auth import SellerPublic
 from app.schemas.seller_profile import (
@@ -245,6 +246,12 @@ async def update_seller_store_name(
 
     if current_store_name.lower() == new_store_name.lower():
         return document_to_seller(doc)
+
+    if is_admin_username(new_store_name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Ese nombre de tienda no está disponible.",
+        )
 
     collection = get_registrations_collection()
     existing = await collection.find_one(

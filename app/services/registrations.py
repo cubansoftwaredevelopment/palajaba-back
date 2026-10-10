@@ -8,6 +8,7 @@ from app.constants import REJECTION_REASON_UNCONFIRMED_PAYMENT
 from app.database import get_registrations_collection
 from app.schemas.registration import RegistrationPublic
 from app.security import hash_password
+from app.services.admins import is_admin_username
 from app.services.admin_registration_insights import (
     aggregate_product_counts_by_seller,
     build_marketplace_visibility_notes,
@@ -159,6 +160,12 @@ async def create_registration(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Este número de teléfono ya está registrado.",
+        )
+
+    if is_admin_username(store_name):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ese nombre de tienda no está disponible.",
         )
 
     existing_store = await collection.find_one(
