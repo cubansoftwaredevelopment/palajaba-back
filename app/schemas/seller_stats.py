@@ -24,6 +24,11 @@ class RevenueDataPoint(BaseModel):
     key: str
     label: str
     amount: float
+    time: int = 0
+    open: float = 0
+    high: float = 0
+    low: float = 0
+    close: float = 0
 
 
 class PeriodComparison(BaseModel):

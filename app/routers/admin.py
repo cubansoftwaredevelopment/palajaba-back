@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -16,23 +15,6 @@ from app.schemas.notifications import (
     AdminNotificationCreate,
     AdminNotificationSendResult,
 )
-from app.schemas.admin_stats import (
-    AdminBusinessesByProvince,
-    AdminRevenueChart,
-    AdminStatsSummary,
-)
-from app.schemas.admin_order_stats import (
-    AdminOrdersByLocation,
-    AdminOrdersChart,
-    AdminTopBusinesses,
-    OrdersGranularity,
-)
-from app.schemas.marketplace_traffic import (
-    AdminTrafficByLocation,
-    AdminTrafficChart,
-    AdminTrafficPatterns,
-    TrafficGranularity,
-)
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.schemas.seller_feedback import (
@@ -43,16 +25,12 @@ from app.schemas.seller_feedback import (
 from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
-from app.services import admin_stats as admin_stats_service
 from app.services import discount_codes as discount_codes_service
-from app.services import admin_order_stats as admin_order_stats_service
-from app.services import marketplace_traffic as marketplace_traffic_service
 from app.services import notifications as notification_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
-from app.services.seller_stats import Granularity
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -134,118 +112,6 @@ async def approve_registration(
     )
 
 
-@router.get("/stats/summary", response_model=AdminStatsSummary)
-async def stats_summary(
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await admin_stats_service.get_stats_summary(target_year, target_month)
-
-
-@router.get("/stats/businesses-by-province", response_model=AdminBusinessesByProvince)
-async def businesses_by_province(_: dict = Depends(require_admin)):
-    return await admin_stats_service.get_businesses_by_province()
-
-
-@router.get("/stats/revenue", response_model=AdminRevenueChart)
-async def stats_revenue(
-    granularity: Granularity,
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await admin_stats_service.get_revenue_chart(
-        granularity=granularity,
-        year=None if granularity == "monthly" else target_year,
-        month=None if granularity == "monthly" else target_month,
-    )
-
-
-@router.get("/stats/traffic", response_model=AdminTrafficChart)
-async def stats_traffic(
-    granularity: TrafficGranularity,
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await marketplace_traffic_service.get_traffic_chart(
-        granularity=granularity,
-        year=None if granularity == "monthly" else target_year,
-        month=None if granularity == "monthly" else target_month,
-    )
-
-
-@router.get("/stats/traffic/locations", response_model=AdminTrafficByLocation)
-async def stats_traffic_locations(
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await marketplace_traffic_service.get_traffic_by_location(
-        year=target_year,
-        month=target_month,
-    )
-
-
-@router.get("/stats/traffic/patterns", response_model=AdminTrafficPatterns)
-async def stats_traffic_patterns(
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await marketplace_traffic_service.get_traffic_patterns(
-        year=target_year,
-        month=target_month,
-    )
-
-
-@router.get("/stats/orders", response_model=AdminOrdersChart)
-async def stats_orders(
-    granularity: OrdersGranularity,
-    year: int | None = Query(default=None, ge=2020, le=2100),
-    month: int | None = Query(default=None, ge=1, le=12),
-    _: dict = Depends(require_admin),
-):
-    now = datetime.now(UTC)
-    target_year = year if year is not None else now.year
-    target_month = month if month is not None else now.month
-    return await admin_order_stats_service.get_orders_chart(
-        granularity=granularity,
-        year=None if granularity == "monthly" else target_year,
-        month=None if granularity == "monthly" else target_month,
-    )
-
-
-@router.get("/stats/orders/top-businesses", response_model=AdminTopBusinesses)
-async def stats_orders_top_businesses(
-    granularity: OrdersGranularity = Query(default="monthly"),
-    _: dict = Depends(require_admin),
-):
-    return await admin_order_stats_service.get_top_businesses(granularity=granularity)
-
-
-@router.get("/stats/orders/locations", response_model=AdminOrdersByLocation)
-async def stats_orders_locations(
-    granularity: OrdersGranularity = Query(default="monthly"),
-    _: dict = Depends(require_admin),
-):
-    return await admin_order_stats_service.get_orders_by_location(granularity=granularity)
 
 
 @router.post(

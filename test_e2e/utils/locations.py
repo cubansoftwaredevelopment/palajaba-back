@@ -1,0 +1,2 @@
+PROVINCE_ID = "la-habana"
+SELLER_MUNICIPALITY_ID = "playa"

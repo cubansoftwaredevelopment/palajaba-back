@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
+from app.statistics_admin.routes import public_router as statistics_public_router
+from app.statistics_admin.routes import router as statistics_router
 from app.routers import admin, auth, categories, marketplace, platform, product_categories, register, seo, gestores
 from app.services.exchange_rates import (
     start_exchange_rates_refresh_task,
@@ -45,6 +47,8 @@ app.include_router(marketplace.router)
 app.include_router(platform.router)
 app.include_router(seo.router)
 app.include_router(admin.router)
+app.include_router(statistics_router)
+app.include_router(statistics_public_router)
 app.include_router(live_router)
 
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
