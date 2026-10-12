@@ -1,4 +1,4 @@
-"""Presencia de la app nativa: dispositivos, uso por día y mapa."""
+"""Presencia de la app y del navegador: dispositivos, uso por día y mapa."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from app.utils.datetime import to_utc_naive, utc_now
 
 DeviceGranularity = Literal["daily", "weekly", "monthly"]
 ACTIVE_WINDOW = timedelta(seconds=90)
+TRACKED_PLATFORMS = ("android", "ios", "web")
+ACCOUNT_KINDS = {"seller", "gestor"}
 
 
 async def ensure_app_device_indexes() -> None:
@@ -49,7 +51,8 @@ async def record_device_presence(payload: DevicePresenceRequest) -> None:
         device_set["lng"] = payload.lng
         day_set["lat"] = payload.lat
         day_set["lng"] = payload.lng
-    if payload.session_kind:
+    account_session = payload.session_kind in ACCOUNT_KINDS
+    if account_session:
         day_set["session_kind"] = payload.session_kind
         day_set["signed_in"] = True
 
@@ -66,8 +69,10 @@ async def record_device_presence(payload: DevicePresenceRequest) -> None:
         "day": day,
         "first_seen": now,
     }
-    if not payload.session_kind:
+    if not account_session:
         insert_fields["signed_in"] = False
+        if payload.session_kind == "buyer":
+            insert_fields["session_kind"] = "buyer"
     await get_app_device_days_collection().update_one(
         {"device_id": payload.device_id, "day": day},
         {"$set": day_set, "$setOnInsert": insert_fields},
@@ -81,12 +86,18 @@ def _marker_from_doc(doc: dict[str, Any], *, active: bool) -> DeviceMapMarker | 
     if lat is None or lng is None:
         return None
     kind = doc.get("session_kind")
-    signed_in = bool(doc.get("signed_in") or kind)
+    if kind not in {"seller", "gestor", "buyer"}:
+        kind = None
+    platform = doc.get("platform")
+    if platform not in TRACKED_PLATFORMS:
+        platform = None
+    signed_in = bool(doc.get("signed_in") or kind in ACCOUNT_KINDS)
     return DeviceMapMarker(
         lat=float(lat),
         lng=float(lng),
+        platform=platform,
         signed_in=signed_in,
-        session_kind=kind if kind in {"seller", "gestor"} else None,
+        session_kind=kind,
         active=active,
     )
 
@@ -114,15 +125,14 @@ async def get_device_stats(
     devices = get_app_devices_collection()
     days = get_app_device_days_collection()
 
-    registered = await devices.count_documents({"platform": {"$in": ["android", "ios"]}})
-    active_now = await devices.count_documents(
-        {"platform": {"$in": ["android", "ios"]}, "last_seen": {"$gte": active_since}}
-    )
+    tracked = {"platform": {"$in": list(TRACKED_PLATFORMS)}}
+    registered = await devices.count_documents(tracked)
+    active_now = await devices.count_documents({**tracked, "last_seen": {"$gte": active_since}})
     signed_in_now = await devices.count_documents(
         {
-            "platform": {"$in": ["android", "ios"]},
+            **tracked,
             "last_seen": {"$gte": active_since},
-            "session_kind": {"$in": ["seller", "gestor"]},
+            "session_kind": {"$in": list(ACCOUNT_KINDS)},
         }
     )
 
@@ -170,7 +180,7 @@ async def get_device_stats(
     if live:
         active_docs = await devices.find(
             {
-                "platform": {"$in": ["android", "ios"]},
+                "platform": {"$in": list(TRACKED_PLATFORMS)},
                 "last_seen": {"$gte": active_since},
                 "lat": {"$ne": None},
                 "lng": {"$ne": None},

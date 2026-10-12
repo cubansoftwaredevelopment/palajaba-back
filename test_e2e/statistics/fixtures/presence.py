@@ -4,7 +4,16 @@ from datetime import datetime
 
 from bson import ObjectId
 
-from test_e2e.statistics.fixtures.constants import ID_PREFIX, ISOLATED_DAY, LIVE_LAT, LIVE_LNG, PAST_LAT, PAST_LNG
+from test_e2e.statistics.fixtures.constants import (
+    ID_PREFIX,
+    ISOLATED_DAY,
+    LIVE_LAT,
+    LIVE_LNG,
+    PAST_LAT,
+    PAST_LNG,
+    WEB_LAT,
+    WEB_LNG,
+)
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 
 
@@ -48,6 +57,16 @@ def logged_out_presence(device_id: str) -> dict:
 
 def anonymous_presence(device_id: str) -> dict:
     return presence_payload(device_id, platform="ios")
+
+
+def web_buyer_presence(device_id: str) -> dict:
+    return presence_payload(
+        device_id,
+        platform="web",
+        lat=WEB_LAT,
+        lng=WEB_LNG,
+        session_kind="buyer",
+    )
 
 
 def past_device_day(device_id: str) -> dict:

@@ -4,8 +4,8 @@ from pydantic import BaseModel, Field
 
 from app.statistics_admin.schemas.traffic import TrafficDataPoint
 
-DevicePlatform = Literal["android", "ios"]
-SessionKind = Literal["seller", "gestor"]
+DevicePlatform = Literal["android", "ios", "web"]
+SessionKind = Literal["seller", "gestor", "buyer"]
 
 
 class DevicePresenceRequest(BaseModel):
@@ -23,6 +23,7 @@ class DevicePresenceResult(BaseModel):
 class DeviceMapMarker(BaseModel):
     lat: float
     lng: float
+    platform: DevicePlatform | None = None
     signed_in: bool = False
     session_kind: SessionKind | None = None
     active: bool = False

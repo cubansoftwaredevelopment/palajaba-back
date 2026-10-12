@@ -6,7 +6,17 @@ import unittest
 
 from bson import ObjectId
 
-from test_e2e.statistics.fixtures.constants import CUP_COLLECTED, ISOLATED_DAY, LIVE_LAT, LIVE_LNG, PAST_LAT, PAST_LNG, PAYMENT_CUP
+from test_e2e.statistics.fixtures.constants import (
+    CUP_COLLECTED,
+    ISOLATED_DAY,
+    LIVE_LAT,
+    LIVE_LNG,
+    PAST_LAT,
+    PAST_LNG,
+    PAYMENT_CUP,
+    WEB_LAT,
+    WEB_LNG,
+)
 from test_e2e.statistics.fixtures.history import store_name
 from test_e2e.statistics.fixtures.presence import (
     anonymous_presence,
@@ -14,6 +24,7 @@ from test_e2e.statistics.fixtures.presence import (
     seller_presence,
     tracked_id,
     visit_payload,
+    web_buyer_presence,
 )
 from test_e2e.statistics.utils import (
     cleanup,
@@ -119,25 +130,33 @@ class StatisticsE2ETests(unittest.TestCase):
             signed_in = client.post("/api/marketplace/devices/presence", json=seller_presence(signed_in_id))
             logged_out = client.post("/api/marketplace/devices/presence", json=logged_out_presence(signed_in_id))
             anonymous = client.post("/api/marketplace/devices/presence", json=anonymous_presence(tracked_id()))
+            web = client.post("/api/marketplace/devices/presence", json=web_buyer_presence(tracked_id()))
             live = client.get("/api/admin/stats/devices", params=params, headers=self.headers).json()
 
         self.assertEqual(signed_in.status_code, 200, signed_in.text)
         self.assertEqual(logged_out.status_code, 200, logged_out.text)
         self.assertEqual(anonymous.status_code, 200, anonymous.text)
+        self.assertEqual(web.status_code, 200, web.text)
         self.assertTrue(live["live"])
-        self.assertGreaterEqual(live["registered"], before["registered"] + 2)
-        self.assertGreaterEqual(live["active_now"], before["active_now"] + 2)
+        self.assertGreaterEqual(live["registered"], before["registered"] + 3)
+        self.assertGreaterEqual(live["active_now"], before["active_now"] + 3)
         self.assertEqual(live["signed_in_now"], before["signed_in_now"])
         today_point = next(point for point in live["points"] if point["key"] == day.isoformat())
         before_point = next((point for point in before["points"] if point["key"] == day.isoformat()), None)
         before_close = 0 if before_point is None else before_point["close"]
-        self.assertGreaterEqual(today_point["close"], before_close + 2)
+        self.assertGreaterEqual(today_point["close"], before_close + 3)
         live_pins = [marker for marker in live["markers"] if same_point(marker, LIVE_LAT, LIVE_LNG)]
         self.assertEqual(len(live_pins), 1)
         pin = live_pins[0]
         self.assertTrue(pin["active"])
         self.assertFalse(pin["signed_in"])
         self.assertIsNone(pin["session_kind"])
+        self.assertEqual(pin["platform"], "android")
+        web_pins = [marker for marker in live["markers"] if same_point(marker, WEB_LAT, WEB_LNG)]
+        self.assertEqual(len(web_pins), 1)
+        self.assertEqual(web_pins[0]["platform"], "web")
+        self.assertEqual(web_pins[0]["session_kind"], "buyer")
+        self.assertFalse(web_pins[0]["signed_in"])
 
         saved_day = device_day(signed_in_id, day.isoformat())
         self.assertIsNotNone(saved_day)
