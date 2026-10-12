@@ -47,6 +47,42 @@ class AdminTopBusinesses(BaseModel):
     businesses: list[AdminTopBusinessItem] = Field(default_factory=list)
 
 
+class AdminTopSoldProduct(BaseModel):
+    product_id: str
+    name: str
+    store_name: str
+    quantity: int
+    amount_cup: float | None = None
+
+
+class AdminTopSoldProducts(BaseModel):
+    granularity: OrdersGranularity
+    year: int | None = None
+    month: int | None = None
+    period_label: str
+    total_units: int = 0
+    products: list[AdminTopSoldProduct] = Field(default_factory=list)
+
+
+class AdminTopPopularProduct(BaseModel):
+    product_id: str
+    name: str
+    store_name: str
+    points: int
+    views: int = 0
+    jaba: int = 0
+    purchases: int = 0
+
+
+class AdminTopPopularProducts(BaseModel):
+    granularity: OrdersGranularity
+    year: int | None = None
+    month: int | None = None
+    period_label: str
+    total_points: int = 0
+    products: list[AdminTopPopularProduct] = Field(default_factory=list)
+
+
 class AdminOrdersLocationItem(BaseModel):
     province_id: str
     province_name: str

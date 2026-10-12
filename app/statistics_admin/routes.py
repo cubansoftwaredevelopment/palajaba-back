@@ -7,6 +7,7 @@ from app.dependencies import require_admin
 from app.services.seller_stats import Granularity
 from app.statistics_admin import devices as devices_service
 from app.statistics_admin import orders as order_stats_service
+from app.statistics_admin import products as product_stats_service
 from app.statistics_admin import stats as stats_service
 from app.statistics_admin import traffic as traffic_service
 from app.statistics_admin.schemas import (
@@ -18,6 +19,8 @@ from app.statistics_admin.schemas import (
     AdminSalesChart,
     AdminStatsSummary,
     AdminTopBusinesses,
+    AdminTopPopularProducts,
+    AdminTopSoldProducts,
     AdminTrafficByLocation,
     AdminTrafficChart,
     AdminTrafficPatterns,
@@ -227,6 +230,36 @@ async def stats_orders_top_businesses(
 ):
     window = _resolved_window(start, end)
     return await order_stats_service.get_top_businesses(
+        granularity=granularity,
+        start=None if window is None else window[0],
+        end=None if window is None else window[1],
+    )
+
+
+@router.get("/stats/products/sold", response_model=AdminTopSoldProducts)
+async def stats_top_sold_products(
+    granularity: OrdersGranularity = Query(default="monthly"),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    _: dict = Depends(require_admin),
+):
+    window = _resolved_window(start, end)
+    return await product_stats_service.get_top_sold_products(
+        granularity=granularity,
+        start=None if window is None else window[0],
+        end=None if window is None else window[1],
+    )
+
+
+@router.get("/stats/products/popular", response_model=AdminTopPopularProducts)
+async def stats_top_popular_products(
+    granularity: OrdersGranularity = Query(default="monthly"),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    _: dict = Depends(require_admin),
+):
+    window = _resolved_window(start, end)
+    return await product_stats_service.get_top_popular_products(
         granularity=granularity,
         start=None if window is None else window[0],
         end=None if window is None else window[1],

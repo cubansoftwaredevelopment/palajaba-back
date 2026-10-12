@@ -14,6 +14,8 @@ from test_e2e.statistics.fixtures.constants import (
     PAST_LAT,
     PAST_LNG,
     PAYMENT_CUP,
+    SOLD_LEAD_NAME,
+    SOLD_SECOND_NAME,
     WEB_LAT,
     WEB_LNG,
 )
@@ -220,3 +222,46 @@ class StatisticsE2ETests(unittest.TestCase):
             count_for(provinces["provinces"], province_id=PROVINCE_ID),
             count_for(self.provinces_before["provinces"], province_id=PROVINCE_ID) + 1,
         )
+
+    def test_isolated_day_ranks_sold_units_and_popularity_points(self) -> None:
+        day = day_params(ISOLATED_DAY)
+        with api_client() as client:
+            sold = client.get("/api/admin/stats/products/sold", params=day, headers=self.headers)
+            popular = client.get("/api/admin/stats/products/popular", params=day, headers=self.headers)
+
+        self.assertEqual(sold.status_code, 200, sold.text)
+        self.assertEqual(popular.status_code, 200, popular.text)
+        sold_body = sold.json()
+        popular_body = popular.json()
+        sold_by_name = {item["name"]: item for item in sold_body["products"]}
+        popular_by_name = {item["name"]: item for item in popular_body["products"]}
+
+        lead = sold_by_name[SOLD_LEAD_NAME]
+        second = sold_by_name[SOLD_SECOND_NAME]
+        self.assertEqual(lead["quantity"], 6)
+        self.assertEqual(lead["amount_cup"], 400)
+        self.assertEqual(lead["store_name"], self.store_name)
+        self.assertEqual(second["quantity"], 1)
+        self.assertEqual(second["amount_cup"], 50)
+        self.assertLess(
+            sold_body["products"].index(lead),
+            sold_body["products"].index(second),
+        )
+        self.assertGreaterEqual(sold_body["total_units"], 7)
+
+        popular_lead = popular_by_name[SOLD_LEAD_NAME]
+        popular_second = popular_by_name[SOLD_SECOND_NAME]
+        self.assertEqual(popular_lead["points"], 1)
+        self.assertEqual(popular_lead["views"], 1)
+        self.assertEqual(popular_lead["jaba"], 0)
+        self.assertEqual(popular_lead["purchases"], 0)
+        self.assertEqual(popular_second["points"], 3)
+        self.assertEqual(popular_second["views"], 1)
+        self.assertEqual(popular_second["jaba"], 1)
+        self.assertEqual(popular_second["purchases"], 0)
+        self.assertEqual(popular_second["store_name"], self.store_name)
+        self.assertLess(
+            popular_body["products"].index(popular_second),
+            popular_body["products"].index(popular_lead),
+        )
+        self.assertGreaterEqual(popular_body["total_points"], 4)

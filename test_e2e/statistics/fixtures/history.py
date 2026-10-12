@@ -10,6 +10,8 @@ from test_e2e.statistics.fixtures.constants import (
     ISOLATED_DAY,
     MARKER,
     PAYMENT_CUP,
+    SOLD_LEAD_NAME,
+    SOLD_SECOND_NAME,
     UNCONVERTIBLE_COLLECTED,
 )
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
@@ -55,19 +57,107 @@ def seller_document(seller_id: ObjectId, name: str) -> dict:
     }
 
 
-def completed_orders(seller_id: ObjectId, name: str) -> list[dict]:
+def product_documents(seller_id: ObjectId, lead_id: ObjectId, second_id: ObjectId) -> list[dict]:
+    return [
+        {
+            "_id": lead_id,
+            "seller_id": str(seller_id),
+            "name": SOLD_LEAD_NAME,
+            "statistics_e2e_marker": MARKER,
+        },
+        {
+            "_id": second_id,
+            "seller_id": str(seller_id),
+            "name": SOLD_SECOND_NAME,
+            "statistics_e2e_marker": MARKER,
+        },
+    ]
+
+
+def completed_orders(
+    seller_id: ObjectId,
+    name: str,
+    lead_id: ObjectId,
+    second_id: ObjectId,
+) -> list[dict]:
     moment = completed_at()
+    lead = str(lead_id)
+    second = str(second_id)
     return [
         {
             "seller_id": str(seller_id),
             "store_name": name,
             "status": "completed",
             "completed_at": moment,
-            "collected_total": amount,
-            "payment_currency": currency,
+            "collected_total": CUP_COLLECTED,
+            "payment_currency": "CUP",
+            "items": [
+                {
+                    "product_id": lead,
+                    "name": SOLD_LEAD_NAME,
+                    "quantity": 4,
+                    "unit_price": 100,
+                    "currency": "CUP",
+                },
+                {
+                    "product_id": second,
+                    "name": SOLD_SECOND_NAME,
+                    "quantity": 1,
+                    "unit_price": 50,
+                    "currency": "CUP",
+                },
+            ],
             "statistics_e2e_marker": MARKER,
-        }
-        for currency, amount in (("CUP", CUP_COLLECTED), ("ZZZ", UNCONVERTIBLE_COLLECTED))
+        },
+        {
+            "seller_id": str(seller_id),
+            "store_name": name,
+            "status": "completed",
+            "completed_at": moment,
+            "collected_total": UNCONVERTIBLE_COLLECTED,
+            "payment_currency": "ZZZ",
+            "items": [
+                {
+                    "product_id": lead,
+                    "name": SOLD_LEAD_NAME,
+                    "quantity": 2,
+                    "unit_price": 10,
+                    "currency": "ZZZ",
+                },
+            ],
+            "statistics_e2e_marker": MARKER,
+        },
+    ]
+
+
+def popularity_events(seller_id: ObjectId, lead_id: ObjectId, second_id: ObjectId) -> list[dict]:
+    moment = completed_at()
+    seller = str(seller_id)
+    return [
+        {
+            "product_id": str(lead_id),
+            "seller_id": seller,
+            "event": "view",
+            "points": 1,
+            "created_at": moment,
+            "statistics_e2e_marker": MARKER,
+        },
+        {
+            "product_id": str(second_id),
+            "seller_id": seller,
+            "event": "view",
+            "points": 1,
+            "created_at": moment,
+            "statistics_e2e_marker": MARKER,
+        },
+        {
+            "product_id": str(second_id),
+            "seller_id": seller,
+            "event": "jaba",
+            "points": 2,
+            "created_at": moment,
+            "statistics_e2e_marker": MARKER,
+        },
     ]
 
 

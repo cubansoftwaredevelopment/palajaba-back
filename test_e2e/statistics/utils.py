@@ -7,14 +7,22 @@ from bson import ObjectId
 from app.database import (
     get_app_device_days_collection,
     get_app_devices_collection,
+    get_catalog_products_collection,
     get_marketplace_visits_collection,
     get_orders_collection,
+    get_product_popularity_events_collection,
     get_registrations_collection,
     get_subscription_payments_collection,
 )
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.statistics.fixtures.constants import ID_PREFIX, ISOLATED_DAY, MARKER
-from test_e2e.statistics.fixtures.history import completed_orders, payment_document, seller_document
+from test_e2e.statistics.fixtures.history import (
+    completed_orders,
+    payment_document,
+    popularity_events,
+    product_documents,
+    seller_document,
+)
 from test_e2e.statistics.fixtures.presence import past_device_day
 from test_e2e.utils.database import run_db
 
@@ -48,6 +56,8 @@ def cleanup() -> None:
         await get_registrations_collection().delete_many({"statistics_e2e_marker": MARKER})
         await get_orders_collection().delete_many({"statistics_e2e_marker": MARKER})
         await get_subscription_payments_collection().delete_many({"statistics_e2e_marker": MARKER})
+        await get_catalog_products_collection().delete_many({"statistics_e2e_marker": MARKER})
+        await get_product_popularity_events_collection().delete_many({"statistics_e2e_marker": MARKER})
         tracked = {"$regex": rf"^{ID_PREFIX}"}
         await get_marketplace_visits_collection().delete_many({"session_id": tracked})
         await get_app_devices_collection().delete_many({"device_id": tracked})
@@ -58,8 +68,14 @@ def cleanup() -> None:
 
 def seed_history(seller_id: ObjectId, name: str) -> None:
     async def work() -> None:
+        lead_id = ObjectId()
+        second_id = ObjectId()
         await get_registrations_collection().insert_one(seller_document(seller_id, name))
-        await get_orders_collection().insert_many(completed_orders(seller_id, name))
+        await get_catalog_products_collection().insert_many(product_documents(seller_id, lead_id, second_id))
+        await get_orders_collection().insert_many(completed_orders(seller_id, name, lead_id, second_id))
+        await get_product_popularity_events_collection().insert_many(
+            popularity_events(seller_id, lead_id, second_id)
+        )
         await get_subscription_payments_collection().insert_one(payment_document())
 
     run_db(work)

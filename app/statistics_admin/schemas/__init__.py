@@ -13,6 +13,10 @@ from app.statistics_admin.schemas.orders import (
     AdminSalesChart,
     AdminTopBusinessItem,
     AdminTopBusinesses,
+    AdminTopPopularProduct,
+    AdminTopPopularProducts,
+    AdminTopSoldProduct,
+    AdminTopSoldProducts,
     OrdersGranularity,
 )
 from app.statistics_admin.schemas.stats import (
@@ -44,6 +48,10 @@ __all__ = [
     "AdminStatsSummary",
     "AdminTopBusinessItem",
     "AdminTopBusinesses",
+    "AdminTopPopularProduct",
+    "AdminTopPopularProducts",
+    "AdminTopSoldProduct",
+    "AdminTopSoldProducts",
     "AdminTrafficByLocation",
     "AdminTrafficChart",
     "AdminTrafficLocationItem",
