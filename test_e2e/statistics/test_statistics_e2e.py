@@ -18,6 +18,9 @@ from test_e2e.statistics.fixtures.constants import (
     SOLD_SECOND_NAME,
     WEB_LAT,
     WEB_LNG,
+    DELIVERY_ADDRESS,
+    DELIVERY_LAT,
+    DELIVERY_LNG,
 )
 from test_e2e.statistics.fixtures.history import store_name
 from test_e2e.statistics.fixtures.presence import (
@@ -59,6 +62,7 @@ class StatisticsE2ETests(unittest.TestCase):
             cls.revenue_before = client.get("/api/admin/stats/revenue", params=day, headers=cls.headers).json()
             cls.summary_before = client.get("/api/admin/stats/summary", params=summary_params(), headers=cls.headers).json()
             cls.locations_before = client.get("/api/admin/stats/orders/locations", params=day, headers=cls.headers).json()
+            cls.delivery_before = client.get("/api/admin/stats/orders/delivery-map", params=day, headers=cls.headers).json()
             cls.provinces_before = client.get("/api/admin/stats/businesses-by-province", headers=cls.headers).json()
         seed_history(cls.seller_id, cls.store_name)
 
@@ -265,3 +269,22 @@ class StatisticsE2ETests(unittest.TestCase):
             popular_body["products"].index(popular_lead),
         )
         self.assertGreaterEqual(popular_body["total_points"], 4)
+
+    def test_isolated_day_pins_delivery_orders_that_marked_a_point(self) -> None:
+        day = day_params(ISOLATED_DAY)
+        with api_client() as client:
+            response = client.get("/api/admin/stats/orders/delivery-map", params=day, headers=self.headers)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertEqual(body["orders_total"], self.delivery_before["orders_total"] + 2)
+        self.assertEqual(body["delivery_orders"], self.delivery_before["delivery_orders"] + 1)
+        pins = [
+            pin
+            for pin in body["pins"]
+            if abs(pin["lat"] - DELIVERY_LAT) < 0.0001 and abs(pin["lng"] - DELIVERY_LNG) < 0.0001
+        ]
+        self.assertEqual(len(pins), 1)
+        self.assertEqual(pins[0]["store_name"], self.store_name)
+        self.assertEqual(pins[0]["address"], DELIVERY_ADDRESS)
+        self.assertEqual(len(body["pins"]), len(self.delivery_before["pins"]) + 1)

@@ -11,6 +11,8 @@ from fastapi import HTTPException, status
 
 from app.database import get_orders_collection, get_registrations_collection
 from app.statistics_admin.schemas.orders import (
+    AdminDeliveryMap,
+    AdminDeliveryPin,
     AdminOrdersByLocation,
     AdminOrdersChart,
     AdminOrdersLocationItem,
@@ -656,4 +658,73 @@ async def get_orders_by_location(
         without_location=without_location,
         provinces=provinces,
         municipalities=municipalities,
+    )
+
+
+def _delivery_pin(delivery: object) -> tuple[float, float] | None:
+    if not isinstance(delivery, dict):
+        return None
+    lat = delivery.get("latitude")
+    lng = delivery.get("longitude")
+    if isinstance(lat, bool) or isinstance(lng, bool):
+        return None
+    if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+        return None
+    lat_value = float(lat)
+    lng_value = float(lng)
+    if not (-90 <= lat_value <= 90 and -180 <= lng_value <= 180):
+        return None
+    return lat_value, lng_value
+
+
+async def get_delivery_map(
+    *,
+    granularity: OrdersGranularity,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> AdminDeliveryMap:
+    if start is not None and end is not None:
+        period_label = "Rango seleccionado"
+        year = None
+        month = None
+    else:
+        start, end, period_label, year, month = _period_window_for_granularity(granularity)
+
+    orders = await get_orders_collection().find(
+        {
+            "status": "completed",
+            "completed_at": {"$gte": start, "$lt": end},
+        },
+        projection={"store_name": 1, "delivery_requested": 1, "delivery": 1},
+    ).to_list(length=None)
+
+    pins: list[AdminDeliveryPin] = []
+    delivery_orders = 0
+    for order in orders:
+        if not order.get("delivery_requested"):
+            continue
+        delivery_orders += 1
+        point = _delivery_pin(order.get("delivery"))
+        if point is None:
+            continue
+        delivery = order.get("delivery") if isinstance(order.get("delivery"), dict) else {}
+        address = str(delivery.get("address") or "").strip() or None
+        pins.append(
+            AdminDeliveryPin(
+                order_id=str(order["_id"]),
+                lat=point[0],
+                lng=point[1],
+                store_name=str(order.get("store_name") or "Tienda").strip() or "Tienda",
+                address=address,
+            )
+        )
+
+    return AdminDeliveryMap(
+        granularity=granularity,
+        year=year,
+        month=month,
+        period_label=period_label,
+        orders_total=len(orders),
+        delivery_orders=delivery_orders,
+        pins=pins,
     )

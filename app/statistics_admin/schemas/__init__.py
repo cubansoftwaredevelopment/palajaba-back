@@ -7,6 +7,8 @@ from app.statistics_admin.schemas.devices import (
     DevicePresenceResult,
 )
 from app.statistics_admin.schemas.orders import (
+    AdminDeliveryMap,
+    AdminDeliveryPin,
     AdminOrdersByLocation,
     AdminOrdersChart,
     AdminOrdersLocationItem,
@@ -38,6 +40,8 @@ from app.statistics_admin.schemas.traffic import (
 
 __all__ = [
     "AdminBusinessesByProvince",
+    "AdminDeliveryMap",
+    "AdminDeliveryPin",
     "AdminDeviceStats",
     "AdminOrdersByLocation",
     "AdminOrdersChart",

@@ -83,6 +83,24 @@ class AdminTopPopularProducts(BaseModel):
     products: list[AdminTopPopularProduct] = Field(default_factory=list)
 
 
+class AdminDeliveryPin(BaseModel):
+    order_id: str
+    lat: float
+    lng: float
+    store_name: str
+    address: str | None = None
+
+
+class AdminDeliveryMap(BaseModel):
+    granularity: OrdersGranularity
+    year: int | None = None
+    month: int | None = None
+    period_label: str
+    orders_total: int = 0
+    delivery_orders: int = 0
+    pins: list[AdminDeliveryPin] = Field(default_factory=list)
+
+
 class AdminOrdersLocationItem(BaseModel):
     province_id: str
     province_name: str

@@ -12,6 +12,7 @@ from app.statistics_admin import stats as stats_service
 from app.statistics_admin import traffic as traffic_service
 from app.statistics_admin.schemas import (
     AdminBusinessesByProvince,
+    AdminDeliveryMap,
     AdminDeviceStats,
     AdminOrdersByLocation,
     AdminOrdersChart,
@@ -260,6 +261,21 @@ async def stats_top_popular_products(
 ):
     window = _resolved_window(start, end)
     return await product_stats_service.get_top_popular_products(
+        granularity=granularity,
+        start=None if window is None else window[0],
+        end=None if window is None else window[1],
+    )
+
+
+@router.get("/stats/orders/delivery-map", response_model=AdminDeliveryMap)
+async def stats_orders_delivery_map(
+    granularity: OrdersGranularity = Query(default="monthly"),
+    start: date | None = Query(default=None),
+    end: date | None = Query(default=None),
+    _: dict = Depends(require_admin),
+):
+    window = _resolved_window(start, end)
+    return await order_stats_service.get_delivery_map(
         granularity=granularity,
         start=None if window is None else window[0],
         end=None if window is None else window[1],

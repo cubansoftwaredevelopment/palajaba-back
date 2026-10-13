@@ -7,6 +7,9 @@ from bson import ObjectId
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.statistics.fixtures.constants import (
     CUP_COLLECTED,
+    DELIVERY_ADDRESS,
+    DELIVERY_LAT,
+    DELIVERY_LNG,
     ISOLATED_DAY,
     MARKER,
     PAYMENT_CUP,
@@ -91,6 +94,14 @@ def completed_orders(
             "completed_at": moment,
             "collected_total": CUP_COLLECTED,
             "payment_currency": "CUP",
+            "delivery_requested": True,
+            "delivery": {
+                "recipient_name": "Maria Lopez",
+                "address": DELIVERY_ADDRESS,
+                "phone_primary": "51234567",
+                "latitude": DELIVERY_LAT,
+                "longitude": DELIVERY_LNG,
+            },
             "items": [
                 {
                     "product_id": lead,
