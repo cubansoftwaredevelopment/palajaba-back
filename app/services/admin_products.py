@@ -7,7 +7,11 @@ from typing import Any
 from bson import ObjectId
 from bson.errors import InvalidId
 
-from app.database import get_catalog_products_collection, get_registrations_collection
+from app.database import (
+    get_catalog_products_collection,
+    get_orders_collection,
+    get_registrations_collection,
+)
 from app.schemas.admin_products import AdminProductList, AdminProductRow
 from app.services.categories import business_category_name
 from app.services.subscriptions import is_subscription_active
@@ -47,6 +51,29 @@ def _locations(seller: dict[str, Any] | None, *, offers_delivery: bool) -> list[
     return labels
 
 
+async def _sales_counts_by_product() -> dict[str, int]:
+    """Unidades vendidas en pedidos completados."""
+    rows = await get_orders_collection().aggregate(
+        [
+            {"$match": {"status": "completed"}},
+            {"$unwind": "$items"},
+            {
+                "$group": {
+                    "_id": "$items.product_id",
+                    "quantity": {"$sum": {"$ifNull": ["$items.quantity", 0]}},
+                }
+            },
+        ]
+    ).to_list(length=None)
+    counts: dict[str, int] = {}
+    for row in rows:
+        product_id = str(row.get("_id") or "").strip()
+        if not product_id:
+            continue
+        counts[product_id] = int(row.get("quantity") or 0)
+    return counts
+
+
 async def list_admin_products() -> AdminProductList:
     docs = await get_catalog_products_collection().find(
         {},
@@ -81,6 +108,7 @@ async def list_admin_products() -> AdminProductList:
         ):
             sellers[str(seller["_id"])] = seller
 
+    sales_by_product = await _sales_counts_by_product()
     rows: list[AdminProductRow] = []
     for doc in docs:
         name = str(doc.get("name") or "").strip()
@@ -102,6 +130,7 @@ async def list_admin_products() -> AdminProductList:
                 currency=str(doc.get("base_currency") or "CUP").strip().upper() or "CUP",
                 offers_delivery=offers_delivery,
                 subscription_active=bool(seller) and is_subscription_active(seller),
+                sales_count=sales_by_product.get(str(doc["_id"]), 0),
                 locations=_locations(seller, offers_delivery=offers_delivery),
             )
         )

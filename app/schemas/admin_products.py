@@ -10,6 +10,7 @@ class AdminProductRow(BaseModel):
     currency: str
     offers_delivery: bool
     subscription_active: bool
+    sales_count: int = 0
     locations: list[str] = Field(default_factory=list)
 
 
