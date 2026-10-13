@@ -9,6 +9,7 @@ from app.schemas.discount_code import (
     DiscountCodePublic,
     DiscountCodeUpdate,
 )
+from app.schemas.admin_products import AdminProductList
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse
 from app.schemas.notifications import (
     AdminNotificationBroadcastPublic,
@@ -31,6 +32,7 @@ from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
+from app.services import admin_products as admin_products_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -298,3 +300,8 @@ async def update_settings(
     _: dict = Depends(require_admin),
 ):
     return await platform_settings_service.update_platform_settings(payload)
+
+
+@router.get("/products", response_model=AdminProductList)
+async def list_products(_: dict = Depends(require_admin)):
+    return await admin_products_service.list_admin_products()
