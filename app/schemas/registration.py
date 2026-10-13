@@ -79,6 +79,7 @@ class RegistrationPublic(BaseModel):
     view_only_product_count: int = 0
     unavailable_product_count: int = 0
     marketplace_visibility_notes: list[str] = Field(default_factory=list)
+    sales_total_cup: float = 0
 
 
 class RegistrationDeleteResult(BaseModel):

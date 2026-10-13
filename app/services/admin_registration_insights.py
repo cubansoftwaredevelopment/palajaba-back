@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.database import get_catalog_products_collection
+from app.database import get_catalog_products_collection, get_orders_collection
+from app.services.exchange_rates import get_cup_per_unit
 from app.services.seller_profile import is_profile_complete
 from app.services.subscriptions import is_subscription_active
+from app.utils.currency_conversion import convert_amount
 
 _EMPTY_COUNTS = {
     "total": 0,
@@ -143,3 +145,44 @@ def build_marketplace_visibility_notes(
         notes.append(location_hint)
 
     return notes
+
+
+def _cup_collected(amount: Any, currency: str) -> float | None:
+    code = currency.strip().upper()
+    if amount is None or not code:
+        return None
+    if code != "CUP" and not get_cup_per_unit().get(code):
+        return None
+    try:
+        return float(convert_amount(float(amount), code, "CUP"))
+    except (TypeError, ValueError):
+        return None
+
+
+async def aggregate_sales_cup_by_seller(seller_ids: list[str]) -> dict[str, float]:
+    """Ventas de pedidos completados, en CUP. Omite monedas sin tasa."""
+    if not seller_ids:
+        return {}
+
+    rows = await get_orders_collection().aggregate(
+        [
+            {"$match": {"status": "completed", "seller_id": {"$in": seller_ids}}},
+            {
+                "$group": {
+                    "_id": {"seller_id": "$seller_id", "currency": "$payment_currency"},
+                    "amount": {"$sum": "$collected_total"},
+                }
+            },
+        ]
+    ).to_list(length=None)
+
+    totals: dict[str, float] = {}
+    for row in rows:
+        key = row.get("_id") or {}
+        seller_id = str(key.get("seller_id") or "")
+        converted = _cup_collected(row.get("amount"), str(key.get("currency") or ""))
+        if not seller_id or converted is None:
+            continue
+        totals[seller_id] = totals.get(seller_id, 0.0) + converted
+
+    return {seller_id: round(amount, 2) for seller_id, amount in totals.items()}
