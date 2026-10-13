@@ -10,6 +10,7 @@ from bson.errors import InvalidId
 from app.database import get_catalog_products_collection, get_registrations_collection
 from app.schemas.admin_products import AdminProductList, AdminProductRow
 from app.services.categories import business_category_name
+from app.services.subscriptions import is_subscription_active
 
 
 def _area_label(area: dict[str, Any]) -> str | None:
@@ -70,7 +71,13 @@ async def list_admin_products() -> AdminProductList:
     if seller_ids:
         async for seller in get_registrations_collection().find(
             {"_id": {"$in": seller_ids}},
-            projection={"store_name": 1, "business_area": 1, "delivery_areas": 1},
+            projection={
+                "store_name": 1,
+                "business_area": 1,
+                "delivery_areas": 1,
+                "status": 1,
+                "subscription_ends_at": 1,
+            },
         ):
             sellers[str(seller["_id"])] = seller
 
@@ -94,6 +101,7 @@ async def list_admin_products() -> AdminProductList:
                 price=price,
                 currency=str(doc.get("base_currency") or "CUP").strip().upper() or "CUP",
                 offers_delivery=offers_delivery,
+                subscription_active=bool(seller) and is_subscription_active(seller),
                 locations=_locations(seller, offers_delivery=offers_delivery),
             )
         )

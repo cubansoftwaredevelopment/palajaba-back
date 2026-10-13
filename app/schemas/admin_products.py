@@ -9,6 +9,7 @@ class AdminProductRow(BaseModel):
     price: float
     currency: str
     offers_delivery: bool
+    subscription_active: bool
     locations: list[str] = Field(default_factory=list)
 
 
