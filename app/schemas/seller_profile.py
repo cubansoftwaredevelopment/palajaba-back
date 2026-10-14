@@ -24,7 +24,7 @@ class CategoryPublic(BaseModel):
 
 
 SOCIAL_PLATFORM_IDS = frozenset(
-    {"instagram", "facebook", "tiktok", "youtube", "telegram", "x", "whatsapp", "other"}
+    {"instagram", "facebook", "tiktok", "youtube", "telegram", "x", "other"}
 )
 
 
