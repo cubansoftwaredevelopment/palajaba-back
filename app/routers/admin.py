@@ -315,6 +315,7 @@ async def create_banner(
     title: str | None = Form(default=None),
     link_url: str | None = Form(default=None),
     province_ids: list[str] = Form(default=[]),
+    deactivate_at: str | None = Form(default=None),
     admin_payload: dict = Depends(require_admin),
 ):
     return await banners_service.create_banner(
@@ -323,6 +324,7 @@ async def create_banner(
         title=title,
         link_url=link_url,
         province_ids=province_ids,
+        deactivate_at=deactivate_at,
     )
 
 
@@ -333,6 +335,19 @@ async def update_banner(
     _: dict = Depends(require_admin),
 ):
     return await banners_service.update_banner(banner_id, payload)
+
+
+@router.post("/banners/{banner_id}/image", response_model=BannerAdminPublic)
+async def replace_banner_image(
+    banner_id: str,
+    file: UploadFile = File(...),
+    admin_payload: dict = Depends(require_admin),
+):
+    return await banners_service.replace_banner_image(
+        banner_id,
+        file,
+        admin_id=admin_payload.get("admin_id", "admin"),
+    )
 
 
 @router.delete("/banners/{banner_id}")

@@ -38,6 +38,7 @@ async def get_marketplace_home_feed(
     limit: int = Query(4, ge=1, le=50),
     offset: int = Query(0, ge=0),
     municipios_adicionales: list[str] | None = Query(default=None),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.list_home_feed(
@@ -47,6 +48,7 @@ async def get_marketplace_home_feed(
             section_limit=limit,
             section_offset=offset,
             municipios_adicionales=municipios_adicionales,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -64,6 +66,7 @@ async def list_marketplace_businesses(
     q: str = Query(default=""),
     category_id: str | None = Query(default=None),
     municipios_adicionales: list[str] | None = Query(default=None),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.list_businesses(
@@ -74,6 +77,7 @@ async def list_marketplace_businesses(
             query=q,
             category_id=category_id,
             municipios_adicionales=municipios_adicionales,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -90,6 +94,7 @@ async def list_marketplace_category_products(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
     municipios_adicionales: list[str] | None = Query(default=None),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.list_category_products(
@@ -99,6 +104,7 @@ async def list_marketplace_category_products(
             limit=limit,
             offset=offset,
             municipios_adicionales=municipios_adicionales,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -116,6 +122,7 @@ async def search_marketplace_products(
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
     municipios_adicionales: list[str] | None = Query(default=None),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.search_products(
@@ -126,6 +133,7 @@ async def search_marketplace_products(
             limit=limit,
             offset=offset,
             municipios_adicionales=municipios_adicionales,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -158,6 +166,7 @@ async def get_marketplace_store_catalog(
     province_id: str = Query(..., min_length=1),
     municipality_id: str = Query(..., min_length=1),
     limit_per_category: int = Query(20, ge=1, le=50),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.get_store_catalog(
@@ -165,6 +174,7 @@ async def get_marketplace_store_catalog(
             province_id.strip(),
             municipality_id.strip(),
             limit_per_category=limit_per_category,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -183,6 +193,7 @@ async def get_marketplace_gestor_store_catalog(
     province_id: str = Query(..., min_length=1),
     municipality_id: str = Query(..., min_length=1),
     limit_per_category: int = Query(20, ge=1, le=50),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.get_gestor_store_catalog(
@@ -191,6 +202,7 @@ async def get_marketplace_gestor_store_catalog(
             province_id.strip(),
             municipality_id.strip(),
             limit_per_category=limit_per_category,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -210,6 +222,7 @@ async def list_marketplace_store_category_products(
     municipality_id: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.list_store_category_products(
@@ -219,6 +232,7 @@ async def list_marketplace_store_category_products(
             category_id.strip(),
             limit=limit,
             offset=offset,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(
@@ -239,6 +253,7 @@ async def list_marketplace_gestor_store_category_products(
     municipality_id: str = Query(..., min_length=1),
     limit: int = Query(20, ge=1, le=50),
     offset: int = Query(0, ge=0),
+    currency: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.list_gestor_store_category_products(
@@ -249,6 +264,7 @@ async def list_marketplace_gestor_store_category_products(
             category_id.strip(),
             limit=limit,
             offset=offset,
+            currency=currency,
         )
     except ValueError as exc:
         raise HTTPException(

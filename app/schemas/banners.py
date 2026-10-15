@@ -14,6 +14,7 @@ class BannerPublic(BaseModel):
 
 class BannerAdminPublic(BannerPublic):
     is_active: bool = True
+    deactivate_at: UtcDateTime | None = None
     created_at: UtcDateTime | None = None
     updated_at: UtcDateTime | None = None
 
@@ -24,3 +25,4 @@ class BannerUpdate(BaseModel):
     province_ids: list[str] | None = None
     is_active: bool | None = None
     sort_order: int | None = None
+    deactivate_at: UtcDateTime | None = None
