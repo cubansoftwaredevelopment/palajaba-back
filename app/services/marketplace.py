@@ -25,6 +25,8 @@ from app.schemas.marketplace import (
     MarketplaceGestorStoreCatalogPublic,
     MarketplaceGestorStoreCategoryProductsPublic,
     MarketplaceGestorStoreLocalSectionPublic,
+    MarketplaceAvailabilityHintsPublic,
+    MarketplaceCategoryHint,
     MarketplaceHomeFeedPublic,
     MarketplaceProductPublic,
     MarketplaceSearchPublic,
@@ -766,6 +768,99 @@ async def _list_category_product_docs(
         .limit(limit)
     )
     return await cursor.to_list(length=limit)
+
+
+def _product_currency_codes(doc: dict[str, Any]) -> set[str]:
+    codes: set[str] = set()
+    base = str(doc.get("base_currency") or "").strip().upper()
+    if base in CURRENCY_CODES:
+        codes.add(base)
+    for raw in doc.get("accepted_currencies") or []:
+        code = str(raw).strip().upper()
+        if code in CURRENCY_CODES:
+            codes.add(code)
+    return codes
+
+
+async def list_availability_hints(
+    province_id: str,
+    municipality_ids: list[str],
+    *,
+    currency: str | None = None,
+    category_id: str | None = None,
+) -> MarketplaceAvailabilityHintsPublic:
+    """Ejemplos de monedas y categorías con productos cuando la configuración actual no tiene."""
+    currency = _normalize_display_currency(currency)
+    normalized_category = (
+        _normalize_marketplace_category_id(category_id) if category_id and category_id.strip() else None
+    )
+    seen_municipalities: list[str] = []
+    for raw_id in municipality_ids:
+        municipality_id = str(raw_id).strip()
+        if not municipality_id or municipality_id in seen_municipalities:
+            continue
+        _validate_location_ids(province_id, municipality_id)
+        seen_municipalities.append(municipality_id)
+    if not seen_municipalities:
+        raise ValueError("Municipio no válido.")
+
+    currency_in_scope: dict[str, int] = {}
+    currency_any: dict[str, int] = {}
+    category_in_currency: dict[str, int] = {}
+    category_any: dict[str, int] = {}
+    products_col = get_catalog_products_collection()
+    for municipality_id in seen_municipalities:
+        _seller_by_id, local_ids, delivery_ids, pickup_ids = await _build_marketplace_seller_context(
+            province_id,
+            municipality_id,
+        )
+        query = _marketplace_product_query(
+            local_ids,
+            delivery_ids,
+            pickup_seller_ids=pickup_ids or None,
+        )
+        if query.get("_id") == {"$exists": False}:
+            continue
+        docs = await products_col.find(
+            query,
+            {"base_currency": 1, "accepted_currencies": 1, "global_category_id": 1},
+        ).to_list(length=400)
+        for doc in docs:
+            codes = _product_currency_codes(doc)
+            category = normalize_business_category_id(str(doc.get("global_category_id") or "otros"))
+            category_any[category] = category_any.get(category, 0) + 1
+            matches_currency = currency is None or currency in codes
+            in_scope = normalized_category is None or category == normalized_category
+            if matches_currency:
+                category_in_currency[category] = category_in_currency.get(category, 0) + 1
+            for code in codes:
+                currency_any[code] = currency_any.get(code, 0) + 1
+                if in_scope:
+                    currency_in_scope[code] = currency_in_scope.get(code, 0) + 1
+
+    def _top_codes(counts: dict[str, int]) -> list[str]:
+        return [
+            code
+            for code, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if code != currency
+        ][:3]
+
+    def _top_categories(counts: dict[str, int]) -> list[str]:
+        return [
+            item_id
+            for item_id, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+            if item_id != normalized_category
+        ][:3]
+
+    other_currencies = _top_codes(currency_in_scope) or _top_codes(currency_any)
+    other_categories = _top_categories(category_in_currency) or _top_categories(category_any)
+    return MarketplaceAvailabilityHintsPublic(
+        currencies=other_currencies,
+        categories=[
+            MarketplaceCategoryHint(id=item_id, name=_display_category_name(item_id))
+            for item_id in other_categories
+        ],
+    )
 
 
 async def list_home_feed(

@@ -108,6 +108,16 @@ class MarketplaceHomeFeedPublic(BaseModel):
     has_more: bool = False
 
 
+class MarketplaceCategoryHint(BaseModel):
+    id: str
+    name: str
+
+
+class MarketplaceAvailabilityHintsPublic(BaseModel):
+    currencies: list[str] = Field(default_factory=list)
+    categories: list[MarketplaceCategoryHint] = Field(default_factory=list)
+
+
 class MarketplaceSearchPublic(BaseModel):
     query: str = ""
     category_id: str | None = None

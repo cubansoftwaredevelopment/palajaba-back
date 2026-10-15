@@ -8,6 +8,7 @@ from app.schemas.marketplace import (
     MarketplaceCategoryProductsPublic,
     MarketplaceGestorStoreCatalogPublic,
     MarketplaceGestorStoreCategoryProductsPublic,
+    MarketplaceAvailabilityHintsPublic,
     MarketplaceHomeFeedPublic,
     MarketplaceSearchPublic,
     MarketplaceStoreCatalogPublic,
@@ -49,6 +50,27 @@ async def get_marketplace_home_feed(
             section_offset=offset,
             municipios_adicionales=municipios_adicionales,
             currency=currency,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/availability-hints", response_model=MarketplaceAvailabilityHintsPublic)
+async def get_marketplace_availability_hints(
+    province_id: str = Query(..., min_length=1),
+    municipality_id: list[str] = Query(..., min_length=1),
+    currency: str | None = Query(default=None),
+    global_category_id: str | None = Query(default=None),
+):
+    try:
+        return await marketplace_service.list_availability_hints(
+            province_id.strip(),
+            municipality_id,
+            currency=currency,
+            category_id=global_category_id,
         )
     except ValueError as exc:
         raise HTTPException(
