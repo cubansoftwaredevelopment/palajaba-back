@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query, status
 
+from app.schemas.banners import BannerPublic
 from app.schemas.marketplace import (
     JabaSyncPublic,
     JabaSyncRequest,
@@ -15,12 +16,18 @@ from app.schemas.marketplace import (
 )
 from app.schemas.orders import CreateOrderRequest, OrderPublic
 from app.schemas.popularity import ProductPopularityEventRequest
+from app.services import banners as banners_service
 from app.services import marketplace as marketplace_service
 from app.services import orders as orders_service
 from app.services import product_popularity as popularity_service
 from app.services import seller_stats as seller_stats_service
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
+
+
+@router.get("/banners", response_model=list[BannerPublic])
+async def list_marketplace_banners(province_id: str | None = Query(default=None)):
+    return await banners_service.list_public_banners(province_id=province_id)
 
 
 @router.get("/feed", response_model=MarketplaceHomeFeedPublic)

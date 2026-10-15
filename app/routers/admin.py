@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
 from app.dependencies import require_admin
 from app.schemas.discount_code import (
@@ -16,6 +16,7 @@ from app.schemas.notifications import (
     AdminNotificationCreate,
     AdminNotificationSendResult,
 )
+from app.schemas.banners import BannerAdminPublic, BannerUpdate
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
 from app.schemas.seller_feedback import (
@@ -28,6 +29,7 @@ from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import discount_codes as discount_codes_service
 from app.services import notifications as notification_service
+from app.services import banners as banners_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
@@ -300,6 +302,45 @@ async def update_settings(
     _: dict = Depends(require_admin),
 ):
     return await platform_settings_service.update_platform_settings(payload)
+
+
+@router.get("/banners", response_model=list[BannerAdminPublic])
+async def list_banners(_: dict = Depends(require_admin)):
+    return await banners_service.list_admin_banners()
+
+
+@router.post("/banners", response_model=BannerAdminPublic, status_code=201)
+async def create_banner(
+    file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    link_url: str | None = Form(default=None),
+    province_ids: list[str] = Form(default=[]),
+    admin_payload: dict = Depends(require_admin),
+):
+    return await banners_service.create_banner(
+        file,
+        admin_id=admin_payload.get("admin_id", "admin"),
+        title=title,
+        link_url=link_url,
+        province_ids=province_ids,
+    )
+
+
+@router.patch("/banners/{banner_id}", response_model=BannerAdminPublic)
+async def update_banner(
+    banner_id: str,
+    payload: BannerUpdate,
+    _: dict = Depends(require_admin),
+):
+    return await banners_service.update_banner(banner_id, payload)
+
+
+@router.delete("/banners/{banner_id}")
+async def delete_banner(
+    banner_id: str,
+    _: dict = Depends(require_admin),
+):
+    return await banners_service.delete_banner(banner_id)
 
 
 @router.get("/products", response_model=AdminProductList)

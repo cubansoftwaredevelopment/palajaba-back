@@ -31,6 +31,7 @@ async def connect_to_mongo():
     from app.statistics_admin.traffic import ensure_marketplace_visit_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.services.platform_settings import ensure_platform_settings_indexes
+    from app.services.banners import ensure_banner_indexes
     from app.services.seller_profile import ensure_uploads_dir
 
     init_cloudinary()
@@ -39,6 +40,7 @@ async def connect_to_mongo():
     await ensure_order_indexes()
     await ensure_admin_indexes()
     await ensure_platform_settings_indexes()
+    await ensure_banner_indexes()
     await ensure_exchange_rates_indexes()
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
@@ -196,3 +198,9 @@ def get_app_device_days_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["app_device_days"]
+
+
+def get_marketplace_banners_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["marketplace_banners"]
