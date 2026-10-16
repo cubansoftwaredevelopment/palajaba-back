@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.catalog import CatalogProductImagePublic
 from app.schemas.seller_profile import (
     BusinessArea,
     BusinessLocation,
@@ -65,6 +66,7 @@ class MarketplaceProductPublic(BaseModel):
     name: str
     description: str | None = None
     image_url: str
+    images: list[CatalogProductImagePublic] = Field(default_factory=list)
     base_price: float
     base_currency: str
     accepted_currencies: list[str] = Field(default_factory=list)

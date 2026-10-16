@@ -37,6 +37,7 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+from app.services.catalog import public_product_images
 from app.services.seller_profile import store_banners_from_document
 from app.services.admin_registration_insights import aggregate_product_counts_by_seller
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
@@ -296,12 +297,15 @@ def _product_to_public(
                 pickup_notice = "Sin domicilio a tu municipio"
 
     global_category_id = str(product.get("global_category_id") or "otros").strip().lower()
+    images = public_product_images(product)
+    frontal_url = next((image.image_url for image in images if image.is_frontal), None)
     return MarketplaceProductPublic(
         id=str(product["_id"]),
         global_category_id=global_category_id,
         name=product["name"],
         description=product.get("description"),
-        image_url=product["image_url"],
+        image_url=frontal_url or product["image_url"],
+        images=images,
         base_price=float(product["base_price"]),
         base_currency=product["base_currency"],
         accepted_currencies=list(product.get("accepted_currencies") or []),

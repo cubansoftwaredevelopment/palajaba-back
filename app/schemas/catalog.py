@@ -69,6 +69,12 @@ class CatalogProductSearchPublic(BaseModel):
     has_ordered_products: bool = False
 
 
+class CatalogProductImagePublic(BaseModel):
+    id: str
+    image_url: str
+    is_frontal: bool = False
+
+
 class CatalogProductPublic(BaseModel):
     id: str
     category_id: str
@@ -77,6 +83,7 @@ class CatalogProductPublic(BaseModel):
     name: str
     description: str | None = None
     image_url: str
+    images: list[CatalogProductImagePublic] = Field(default_factory=list)
     base_price: float
     base_currency: str
     accepted_currencies: list[str] = Field(default_factory=list)

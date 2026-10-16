@@ -20,18 +20,37 @@ from app.services.media_storage import remove_image
 logger = logging.getLogger(__name__)
 
 
+def _product_image_files(product: dict[str, Any]) -> list[tuple[str | None, str | None]]:
+    files: list[tuple[str | None, str | None]] = []
+    seen: set[str] = set()
+    raw_images = product.get("images")
+    if isinstance(raw_images, list):
+        for item in raw_images:
+            if not isinstance(item, dict):
+                continue
+            image_url = str(item.get("image_url") or "").strip()
+            if not image_url or image_url in seen:
+                continue
+            seen.add(image_url)
+            public_id = item.get("image_public_id")
+            files.append((image_url, str(public_id) if public_id else None))
+    image_url = str(product.get("image_url") or "").strip()
+    if image_url and image_url not in seen:
+        public_id = product.get("image_public_id")
+        files.append((image_url, str(public_id) if public_id else None))
+    return files
+
+
 async def _remove_product_images(products: list[dict[str, Any]]) -> None:
     for product in products:
-        try:
-            await remove_image(
-                product.get("image_url"),
-                public_id=product.get("image_public_id"),
-            )
-        except Exception:
-            logger.exception(
-                "No se pudo eliminar la imagen del producto %s",
-                product.get("_id"),
-            )
+        for image_url, public_id in _product_image_files(product):
+            try:
+                await remove_image(image_url, public_id=public_id)
+            except Exception:
+                logger.exception(
+                    "No se pudo eliminar la imagen del producto %s",
+                    product.get("_id"),
+                )
 
 
 async def delete_seller_data(seller_id: str, registration_doc: dict[str, Any]) -> None:

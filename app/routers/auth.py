@@ -366,12 +366,14 @@ async def create_my_catalog_product(
     base_price: float = Form(...),
     base_currency: str = Form(...),
     offers_delivery: bool = Form(...),
-    photo: UploadFile = File(...),
     seller_payload: dict = Depends(require_seller),
     description: str | None = Form(None),
     accepted_currencies: str = Form("[]"),
     view_only: bool = Form(False),
     is_available: bool = Form(True),
+    photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
+    frontal_index: int = Form(0),
 ):
     return await catalog_service.create_catalog_product(
         seller_payload["seller_id"],
@@ -386,6 +388,8 @@ async def create_my_catalog_product(
         view_only=view_only,
         is_available=is_available,
         photo=photo,
+        photos=photos,
+        frontal_index=frontal_index,
     )
 
 
@@ -404,6 +408,10 @@ async def update_my_catalog_product(
     view_only: bool = Form(False),
     is_available: bool = Form(True),
     photo: UploadFile | None = File(None),
+    photos: list[UploadFile] | None = File(None),
+    remove_image_ids: str | None = Form(None),
+    frontal_image_id: str | None = Form(None),
+    frontal_new_index: int | None = Form(None),
 ):
     return await catalog_service.update_catalog_product(
         seller_payload["seller_id"],
@@ -419,6 +427,10 @@ async def update_my_catalog_product(
         view_only=view_only,
         is_available=is_available,
         photo=photo,
+        photos=photos,
+        remove_image_ids_raw=remove_image_ids,
+        frontal_image_id=frontal_image_id,
+        frontal_new_index=frontal_new_index,
     )
 
 

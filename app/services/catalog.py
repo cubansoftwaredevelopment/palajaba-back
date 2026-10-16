@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from typing import Any
 
 from bson import ObjectId
@@ -20,6 +21,7 @@ from app.schemas.catalog import (
     CatalogCategoryProductSortUpdate,
     CatalogCategoryPublic,
     CatalogCategoryReorder,
+    CatalogProductImagePublic,
     CatalogProductPublic,
     CatalogProductReorder,
     CatalogProductSearchPublic,
@@ -37,6 +39,7 @@ from app.utils.datetime import to_utc_naive, utc_now
 
 MAX_CATEGORIES_PER_SELLER = 20
 MAX_PRODUCTS_PER_CATEGORY = 100
+MAX_PRODUCT_IMAGES = 6
 ORDERED_PRODUCT_PREVIEW_LIMIT = 12
 ORDERED_PRODUCT_SEARCH_LIMIT = 40
 
@@ -118,6 +121,8 @@ def _parse_accepted_currencies(raw: str, base_currency: str) -> list[str]:
 
 def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
     global_category_id = str(doc.get("global_category_id") or "otros").strip().lower()
+    images = public_product_images(doc)
+    frontal_url = next((image.image_url for image in images if image.is_frontal), None)
     return CatalogProductPublic(
         id=str(doc["_id"]),
         category_id=str(doc.get("category_id") or ""),
@@ -125,7 +130,8 @@ def document_to_product(doc: dict[str, Any]) -> CatalogProductPublic:
         global_category_name=business_category_name(global_category_id),
         name=doc["name"],
         description=doc.get("description"),
-        image_url=doc["image_url"],
+        image_url=frontal_url or str(doc.get("image_url") or ""),
+        images=images,
         base_price=float(doc["base_price"]),
         base_currency=doc["base_currency"],
         accepted_currencies=list(doc.get("accepted_currencies") or []),
@@ -652,6 +658,115 @@ async def reorder_catalog_products(
     return await get_catalog_summary(seller_id)
 
 
+def product_images_from_document(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_images = doc.get("images")
+    images: list[dict[str, Any]] = []
+    if isinstance(raw_images, list):
+        for item in raw_images:
+            if not isinstance(item, dict):
+                continue
+            image_url = str(item.get("image_url") or "").strip()
+            image_id = str(item.get("id") or "").strip()
+            if not image_url or not image_id:
+                continue
+            images.append(
+                {
+                    "id": image_id,
+                    "image_url": image_url,
+                    "image_public_id": item.get("image_public_id"),
+                    "is_frontal": bool(item.get("is_frontal")),
+                }
+            )
+    if images:
+        return _with_single_frontal(images)
+    image_url = str(doc.get("image_url") or "").strip()
+    if not image_url:
+        return []
+    return [
+        {
+            "id": "legacy",
+            "image_url": image_url,
+            "image_public_id": doc.get("image_public_id"),
+            "is_frontal": True,
+        }
+    ]
+
+
+def public_product_images(doc: dict[str, Any]) -> list[CatalogProductImagePublic]:
+    images = product_images_from_document(doc)
+    frontal = [image for image in images if image["is_frontal"]]
+    rest = [image for image in images if not image["is_frontal"]]
+    return [
+        CatalogProductImagePublic(
+            id=image["id"],
+            image_url=image["image_url"],
+            is_frontal=image["is_frontal"],
+        )
+        for image in [*frontal, *rest]
+    ]
+
+
+def _with_single_frontal(images: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not images:
+        return []
+    if len(images) == 1:
+        images[0]["is_frontal"] = True
+        return images
+    frontal_indexes = [index for index, image in enumerate(images) if image["is_frontal"]]
+    chosen = frontal_indexes[0] if frontal_indexes else 0
+    for index, image in enumerate(images):
+        image["is_frontal"] = index == chosen
+    return images
+
+
+def _frontal_fields(images: list[dict[str, Any]]) -> dict[str, Any]:
+    frontal = next((image for image in images if image["is_frontal"]), images[0])
+    return {
+        "image_url": frontal["image_url"],
+        "image_public_id": frontal.get("image_public_id"),
+        "images": images,
+    }
+
+
+def _named_uploads(
+    photo: UploadFile | None,
+    photos: list[UploadFile] | None,
+) -> list[UploadFile]:
+    uploads: list[UploadFile] = []
+    if photo is not None and photo.filename:
+        uploads.append(photo)
+    for item in photos or []:
+        if item is not None and item.filename:
+            uploads.append(item)
+    return uploads
+
+
+def _parse_remove_image_ids(raw: str | None) -> list[str]:
+    if raw is None or not str(raw).strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista de fotos a quitar no es válida.",
+        ) from exc
+    if not isinstance(parsed, list) or any(not isinstance(item, str) for item in parsed):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La lista de fotos a quitar no es válida.",
+        )
+    return [item.strip() for item in parsed if item.strip()]
+
+
+async def _delete_stored_images(images: list[dict[str, Any]]) -> None:
+    for image in images:
+        await _delete_product_image_file(
+            image.get("image_url"),
+            public_id=image.get("image_public_id"),
+        )
+
+
 async def _save_product_photo(seller_id: str, file: UploadFile):
     content, content_type = await read_image_upload(file)
     return await store_image(
@@ -675,7 +790,9 @@ async def create_catalog_product(
     offers_delivery: bool,
     view_only: bool,
     is_available: bool,
-    photo: UploadFile,
+    photo: UploadFile | None = None,
+    photos: list[UploadFile] | None = None,
+    frontal_index: int = 0,
 ) -> CatalogProductPublic:
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
     normalized_global_category_id = await _validate_global_category_for_seller(
@@ -716,7 +833,35 @@ async def create_catalog_product(
                 detail="La descripción no puede superar 500 caracteres.",
             )
 
-    stored_image = await _save_product_photo(seller_id, photo)
+    uploads = _named_uploads(photo, photos)
+    if not uploads:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sube al menos una foto del producto.",
+        )
+    if len(uploads) > MAX_PRODUCT_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Un producto puede tener hasta {MAX_PRODUCT_IMAGES} fotos.",
+        )
+    if len(uploads) == 1:
+        frontal_index = 0
+    elif frontal_index < 0 or frontal_index >= len(uploads):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Elige una foto frontal válida.",
+        )
+    stored_images: list[dict[str, Any]] = []
+    for index, upload in enumerate(uploads):
+        stored = await _save_product_photo(seller_id, upload)
+        stored_images.append(
+            {
+                "id": uuid.uuid4().hex,
+                "image_url": stored.url,
+                "image_public_id": stored.public_id,
+                "is_frontal": index == frontal_index,
+            }
+        )
     now = to_utc_naive(utc_now())
     doc = {
         "seller_id": seller_id,
@@ -724,8 +869,7 @@ async def create_catalog_product(
         "global_category_id": normalized_global_category_id,
         "name": normalized_name,
         "description": cleaned_description,
-        "image_url": stored_image.url,
-        "image_public_id": stored_image.public_id,
+        **_frontal_fields(stored_images),
         "base_price": float(base_price),
         "base_currency": normalized_currency,
         "accepted_currencies": accepted_currencies,
@@ -806,6 +950,114 @@ def _validate_product_payload(
     return normalized_name, cleaned_description, float(base_price), normalized_currency, accepted_currencies
 
 
+def _choose_frontal_image(
+    images: list[dict[str, Any]],
+    *,
+    frontal_image_id: str | None,
+    frontal_new_index: int | None,
+    new_images: list[dict[str, Any]],
+) -> None:
+    if len(images) == 1:
+        images[0]["is_frontal"] = True
+        return
+    chosen_id = None
+    if frontal_new_index is not None:
+        if frontal_new_index < 0 or frontal_new_index >= len(new_images):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Elige una foto frontal válida.",
+            )
+        chosen_id = new_images[frontal_new_index]["id"]
+    elif frontal_image_id:
+        chosen_id = frontal_image_id.strip()
+    else:
+        current = next((image for image in images if image["is_frontal"]), None)
+        chosen_id = current["id"] if current else images[0]["id"]
+    if not any(image["id"] == chosen_id for image in images):
+        chosen_id = next((image["id"] for image in images if image["is_frontal"]), images[0]["id"])
+    for image in images:
+        image["is_frontal"] = image["id"] == chosen_id
+
+
+async def _updated_product_images(
+    seller_id: str,
+    doc: dict[str, Any],
+    *,
+    photo: UploadFile | None,
+    photos: list[UploadFile] | None,
+    remove_image_ids_raw: str | None,
+    frontal_image_id: str | None,
+    frontal_new_index: int | None,
+) -> dict[str, Any] | None:
+    extra_uploads = _named_uploads(None, photos)
+    legacy_photo = photo if photo is not None and photo.filename else None
+    remove_ids = _parse_remove_image_ids(remove_image_ids_raw)
+    touches_gallery = bool(
+        extra_uploads
+        or remove_ids
+        or (frontal_image_id and frontal_image_id.strip())
+        or frontal_new_index is not None
+    )
+    if legacy_photo is not None and not touches_gallery:
+        stored = await _save_product_photo(seller_id, legacy_photo)
+        replacement = [
+            {
+                "id": uuid.uuid4().hex,
+                "image_url": stored.url,
+                "image_public_id": stored.public_id,
+                "is_frontal": True,
+            }
+        ]
+        await _delete_stored_images(product_images_from_document(doc))
+        return _frontal_fields(replacement)
+    if not touches_gallery:
+        return None
+
+    current = product_images_from_document(doc)
+    remove_set = set(remove_ids)
+    kept = [image for image in current if image["id"] not in remove_set]
+    removed = [image for image in current if image["id"] in remove_set]
+    uploads = [*([legacy_photo] if legacy_photo is not None else []), *extra_uploads]
+    if len(kept) + len(uploads) > MAX_PRODUCT_IMAGES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Un producto puede tener hasta {MAX_PRODUCT_IMAGES} fotos.",
+        )
+    new_images: list[dict[str, Any]] = []
+    for upload in uploads:
+        stored = await _save_product_photo(seller_id, upload)
+        new_images.append(
+            {
+                "id": uuid.uuid4().hex,
+                "image_url": stored.url,
+                "image_public_id": stored.public_id,
+                "is_frontal": False,
+            }
+        )
+    combined = [*kept, *new_images]
+    if not combined:
+        for image in new_images:
+            await _delete_product_image_file(
+                image.get("image_url"),
+                public_id=image.get("image_public_id"),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El producto debe conservar al menos una foto.",
+        )
+    _choose_frontal_image(
+        combined,
+        frontal_image_id=frontal_image_id,
+        frontal_new_index=frontal_new_index,
+        new_images=new_images,
+    )
+    for image in combined:
+        if image["id"] == "legacy":
+            image["id"] = uuid.uuid4().hex
+    await _delete_stored_images(removed)
+    return _frontal_fields(combined)
+
+
 async def update_catalog_product(
     seller_id: str,
     product_id: str,
@@ -821,6 +1073,10 @@ async def update_catalog_product(
     view_only: bool,
     is_available: bool,
     photo: UploadFile | None = None,
+    photos: list[UploadFile] | None = None,
+    remove_image_ids_raw: str | None = None,
+    frontal_image_id: str | None = None,
+    frontal_new_index: int | None = None,
 ) -> CatalogProductPublic:
     doc = await _get_product_doc(seller_id, product_id)
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
@@ -853,14 +1109,17 @@ async def update_catalog_product(
         "updated_at": now,
     }
 
-    if photo is not None and photo.filename:
-        stored_image = await _save_product_photo(seller_id, photo)
-        await _delete_product_image_file(
-            doc.get("image_url"),
-            public_id=doc.get("image_public_id"),
-        )
-        update_fields["image_url"] = stored_image.url
-        update_fields["image_public_id"] = stored_image.public_id
+    image_fields = await _updated_product_images(
+        seller_id,
+        doc,
+        photo=photo,
+        photos=photos,
+        remove_image_ids_raw=remove_image_ids_raw,
+        frontal_image_id=frontal_image_id,
+        frontal_new_index=frontal_new_index,
+    )
+    if image_fields is not None:
+        update_fields.update(image_fields)
 
     products = get_catalog_products_collection()
     await products.update_one({"_id": doc["_id"]}, {"$set": update_fields})
@@ -878,10 +1137,7 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
 
     await delete_popularity_events_for_products([str(doc["_id"])])
     await products.delete_one({"_id": doc["_id"]})
-    await _delete_product_image_file(
-        doc.get("image_url"),
-        public_id=doc.get("image_public_id"),
-    )
+    await _delete_stored_images(product_images_from_document(doc))
     category_oid = doc.get("category_id")
     if isinstance(category_oid, ObjectId):
         await _sync_local_category_product_count(seller_id, category_oid)
