@@ -37,6 +37,7 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+from app.services.seller_profile import store_banners_from_document
 from app.services.admin_registration_insights import aggregate_product_counts_by_seller
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.services.categories import (
@@ -182,6 +183,7 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
         ],
         "offers_delivery": seller.get("offers_delivery"),
         "catalog_theme": normalize_catalog_theme(seller.get("catalog_theme")),
+        "banners": store_banners_from_document(seller, active_only=True),
     }
 
 

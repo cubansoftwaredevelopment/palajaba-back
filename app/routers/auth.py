@@ -23,6 +23,7 @@ from app.schemas.seller_profile import (
     SellerPhoneUpdate,
     SellerProfileUpdate,
     SellerStoreNameUpdate,
+    StoreBannerUpdate,
 )
 from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.seller_stats import SellerProductsSoldChart, SellerRevenueChart, SellerStatsSummary, SellerTopProducts
@@ -134,6 +135,41 @@ async def upload_profile_photo(
     return await profile_service.save_profile_photo(
         seller_payload["seller_id"],
         photo,
+    )
+
+
+@router.post("/me/store-banners", response_model=SellerPublic, status_code=201)
+async def upload_store_banner(
+    photo: UploadFile = File(...),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.add_store_banner(
+        seller_payload["seller_id"],
+        photo,
+    )
+
+
+@router.patch("/me/store-banners/{banner_id}", response_model=SellerPublic)
+async def update_store_banner(
+    banner_id: str,
+    payload: StoreBannerUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.set_store_banner_active(
+        seller_payload["seller_id"],
+        banner_id,
+        payload,
+    )
+
+
+@router.delete("/me/store-banners/{banner_id}", response_model=SellerPublic)
+async def remove_store_banner(
+    banner_id: str,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.delete_store_banner(
+        seller_payload["seller_id"],
+        banner_id,
     )
 
 

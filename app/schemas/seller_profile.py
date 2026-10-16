@@ -23,6 +23,17 @@ class CategoryPublic(BaseModel):
     name: str
 
 
+class StoreBannerPublic(BaseModel):
+    id: str
+    image_url: str
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class StoreBannerUpdate(BaseModel):
+    is_active: bool
+
+
 SOCIAL_PLATFORM_IDS = frozenset(
     {"instagram", "facebook", "tiktok", "youtube", "telegram", "x", "other"}
 )

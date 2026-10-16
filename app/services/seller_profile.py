@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
 
@@ -17,6 +18,8 @@ from app.schemas.seller_profile import (
     SellerProfileUpdate,
     SellerSocialLink,
     SellerStoreNameUpdate,
+    StoreBannerPublic,
+    StoreBannerUpdate,
 )
 from app.services.catalog_theme import normalize_catalog_theme
 from app.services.categories import categories_for_profile, validate_category_ids
@@ -177,6 +180,56 @@ def resolve_profile_social_links(payload: SellerProfileUpdate) -> list[SellerSoc
     return links
 
 
+def store_banners_from_document(
+    doc: dict[str, Any],
+    *,
+    active_only: bool = False,
+) -> list[StoreBannerPublic]:
+    raw = doc.get("store_banners") or []
+    if not isinstance(raw, list):
+        return []
+
+    banners: list[StoreBannerPublic] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        banner_id = str(item.get("id") or "").strip()
+        image_url = str(item.get("image_url") or "").strip()
+        if not banner_id or not image_url:
+            continue
+        try:
+            sort_order = int(item.get("sort_order") or 0)
+        except (TypeError, ValueError):
+            sort_order = 0
+        is_active = item.get("is_active", True)
+        if not isinstance(is_active, bool):
+            is_active = True
+        if active_only and not is_active:
+            continue
+        banners.append(
+            StoreBannerPublic(
+                id=banner_id,
+                image_url=image_url,
+                sort_order=sort_order,
+                is_active=is_active,
+            )
+        )
+    banners.sort(key=lambda banner: (banner.sort_order, banner.id))
+    return banners
+
+
+def _store_banner_documents(doc: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": banner.id,
+            "image_url": banner.image_url,
+            "sort_order": banner.sort_order,
+            "is_active": banner.is_active,
+        }
+        for banner in store_banners_from_document(doc)
+    ]
+
+
 def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
     location = doc.get("business_location")
     business_location = None
@@ -219,6 +272,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         subscription_days_remaining=days_remaining,
         subscription_hours_remaining=hours_remaining,
         catalog_theme=normalize_catalog_theme(doc.get("catalog_theme")),
+        store_banners=store_banners_from_document(doc),
         gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
     )
 
@@ -402,3 +456,84 @@ async def save_profile_photo(seller_id: str, file: UploadFile) -> SellerPublic:
 
 def ensure_uploads_dir() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    banners = _store_banner_documents(doc)
+
+    content, content_type = await read_image_upload(file)
+    stored_image = await store_image(
+        content,
+        content_type,
+        scope="store-banners",
+        owner_id=seller_id,
+    )
+    next_order = max((banner["sort_order"] for banner in banners), default=-1) + 1
+    banners.append(
+        {
+            "id": uuid4().hex,
+            "image_url": stored_image.url,
+            "sort_order": next_order,
+            "is_active": True,
+        }
+    )
+
+    now = to_utc_naive(utc_now())
+    collection = get_registrations_collection()
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"store_banners": banners, "updated_at": now}},
+    )
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def delete_store_banner(seller_id: str, banner_id: str) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    banners = _store_banner_documents(doc)
+    target = next((banner for banner in banners if banner["id"] == banner_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No encontramos ese banner.",
+        )
+
+    remaining = [banner for banner in banners if banner["id"] != banner_id]
+    for index, banner in enumerate(remaining):
+        banner["sort_order"] = index
+
+    now = to_utc_naive(utc_now())
+    collection = get_registrations_collection()
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"store_banners": remaining, "updated_at": now}},
+    )
+    await remove_image(target["image_url"])
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def set_store_banner_active(
+    seller_id: str,
+    banner_id: str,
+    payload: StoreBannerUpdate,
+) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    banners = _store_banner_documents(doc)
+    target = next((banner for banner in banners if banner["id"] == banner_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No encontramos ese banner.",
+        )
+
+    target["is_active"] = payload.is_active
+    now = to_utc_naive(utc_now())
+    collection = get_registrations_collection()
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"store_banners": banners, "updated_at": now}},
+    )
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
