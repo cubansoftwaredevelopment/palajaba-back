@@ -10,7 +10,9 @@ from app.schemas.marketplace import (
     MarketplaceGestorStoreCategoryProductsPublic,
     MarketplaceAvailabilityHintsPublic,
     MarketplaceHomeFeedPublic,
+    MarketplaceProductPublic,
     MarketplaceSearchPublic,
+    MarketplaceSharedProductsPublic,
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
     MarketplaceStorePublic,
@@ -135,6 +137,47 @@ async def list_marketplace_category_products(
         ) from exc
 
 
+@router.get("/products/{product_id}", response_model=MarketplaceProductPublic)
+async def get_marketplace_product(
+    product_id: str,
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+):
+    try:
+        return await marketplace_service.get_marketplace_product(
+            product_id,
+            province_id.strip(),
+            municipality_id.strip(),
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        code = (
+            status.HTTP_404_NOT_FOUND
+            if detail == "Producto no encontrado."
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=code, detail=detail) from exc
+
+
+@router.get("/shared-products", response_model=MarketplaceSharedProductsPublic)
+async def get_shared_products(
+    province_id: str = Query(..., min_length=1),
+    municipality_id: str = Query(..., min_length=1),
+    item: list[str] | None = Query(default=None),
+):
+    try:
+        return await marketplace_service.list_shared_products(
+            province_id.strip(),
+            municipality_id.strip(),
+            item or [],
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
 @router.get("/search", response_model=MarketplaceSearchPublic)
 async def search_marketplace_products(
     province_id: str = Query(..., min_length=1),
@@ -145,6 +188,8 @@ async def search_marketplace_products(
     offset: int = Query(0, ge=0),
     municipios_adicionales: list[str] | None = Query(default=None),
     currency: str | None = Query(default=None),
+    store_slug: str | None = Query(default=None),
+    gestor_username: str | None = Query(default=None),
 ):
     try:
         return await marketplace_service.search_products(
@@ -156,6 +201,8 @@ async def search_marketplace_products(
             offset=offset,
             municipios_adicionales=municipios_adicionales,
             currency=currency,
+            store_slug=store_slug,
+            gestor_username=gestor_username,
         )
     except ValueError as exc:
         raise HTTPException(

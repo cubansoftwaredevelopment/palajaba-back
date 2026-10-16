@@ -30,6 +30,7 @@ from app.schemas.marketplace import (
     MarketplaceHomeFeedPublic,
     MarketplaceProductPublic,
     MarketplaceSearchPublic,
+    MarketplaceSharedProductsPublic,
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
     MarketplaceStoreLocalSectionPublic,
@@ -944,6 +945,8 @@ async def list_home_feed(
                 buyer_municipality_id=municipality_id,
             )) is not None
         ]
+        if not products:
+            continue
 
         sections.append(
             MarketplaceCategorySectionPublic(
@@ -1061,6 +1064,238 @@ async def _get_local_category_doc(seller_id: str, category_id: str) -> dict[str,
     return category_doc
 
 
+def _zone_visible_product_query(
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
+    *,
+    pickup_seller_ids: list[str] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    query = _marketplace_product_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids,
+        extra=extra,
+    )
+    if query.get("_id") == {"$exists": False}:
+        return query
+    query.pop("is_available", None)
+    query.pop("view_only", None)
+    return query
+
+
+def _product_object_id(product_id: str) -> ObjectId:
+    try:
+        return ObjectId(str(product_id).strip())
+    except InvalidId as exc:
+        raise ValueError("Producto no encontrado.") from exc
+
+
+async def _catalog_product_name(product_id: str) -> str:
+    try:
+        oid = ObjectId(str(product_id).strip())
+    except InvalidId:
+        return "Producto"
+    doc = await get_catalog_products_collection().find_one({"_id": oid}, {"name": 1})
+    name = str((doc or {}).get("name") or "").strip()
+    return name or "Producto"
+
+
+async def _load_zone_product(
+    seller_by_id: dict[str, dict[str, Any]],
+    local_seller_ids: list[str],
+    delivery_seller_ids: list[str],
+    pickup_seller_ids: list[str],
+    product_id: str,
+    *,
+    province_id: str,
+    municipality_id: str,
+) -> MarketplaceProductPublic:
+    query = _zone_visible_product_query(
+        local_seller_ids,
+        delivery_seller_ids,
+        pickup_seller_ids=pickup_seller_ids or None,
+        extra={"_id": _product_object_id(product_id)},
+    )
+    if query.get("_id") == {"$exists": False}:
+        raise ValueError("Producto no encontrado.")
+    doc = await get_catalog_products_collection().find_one(query)
+    if doc is None:
+        raise ValueError("Producto no encontrado.")
+    product = _product_to_public(
+        doc,
+        seller_by_id,
+        buyer_province_id=province_id,
+        buyer_municipality_id=municipality_id,
+    )
+    if product is None:
+        raise ValueError("Producto no encontrado.")
+    return product
+
+
+async def get_marketplace_product(
+    product_id: str,
+    province_id: str,
+    municipality_id: str,
+) -> MarketplaceProductPublic:
+    _validate_location_ids(province_id, municipality_id)
+    seller_by_id, local_ids, delivery_ids, pickup_ids = await _build_marketplace_seller_context(
+        province_id,
+        municipality_id,
+    )
+    return await _load_zone_product(
+        seller_by_id,
+        local_ids,
+        delivery_ids,
+        pickup_ids,
+        product_id,
+        province_id=province_id,
+        municipality_id=municipality_id,
+    )
+
+
+def parse_shared_jaba_item(raw: str) -> tuple[str, int] | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    product_id, _, quantity_raw = text.partition(".")
+    product_id = product_id.strip()
+    if not product_id:
+        return None
+    try:
+        quantity = int(quantity_raw) if quantity_raw.strip() else 1
+    except ValueError:
+        quantity = 1
+    return product_id, min(99, max(1, quantity))
+
+
+async def list_shared_products(
+    province_id: str,
+    municipality_id: str,
+    items: list[str],
+) -> MarketplaceSharedProductsPublic:
+    _validate_location_ids(province_id, municipality_id)
+    seller_by_id, local_ids, delivery_ids, pickup_ids = await _build_marketplace_seller_context(
+        province_id,
+        municipality_id,
+    )
+    products: list[MarketplaceProductPublic] = []
+    unavailable: list[str] = []
+    seen: set[str] = set()
+    for raw in items:
+        parsed = parse_shared_jaba_item(raw)
+        if parsed is None:
+            continue
+        product_id, _quantity = parsed
+        if product_id in seen:
+            continue
+        seen.add(product_id)
+        try:
+            products.append(
+                await _load_zone_product(
+                    seller_by_id,
+                    local_ids,
+                    delivery_ids,
+                    pickup_ids,
+                    product_id,
+                    province_id=province_id,
+                    municipality_id=municipality_id,
+                )
+            )
+        except ValueError:
+            unavailable.append(await _catalog_product_name(product_id))
+    return MarketplaceSharedProductsPublic(products=products, unavailable=unavailable)
+
+
+async def _search_store_catalog(
+    province_id: str,
+    municipality_id: str,
+    *,
+    store_slug: str,
+    gestor_username: str | None,
+    query: str,
+    limit: int,
+    offset: int,
+    currency: str | None,
+) -> MarketplaceSearchPublic:
+    seller = await _resolve_store_catalog_seller(store_slug)
+    seller_id = str(seller["_id"])
+    seller_by_id = {seller_id: seller}
+    gestor = None
+    margins: dict[str, float] = {}
+    extra: dict[str, Any] | None = None
+    if gestor_username and gestor_username.strip():
+        if not seller_has_gestores_enabled(seller):
+            raise ValueError("Gestor no encontrado.")
+        gestor = await _resolve_public_gestor(seller, gestor_username)
+        margins = _public_gestor_margin_map(seller, gestor)
+        extra = (
+            _gestor_product_id_filter(set(margins.keys()))
+            if margins
+            else {"_id": {"$exists": False}}
+        )
+
+    match_query = _seller_store_product_query(
+        seller_id,
+        seller,
+        province_id,
+        municipality_id,
+        currency=currency,
+        extra=extra,
+    )
+    text_filter = _search_text_filter(query)
+    if text_filter and match_query.get("_id") != {"$exists": False}:
+        match_query = {"$and": [match_query, text_filter]}
+
+    page_size = _normalize_page_size(limit)
+    safe_offset = max(0, offset)
+    products_col = get_catalog_products_collection()
+    if match_query.get("_id") == {"$exists": False}:
+        total_products = 0
+        product_docs: list[dict[str, Any]] = []
+    else:
+        total_products = await products_col.count_documents(match_query)
+        product_docs = (
+            await products_col.find(match_query)
+            .sort(MARKETPLACE_PRODUCT_SORT)
+            .skip(safe_offset)
+            .limit(page_size)
+            .to_list(length=page_size)
+        )
+
+    products: list[MarketplaceProductPublic] = []
+    for doc in product_docs:
+        item = _product_to_public(
+            doc,
+            seller_by_id,
+            buyer_province_id=province_id,
+            buyer_municipality_id=municipality_id,
+        )
+        if item is None:
+            continue
+        if gestor is not None:
+            margin = margins.get(item.id)
+            if margin is None:
+                continue
+            item = apply_gestor_to_marketplace_product(
+                item,
+                seller=seller,
+                gestor=gestor,
+                margin_amount=margin,
+            )
+        products.append(item)
+
+    loaded = safe_offset + len(products)
+    return MarketplaceSearchPublic(
+        query=query,
+        products=products,
+        total_products=total_products,
+        limit=page_size,
+        offset=safe_offset,
+        has_more=loaded < total_products,
+    )
+
+
 async def search_products(
     province_id: str,
     municipality_id: str,
@@ -1071,6 +1306,8 @@ async def search_products(
     offset: int = 0,
     municipios_adicionales: list[str] | None = None,
     currency: str | None = None,
+    store_slug: str | None = None,
+    gestor_username: str | None = None,
 ) -> MarketplaceSearchPublic:
     currency = _normalize_display_currency(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
@@ -1083,6 +1320,19 @@ async def search_products(
 
     if len(normalized_query) < 2 and not normalized_category_id:
         raise ValueError("Escribe al menos 2 caracteres o elige una categoría.")
+
+    if store_slug and store_slug.strip():
+        await refresh_popularity_window()
+        return await _search_store_catalog(
+            province_id,
+            municipality_id,
+            store_slug=store_slug.strip(),
+            gestor_username=gestor_username,
+            query=normalized_query,
+            limit=limit,
+            offset=offset,
+            currency=currency,
+        )
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)

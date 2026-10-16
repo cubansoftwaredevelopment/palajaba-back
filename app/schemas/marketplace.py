@@ -70,6 +70,13 @@ class MarketplaceProductPublic(BaseModel):
     pickup_notice: str | None = None
     store: MarketplaceStorePublic
     category_name: str
+    gestor_id: str | None = None
+    gestor_username: str | None = None
+
+
+class MarketplaceSharedProductsPublic(BaseModel):
+    products: list[MarketplaceProductPublic] = Field(default_factory=list)
+    unavailable: list[str] = Field(default_factory=list)
 
 
 class MarketplaceGestorPublic(BaseModel):
