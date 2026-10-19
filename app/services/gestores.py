@@ -36,7 +36,7 @@ from app.security import (
     hash_password,
     verify_password,
 )
-from app.services.plans import max_gestores_for_plan, seller_can_add_gestor
+from app.services.plans import effective_plan_tier, max_gestores_for_plan, seller_can_add_gestor
 from app.services.subscriptions import is_subscription_active
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
@@ -320,7 +320,7 @@ def gestor_limit_reached_detail(limit: int) -> str:
 async def create_seller_gestor(seller_id: str, username: str) -> GestorPublic:
     seller = await require_seller_gestores_enabled(seller_id)
     current_count = await count_seller_gestores(seller_id)
-    plan_tier = seller.get("plan_tier")
+    plan_tier = effective_plan_tier(seller)
     if not seller_can_add_gestor(plan_tier, current_count):
         limit = max_gestores_for_plan(plan_tier) or 0
         raise HTTPException(

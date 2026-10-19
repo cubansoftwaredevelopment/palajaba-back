@@ -252,6 +252,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         phone=phone_display(doc["phone"]),
         billing_period=doc["billing_period"],
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
+        is_free_trial=bool(doc.get("is_free_trial")),
         has_statistics=seller_has_statistics(doc),
         has_recommendation_boost=seller_has_recommendation_boost(doc),
         subscription_ends_at=doc.get("subscription_ends_at"),

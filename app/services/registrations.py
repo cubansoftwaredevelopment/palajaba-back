@@ -361,6 +361,7 @@ async def approve_registration(
                 "rejection_reason": None,
                 "approved_at": now,
                 "payment_amount_cup": payment_amount_cup,
+                "is_free_trial": False,
                 "updated_at": now,
             }
         },
@@ -472,6 +473,7 @@ async def renew_registration(
         "payment_amount_cup": payment_amount_cup,
         "approved_at": now,
         "rejection_reason": None,
+        "is_free_trial": False,
         "updated_at": now,
     }
     if plan_tier is not None:
@@ -519,10 +521,18 @@ async def update_payment_amount(
         )
 
     now = to_utc_naive(utc_now())
+    updates: dict[str, Any] = {
+        "payment_amount_cup": payment_amount_cup,
+        "updated_at": now,
+    }
+    if payment_amount_cup > 0:
+        updates["is_free_trial"] = False
+
     await collection.update_one(
         {"_id": doc["_id"]},
-        {"$set": {"payment_amount_cup": payment_amount_cup, "updated_at": now}},
+        {"$set": updates},
     )
+
 
     await upsert_latest_subscription_payment(
         registration_id=registration_id_str(doc),
@@ -619,5 +629,9 @@ async def ensure_registration_indexes() -> None:
         )
     await collection.update_many(
         {"is_free_trial": {"$exists": False}},
+        {"$set": {"is_free_trial": False}},
+    )
+    await collection.update_many(
+        {"is_free_trial": True, "payment_amount_cup": {"$gt": 0}},
         {"$set": {"is_free_trial": False}},
     )

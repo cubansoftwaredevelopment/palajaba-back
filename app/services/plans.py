@@ -18,6 +18,13 @@ def normalize_plan_tier(value: str | None) -> PlanTier:
     return STANDARD_PLAN_TIER
 
 
+def effective_plan_tier(doc: dict) -> PlanTier:
+    """Nivel de acceso efectivo: la prueba gratis da acceso Premium."""
+    if doc.get("is_free_trial"):
+        return PREMIUM_PLAN_TIER
+    return normalize_plan_tier(doc.get("plan_tier"))
+
+
 def max_gestores_for_plan(plan_tier: str | None) -> int | None:
     """Tope de gestores por plan. None = ilimitado (Premium)."""
     if normalize_plan_tier(plan_tier) == PREMIUM_PLAN_TIER:
@@ -52,7 +59,7 @@ def plan_price_cup(plan_tier: str, billing_period: str) -> int:
 
 
 def seller_has_statistics(doc: dict) -> bool:
-    return normalize_plan_tier(doc.get("plan_tier")) == PREMIUM_PLAN_TIER
+    return effective_plan_tier(doc) == PREMIUM_PLAN_TIER
 
 
 def seller_has_recommendation_boost(doc: dict) -> bool:

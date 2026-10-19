@@ -51,6 +51,7 @@ class SellerPublic(BaseModel):
     phone: str
     billing_period: str
     plan_tier: str = "standard"
+    is_free_trial: bool = False
     has_statistics: bool = False
     has_recommendation_boost: bool = False
     subscription_ends_at: UtcDateTime | None = None
