@@ -21,7 +21,9 @@ class RegisterRequest(BaseModel):
 
     @field_validator("transfer_id", "store_name")
     @classmethod
-    def strip_required_text(cls, value: str) -> str:
+    def strip_required_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         stripped = value.strip()
         if not stripped:
             raise ValueError("Este campo es obligatorio.")
