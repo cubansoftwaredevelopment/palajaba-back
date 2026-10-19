@@ -10,13 +10,14 @@ RegistrationStatus = Literal["pending", "approved", "rejected", "expired"]
 
 
 class RegisterRequest(BaseModel):
-    transfer_id: str = Field(..., min_length=1, max_length=64)
+    transfer_id: str | None = Field(default=None, max_length=64)
     store_name: str = Field(..., min_length=1, max_length=120)
     phone: str = Field(..., min_length=8, max_length=20)
     password: str = Field(..., min_length=6, max_length=128)
     billing_period: BillingPeriod
     plan_tier: PlanTier = "standard"
     discount_code: str | None = None
+    free_trial: bool = False
 
     @field_validator("transfer_id", "store_name")
     @classmethod
@@ -72,6 +73,10 @@ class RegistrationPublic(BaseModel):
     discount_percent: int | None = None
     expected_payment_cup: int | None = None
     is_launch_promo: bool = False
+    free_trial_used: bool = False
+    has_used_free_trial: bool = False
+    used_free_trial: bool = False
+    is_free_trial: bool = False
     store_slug: str | None = None
     profile_completed: bool = False
     total_product_count: int = 0

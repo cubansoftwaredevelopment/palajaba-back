@@ -86,6 +86,16 @@ def document_to_public(
         discount_percent=doc.get("discount_percent"),
         expected_payment_cup=doc.get("expected_payment_cup"),
         is_launch_promo=bool(doc.get("is_launch_promo")),
+        free_trial_used=bool(
+            doc.get("free_trial_used", doc.get("has_used_free_trial", doc.get("used_free_trial", False)))
+        ),
+        has_used_free_trial=bool(
+            doc.get("has_used_free_trial", doc.get("free_trial_used", doc.get("used_free_trial", False)))
+        ),
+        used_free_trial=bool(
+            doc.get("used_free_trial", doc.get("free_trial_used", doc.get("has_used_free_trial", False)))
+        ),
+        is_free_trial=bool(doc.get("is_free_trial")),
         store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         profile_completed=is_profile_complete(doc),
         total_product_count=int(counts.get("total") or 0),
@@ -140,22 +150,32 @@ def default_subscription_end(start: datetime, billing_period: str) -> datetime:
 
 async def create_registration(
     *,
-    transfer_id: str,
+    transfer_id: str | None = None,
     store_name: str,
     phone: str,
     password: str,
     billing_period: str,
     plan_tier: str = "standard",
     discount_code: str | None = None,
+    free_trial: bool = False,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
-    normalized_transfer_id = normalize_transfer_id(transfer_id)
     now = to_utc_naive(utc_now())
+
+    if free_trial:
+        normalized_transfer_id = f"PRUEBA GRATUITA ({phone})"
+    else:
+        if not transfer_id or not str(transfer_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El ID de la transferencia es obligatorio.",
+            )
+        normalized_transfer_id = normalize_transfer_id(transfer_id)
 
     existing_transfer = await collection.find_one(
         {"transfer_id": normalized_transfer_id}
     )
-    if existing_transfer:
+    if existing_transfer and not free_trial:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ya existe un registro con ese ID de transferencia.",
@@ -165,7 +185,11 @@ async def create_registration(
     if existing_phone:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Este número de teléfono ya está registrado.",
+            detail=(
+                "Este número ya está registrado o ya usó la prueba gratuita."
+                if free_trial
+                else "Este número de teléfono ya está registrado."
+            ),
         )
 
     await ensure_store_name_available(store_name)
@@ -204,7 +228,24 @@ async def create_registration(
         },
         "checkout_gestor_ids": [],
         "checkout_include_store_phone": True,
+        "free_trial_used": True,
+        "has_used_free_trial": True,
+        "used_free_trial": True,
+        "is_free_trial": False,
     }
+
+    if free_trial:
+        trial_end = now + timedelta(days=15)
+        document.update(
+            {
+                "status": "approved",
+                "subscription_starts_at": now,
+                "subscription_ends_at": trial_end,
+                "approved_at": now,
+                "payment_amount_cup": 0,
+                "is_free_trial": True,
+            }
+        )
 
     if discount_code:
         validation = await validate_discount_code(
@@ -570,4 +611,13 @@ async def ensure_registration_indexes() -> None:
     await collection.update_many(
         {"plan_tier": {"$exists": False}},
         {"$set": {"plan_tier": "standard"}},
+    )
+    for field in ("free_trial_used", "has_used_free_trial", "used_free_trial"):
+        await collection.update_many(
+            {field: {"$exists": False}},
+            {"$set": {field: True}},
+        )
+    await collection.update_many(
+        {"is_free_trial": {"$exists": False}},
+        {"$set": {"is_free_trial": False}},
     )

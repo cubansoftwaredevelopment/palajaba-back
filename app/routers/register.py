@@ -16,6 +16,7 @@ async def register_seller(payload: RegisterRequest):
         billing_period=payload.billing_period,
         plan_tier=payload.plan_tier,
         discount_code=payload.discount_code,
+        free_trial=payload.free_trial,
     )
     return RegisterResponse(
         id=registration.id,
