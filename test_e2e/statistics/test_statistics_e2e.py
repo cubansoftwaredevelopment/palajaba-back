@@ -170,8 +170,14 @@ class StatisticsE2ETests(unittest.TestCase):
         self.assertEqual(saved_day["session_kind"], "seller")
 
         seed_past_device_day(tracked_id())
+        span = {
+            "granularity": "monthly",
+            "start": ISOLATED_DAY.isoformat(),
+            "end": day.isoformat(),
+        }
         with api_client() as client:
             past = client.get("/api/admin/stats/devices", params=day_params(ISOLATED_DAY), headers=self.headers).json()
+            spanned = client.get("/api/admin/stats/devices", params=span, headers=self.headers).json()
 
         self.assertFalse(past["live"])
         self.assertEqual(past["map_day"], ISOLATED_DAY.isoformat())
@@ -179,6 +185,11 @@ class StatisticsE2ETests(unittest.TestCase):
         self.assertFalse(past_pin["active"])
         self.assertTrue(past_pin["signed_in"])
         self.assertEqual(past_pin["session_kind"], "gestor")
+        self.assertTrue(spanned["live"])
+        spanned_past = next(marker for marker in spanned["markers"] if same_point(marker, PAST_LAT, PAST_LNG))
+        spanned_live = next(marker for marker in spanned["markers"] if same_point(marker, LIVE_LAT, LIVE_LNG))
+        self.assertFalse(spanned_past["active"])
+        self.assertTrue(spanned_live["active"])
 
     def test_isolated_day_feeds_orders_sales_revenue_and_province(self) -> None:
         day = day_params(ISOLATED_DAY)

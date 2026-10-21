@@ -17,6 +17,7 @@ DeviceGranularity = Literal["daily", "weekly", "monthly"]
 ACTIVE_WINDOW = timedelta(seconds=90)
 TRACKED_PLATFORMS = ("android", "ios", "web")
 ACCOUNT_KINDS = {"seller", "gestor"}
+MAP_MARKER_LIMIT = 500
 
 
 async def ensure_app_device_indexes() -> None:
@@ -80,6 +81,13 @@ async def record_device_presence(payload: DevicePresenceRequest) -> None:
     )
 
 
+def _doc_seen_at(doc: dict[str, Any]) -> datetime:
+    value = doc.get("last_seen") or doc.get("first_seen")
+    if isinstance(value, datetime):
+        return to_utc_naive(value)
+    return datetime.min
+
+
 def _marker_from_doc(doc: dict[str, Any], *, active: bool) -> DeviceMapMarker | None:
     lat = doc.get("lat")
     lng = doc.get("lng")
@@ -103,6 +111,19 @@ def _marker_from_doc(doc: dict[str, Any], *, active: bool) -> DeviceMapMarker | 
 
 
 async def earliest_device_day() -> date | None:
+    earliest_day = await get_app_device_days_collection().find_one(
+        {"day": {"$regex": r"^\d{4}-\d{2}-\d{2}$"}},
+        sort=[("day", 1)],
+        projection={"day": 1},
+    )
+    if earliest_day:
+        try:
+            parsed = datetime.strptime(str(earliest_day.get("day") or ""), "%Y-%m-%d")
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            return date(parsed.year, parsed.month, parsed.day)
+
     earliest = await get_app_devices_collection().find_one(
         {"first_seen": {"$type": "date"}},
         sort=[("first_seen", 1)],
@@ -137,13 +158,27 @@ async def get_device_stats(
     )
 
     ranges = ranges_between(start, end, granularity)
+    start_day = _day_key(start)
+    end_day = _day_key(end)
+    map_day = _day_key(end - timedelta(seconds=1)) if end > start else start_day
     day_docs = await days.find(
-        {"day": {"$gte": _day_key(start), "$lt": _day_key(end)}},
-        projection={"device_id": 1, "day": 1},
+        {"day": {"$gte": start_day, "$lt": end_day}},
+        projection={
+            "device_id": 1,
+            "day": 1,
+            "lat": 1,
+            "lng": 1,
+            "platform": 1,
+            "session_kind": 1,
+            "signed_in": 1,
+            "first_seen": 1,
+            "last_seen": 1,
+        },
     ).to_list(length=None)
 
     values: dict[str, float] = {key: 0.0 for key, _, _, _ in ranges}
     seen: dict[str, set[str]] = {key: set() for key, _, _, _ in ranges}
+    latest_by_device: dict[str, dict[str, Any]] = {}
     for doc in day_docs:
         day = str(doc.get("day") or "")
         device_id = str(doc.get("device_id") or "")
@@ -157,6 +192,9 @@ async def get_device_stats(
             if bucket_start <= moment < bucket_end:
                 seen[key].add(device_id)
                 break
+        previous = latest_by_device.get(device_id)
+        if previous is None or _doc_seen_at(doc) >= _doc_seen_at(previous):
+            latest_by_device[device_id] = doc
     for key, ids in seen.items():
         values[key] = float(len(ids))
 
@@ -175,8 +213,7 @@ async def get_device_stats(
     ]
 
     live = start <= now < end
-    markers: list[DeviceMapMarker] = []
-    map_day: str | None = None
+    active_ids: set[str] = set()
     if live:
         active_docs = await devices.find(
             {
@@ -185,21 +222,26 @@ async def get_device_stats(
                 "lat": {"$ne": None},
                 "lng": {"$ne": None},
             }
-        ).to_list(length=500)
+        ).to_list(length=MAP_MARKER_LIMIT)
         for doc in active_docs:
-            marker = _marker_from_doc(doc, active=True)
-            if marker:
-                markers.append(marker)
-    else:
-        last_moment = end - timedelta(seconds=1)
-        map_day = _day_key(last_moment)
-        past_docs = await days.find(
-            {"day": map_day, "lat": {"$ne": None}, "lng": {"$ne": None}}
-        ).to_list(length=500)
-        for doc in past_docs:
-            marker = _marker_from_doc(doc, active=False)
-            if marker:
-                markers.append(marker)
+            device_id = str(doc.get("device_id") or "")
+            if not device_id:
+                continue
+            latest_by_device[device_id] = doc
+            active_ids.add(device_id)
+
+    ranked = sorted(
+        latest_by_device.items(),
+        key=lambda item: _doc_seen_at(item[1]),
+        reverse=True,
+    )
+    markers: list[DeviceMapMarker] = []
+    for device_id, doc in ranked:
+        if len(markers) >= MAP_MARKER_LIMIT:
+            break
+        marker = _marker_from_doc(doc, active=device_id in active_ids)
+        if marker:
+            markers.append(marker)
 
     return AdminDeviceStats(
         registered=registered,
