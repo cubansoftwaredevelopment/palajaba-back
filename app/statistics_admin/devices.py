@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
@@ -10,7 +11,7 @@ from pymongo import ASCENDING
 from app.database import get_app_device_days_collection, get_app_devices_collection
 from app.statistics_admin.schemas.devices import AdminDeviceStats, DeviceMapMarker, DevicePresenceRequest
 from app.statistics_admin.schemas.traffic import TrafficDataPoint
-from app.statistics_admin.utils import build_level_candles, ranges_between
+from app.statistics_admin.utils import build_level_candles, parse_inclusive_dates, ranges_between
 from app.utils.datetime import to_utc_naive, utc_now
 
 DeviceGranularity = Literal["daily", "weekly", "monthly"]
@@ -31,6 +32,30 @@ async def ensure_app_device_indexes() -> None:
 
 def _day_key(value: datetime) -> str:
     return value.strftime("%Y-%m-%d")
+
+
+def _today() -> date:
+    now = to_utc_naive(utc_now())
+    return date(now.year, now.month, now.day)
+
+
+def default_device_window(
+    granularity: DeviceGranularity,
+    year: int | None = None,
+    month: int | None = None,
+) -> tuple[datetime, datetime]:
+    today = _today()
+    if granularity == "daily":
+        return parse_inclusive_dates(today, today)
+    if granularity == "weekly":
+        return parse_inclusive_dates(today - timedelta(days=6), today)
+    start = date(today.year, today.month, 1)
+    if year is not None and month is not None:
+        start = date(year, month, 1)
+        if (year, month) != (today.year, today.month):
+            last_day = calendar.monthrange(year, month)[1]
+            return parse_inclusive_dates(start, date(year, month, last_day))
+    return parse_inclusive_dates(start, today)
 
 
 async def record_device_presence(payload: DevicePresenceRequest) -> None:

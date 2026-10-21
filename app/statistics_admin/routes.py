@@ -200,20 +200,7 @@ async def stats_devices(
 ):
     window = _resolved_window(start, end)
     if window is None:
-        now = datetime.now(UTC)
-        today = date(now.year, now.month, now.day)
-        if granularity == "monthly":
-            earliest = await devices_service.earliest_device_day()
-            window = parse_inclusive_dates(earliest or date(today.year, today.month, 1), today)
-        else:
-            target_year = year if year is not None else now.year
-            target_month = month if month is not None else now.month
-            if (target_year, target_month) == (now.year, now.month):
-                end_day = today
-            else:
-                last_day = calendar.monthrange(target_year, target_month)[1]
-                end_day = date(target_year, target_month, last_day)
-            window = parse_inclusive_dates(date(target_year, target_month, 1), end_day)
+        window = devices_service.default_device_window(granularity, year, month)
     assert window is not None
     return await devices_service.get_device_stats(
         granularity=granularity,
