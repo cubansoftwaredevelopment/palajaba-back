@@ -223,7 +223,11 @@ async def record_marketplace_store_view(
             province_id.strip(),
             municipality_id.strip(),
         )
-        await seller_stats_service.record_profile_view(seller_id)
+        await seller_stats_service.record_profile_view(
+            seller_id,
+            province_id=province_id.strip(),
+            municipality_id=municipality_id.strip(),
+        )
     except ValueError:
         return None
     return None

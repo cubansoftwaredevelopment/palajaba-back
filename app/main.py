@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
 from app.finance_admin.routes import router as finance_router
+from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
 from app.statistics_admin.routes import router as statistics_router
 from app.routers import admin, auth, categories, marketplace, platform, product_categories, register, seo, gestores
@@ -51,6 +52,7 @@ app.include_router(admin.router)
 app.include_router(statistics_router)
 app.include_router(statistics_public_router)
 app.include_router(finance_router)
+app.include_router(seller_statistics_router)
 app.include_router(live_router)
 
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)

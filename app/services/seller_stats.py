@@ -71,6 +71,7 @@ SPANISH_MONTHS_FULL = (
 async def ensure_seller_stats_indexes() -> None:
     views = get_seller_profile_views_collection()
     await views.create_index([("seller_id", 1), ("viewed_at", -1)])
+    await views.create_index([("seller_id", 1), ("province_id", 1), ("municipality_id", 1)])
 
     orders = get_orders_collection()
     await orders.create_index([("seller_id", 1), ("status", 1), ("completed_at", -1)])
@@ -120,11 +121,19 @@ async def backfill_order_collected_totals() -> int:
     return updated
 
 
-async def record_profile_view(seller_id: str) -> None:
+async def record_profile_view(
+    seller_id: str,
+    *,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
+) -> None:
     now = to_utc_naive(utc_now())
-    await get_seller_profile_views_collection().insert_one(
-        {"seller_id": seller_id, "viewed_at": now},
-    )
+    document: dict[str, Any] = {"seller_id": seller_id, "viewed_at": now}
+    if province_id:
+        document["province_id"] = province_id
+    if municipality_id:
+        document["municipality_id"] = municipality_id
+    await get_seller_profile_views_collection().insert_one(document)
 
 
 def _seller_earliest_month(seller_doc: dict[str, Any]) -> tuple[int, int]:
