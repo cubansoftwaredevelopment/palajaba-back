@@ -213,6 +213,7 @@ AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
     "premium_yearly": "No hay vendedores Premium con facturación anual activos.",
     "standard_monthly": "No hay vendedores Básico con facturación mensual activos.",
     "standard_yearly": "No hay vendedores Básico con facturación anual activos.",
+    "mixed": "No hay vendedores activos en los grupos o negocios seleccionados.",
 }
 
 
@@ -236,7 +237,36 @@ def _filter_sellers_by_audience(
     ]
 
 
-def _audience_empty_message(audience: NotificationAudienceInput) -> str:
+def _filter_sellers_by_audiences(
+    sellers: list[dict[str, Any]],
+    audiences: list[str],
+) -> list[dict[str, Any]]:
+    if not audiences or "all" in audiences:
+        return sellers
+
+    matched: list[dict[str, Any]] = []
+    seen: set[Any] = set()
+    for audience in audiences:
+        for seller in _filter_sellers_by_audience(sellers, audience):  # type: ignore[arg-type]
+            seller_id = seller["_id"]
+            if seller_id in seen:
+                continue
+            seen.add(seller_id)
+            matched.append(seller)
+    return matched
+
+
+def _canonical_audience(audiences: list[str], seller_ids: list[str]) -> str:
+    if audiences == ["all"] and not seller_ids:
+        return "all"
+    if not audiences and seller_ids:
+        return "single"
+    if len(audiences) == 1 and not seller_ids:
+        return audiences[0]
+    return "mixed"
+
+
+def _audience_empty_message(audience: str) -> str:
     return AUDIENCE_EMPTY_MESSAGES.get(
         audience,
         "No hay vendedores activos para recibir la notificación.",
@@ -281,22 +311,31 @@ async def send_notification_to_sellers(
     audience: NotificationAudienceInput = "all",
     *,
     seller_id: str | None = None,
+    seller_ids: list[str] | None = None,
+    audiences: list[str] | None = None,
 ) -> AdminNotificationSendResult:
     registrations = get_registrations_collection()
     target_store_name: str | None = None
 
-    if seller_id:
-        seller = await _resolve_single_seller(seller_id)
-        sellers = [seller]
-        audience = "single"
-        target_store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
-    else:
-        if audience == "single":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indica el negocio destinatario.",
-            )
-        sellers = await registrations.find(
+    selected_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for raw in [seller_id, *(seller_ids or [])]:
+        value = (raw or "").strip()
+        if not value or value in seen_ids:
+            continue
+        seen_ids.add(value)
+        selected_ids.append(value)
+
+    groups = [item for item in (audiences or []) if item and item != "single"]
+    if not groups and not selected_ids and audience != "single":
+        groups = [audience]
+    if "all" in groups:
+        groups = ["all"]
+
+    sellers_by_id: dict[Any, dict[str, Any]] = {}
+
+    if groups:
+        approved = await registrations.find(
             {"status": "approved"},
             {
                 "_id": 1,
@@ -307,13 +346,26 @@ async def send_notification_to_sellers(
                 "store_name": 1,
             },
         ).to_list(length=None)
-        sellers = [seller for seller in sellers if is_subscription_active(seller)]
-        sellers = _filter_sellers_by_audience(sellers, audience)
+        approved = [seller for seller in approved if is_subscription_active(seller)]
+        for seller in _filter_sellers_by_audiences(approved, groups):
+            sellers_by_id[seller["_id"]] = seller
+
+    named_stores: list[str] = []
+    for target_id in selected_ids:
+        seller = await _resolve_single_seller(target_id)
+        sellers_by_id[seller["_id"]] = seller
+        named_stores.append((seller.get("store_name") or "Tienda").strip() or "Tienda")
+
+    sellers = list(sellers_by_id.values())
+    stored_audience = _canonical_audience(groups, selected_ids)
+    if stored_audience == "single":
+        target_store_name = named_stores[0] if len(named_stores) == 1 else None
+    stored_audiences = groups if groups else (["single"] if selected_ids else ["all"])
 
     if not sellers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_audience_empty_message(audience),
+            detail=_audience_empty_message(stored_audience if len(groups) <= 1 else "mixed"),
         )
 
     now = to_utc_naive(utc_now())
@@ -336,7 +388,8 @@ async def send_notification_to_sellers(
             "batch_id": batch_id,
             "title": title_clean,
             "content": content_clean,
-            "audience": audience,
+            "audience": stored_audience,
+            "audiences": stored_audiences,
             "target_store_name": target_store_name,
             "read_at": None,
             "created_at": now,
@@ -354,7 +407,8 @@ async def send_notification_to_sellers(
         batch_id=batch_id,
         title=title_clean,
         content=content_clean,
-        audience=audience,
+        audience=stored_audience,
+        audiences=stored_audiences,
         recipient_count=len(documents),
         created_at=now,
         target_store_name=target_store_name,
@@ -373,6 +427,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "title": {"$first": "$title"},
                 "content": {"$first": "$content"},
                 "audience": {"$first": "$audience"},
+                "audiences": {"$first": "$audiences"},
                 "target_store_name": {"$first": "$target_store_name"},
                 "created_at": {"$first": "$created_at"},
                 "recipient_count": {"$sum": 1},
@@ -388,6 +443,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             title=row["title"],
             content=row["content"],
             audience=row.get("audience") or "all",
+            audiences=row.get("audiences") or [],
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
             target_store_name=row.get("target_store_name"),
