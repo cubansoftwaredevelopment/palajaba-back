@@ -6,10 +6,56 @@ from typing import Any, Literal
 
 from bson import ObjectId
 
-from app.database import get_registrations_collection, get_subscription_payments_collection
+from app.database import (
+    get_finance_ledger_collection,
+    get_registrations_collection,
+    get_subscription_payments_collection,
+)
+from app.services.exchange_rates import snapshot_cup_per_unit
 from app.utils.datetime import to_utc_naive, utc_now
 
 PaymentKind = Literal["approval", "renewal", "adjustment"]
+
+LEDGER_REASONS = {
+    "approval": "Alta de plan",
+    "renewal": "Renovación",
+    "adjustment": "Ajuste",
+}
+
+
+async def _sync_ledger_income(
+    *,
+    payment_id: Any,
+    amount_cup: int,
+    kind: PaymentKind,
+    at,
+    rates: dict[str, float],
+) -> Any:
+    ledger = get_finance_ledger_collection()
+    source_id = str(payment_id)
+    payload = {
+        "kind": "income",
+        "amount": float(amount_cup),
+        "currency": "CUP",
+        "reason": LEDGER_REASONS.get(kind, "Alta de plan"),
+        "at": at,
+        "source": "subscription",
+        "source_id": source_id,
+        "rates": rates,
+    }
+    existing = await ledger.find_one({"source": "subscription", "source_id": source_id})
+    if existing is not None:
+        await ledger.update_one({"_id": existing["_id"]}, {"$set": payload})
+        return existing["_id"]
+    payload["created_at"] = to_utc_naive(utc_now())
+    result = await ledger.insert_one(payload)
+    return result.inserted_id
+
+
+async def _delete_ledger_income(payment_id: Any) -> None:
+    await get_finance_ledger_collection().delete_one(
+        {"source": "subscription", "source_id": str(payment_id)}
+    )
 
 
 async def ensure_subscription_payment_indexes() -> None:
@@ -17,6 +63,7 @@ async def ensure_subscription_payment_indexes() -> None:
     await collection.create_index([("recorded_at", -1)])
     await collection.create_index([("registration_id", 1), ("recorded_at", -1)])
     await backfill_subscription_payments_from_registrations()
+    await backfill_finance_ledger_from_payments()
 
 
 async def record_subscription_payment(
@@ -33,17 +80,28 @@ async def record_subscription_payment(
 
     now = to_utc_naive(utc_now())
     when = to_utc_naive(recorded_at) if recorded_at is not None else now
-
-    await get_subscription_payments_collection().insert_one(
-        {
-            "registration_id": registration_id,
-            "amount_cup": int(amount_cup),
-            "kind": kind,
-            "recorded_at": when,
-            "plan_tier": plan_tier,
-            "billing_period": billing_period,
-            "created_at": now,
-        }
+    rates = snapshot_cup_per_unit()
+    document = {
+        "registration_id": registration_id,
+        "amount_cup": int(amount_cup),
+        "kind": kind,
+        "recorded_at": when,
+        "plan_tier": plan_tier,
+        "billing_period": billing_period,
+        "created_at": now,
+        "rates": rates,
+    }
+    result = await get_subscription_payments_collection().insert_one(document)
+    ledger_id = await _sync_ledger_income(
+        payment_id=result.inserted_id,
+        amount_cup=amount_cup,
+        kind=kind,
+        at=when,
+        rates=rates,
+    )
+    await get_subscription_payments_collection().update_one(
+        {"_id": result.inserted_id},
+        {"$set": {"ledger_id": ledger_id}},
     )
 
 
@@ -77,9 +135,18 @@ async def upsert_latest_subscription_payment(
         return
 
     if amount_cup <= 0:
+        await _delete_ledger_income(latest["_id"])
         await collection.delete_one({"_id": latest["_id"]})
         return
 
+    rates = latest.get("rates") if isinstance(latest.get("rates"), dict) and latest.get("rates") else snapshot_cup_per_unit()
+    ledger_id = await _sync_ledger_income(
+        payment_id=latest["_id"],
+        amount_cup=amount_cup,
+        kind="adjustment",
+        at=latest.get("recorded_at") or now,
+        rates=rates,
+    )
     await collection.update_one(
         {"_id": latest["_id"]},
         {
@@ -91,6 +158,8 @@ async def upsert_latest_subscription_payment(
                     billing_period if billing_period is not None else latest.get("billing_period")
                 ),
                 "updated_at": now,
+                "ledger_id": ledger_id,
+                "rates": rates,
             }
         },
     )
@@ -143,6 +212,24 @@ async def backfill_subscription_payments_from_registrations() -> int:
         )
         inserted += 1
 
+    return inserted
+
+
+async def backfill_finance_ledger_from_payments() -> int:
+    payments = get_subscription_payments_collection()
+    inserted = 0
+    async for pay in payments.find({"amount_cup": {"$gt": 0}}):
+        rates = pay.get("rates") if isinstance(pay.get("rates"), dict) and pay.get("rates") else snapshot_cup_per_unit()
+        ledger_id = await _sync_ledger_income(
+            payment_id=pay["_id"],
+            amount_cup=int(pay.get("amount_cup") or 0),
+            kind=pay.get("kind") or "approval",
+            at=pay.get("recorded_at") or pay.get("created_at") or to_utc_naive(utc_now()),
+            rates=rates,
+        )
+        if pay.get("ledger_id") != ledger_id:
+            await payments.update_one({"_id": pay["_id"]}, {"$set": {"ledger_id": ledger_id, "rates": rates}})
+            inserted += 1
     return inserted
 
 

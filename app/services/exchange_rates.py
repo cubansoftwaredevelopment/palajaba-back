@@ -38,6 +38,16 @@ def get_cup_per_unit() -> dict[str, float]:
     return dict(_cup_per_unit_cache)
 
 
+def snapshot_cup_per_unit() -> dict[str, float]:
+    live = get_cup_per_unit()
+    snapshot: dict[str, float] = {"CUP": 1.0}
+    for code in SUPPORTED_CURRENCIES:
+        value = live.get(code)
+        if value:
+            snapshot[code] = float(value)
+    return snapshot
+
+
 def rates_are_available() -> bool:
     return _rates_available
 

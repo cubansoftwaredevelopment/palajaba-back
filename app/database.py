@@ -64,8 +64,10 @@ async def connect_to_mongo():
     await ensure_subscription_payment_indexes()
     await ensure_marketplace_visit_indexes()
     from app.statistics_admin.devices import ensure_app_device_indexes
+    from app.finance_admin.service import ensure_finance_indexes
 
     await ensure_app_device_indexes()
+    await ensure_finance_indexes()
     await ensure_category_seed()
     await ensure_product_category_seed()
     await seed_default_admin()
@@ -204,3 +206,21 @@ def get_marketplace_banners_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["marketplace_banners"]
+
+
+def get_platform_expenses_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["platform_expenses"]
+
+
+def get_platform_debts_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["platform_debts"]
+
+
+def get_finance_ledger_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["finance_ledger"]

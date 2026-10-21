@@ -163,7 +163,7 @@ async def validate_discount_code(
     doc = await _get_active_code_doc(code)
     tier = normalize_plan_tier(plan_tier)
     period = normalize_billing_period(billing_period)
-    original_amount_cup = plan_price_cup(tier, period)
+    original_amount_cup = await plan_price_cup(tier, period)
     percent_off = int(doc["percent_off"])
     discounted_amount_cup = apply_percent_discount(original_amount_cup, percent_off)
 

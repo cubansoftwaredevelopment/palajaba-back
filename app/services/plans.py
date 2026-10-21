@@ -1,6 +1,5 @@
 from typing import Literal
 
-from app.constants import PLAN_PRICES_USD
 from app.utils.currency_conversion import convert_amount
 
 PlanTier = Literal["standard", "premium"]
@@ -19,9 +18,6 @@ def normalize_plan_tier(value: str | None) -> PlanTier:
 
 
 def effective_plan_tier(doc: dict) -> PlanTier:
-    """Nivel de acceso efectivo: la prueba gratis da acceso Premium."""
-    if doc.get("is_free_trial"):
-        return PREMIUM_PLAN_TIER
     return normalize_plan_tier(doc.get("plan_tier"))
 
 
@@ -47,15 +43,15 @@ def normalize_billing_period(value: str | None) -> BillingPeriod:
     return "yearly" if value == "yearly" else "monthly"
 
 
-def plan_price_usd(plan_tier: str, billing_period: str) -> int:
-    tier = normalize_plan_tier(plan_tier)
-    period = "yearly" if billing_period == "yearly" else "monthly"
-    return PLAN_PRICES_USD[tier][period]
+async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
+    from app.services.platform_settings import get_plan_prices
 
-
-def plan_price_cup(plan_tier: str, billing_period: str) -> int:
-    usd_amount = plan_price_usd(plan_tier, billing_period)
-    return int(convert_amount(usd_amount, "USD", "CUP"))
+    prices = await get_plan_prices()
+    configured = prices.get_price(
+        normalize_plan_tier(plan_tier),
+        normalize_billing_period(billing_period),
+    )
+    return int(convert_amount(configured.amount, configured.currency, "CUP"))
 
 
 def seller_has_statistics(doc: dict) -> bool:

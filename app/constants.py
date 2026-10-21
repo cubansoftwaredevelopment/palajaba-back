@@ -2,14 +2,14 @@ REJECTION_REASON_UNCONFIRMED_PAYMENT = (
     "No pudimos confirmar el pago de la transferencia."
 )
 
-PLAN_PRICES_USD = {
+DEFAULT_PLAN_PRICES = {
     "standard": {
-        "monthly": 2,
-        "yearly": 20,
+        "monthly": {"amount": 2, "currency": "USD"},
+        "yearly": {"amount": 20, "currency": "USD"},
     },
     "premium": {
-        "monthly": 4,
-        "yearly": 30,
+        "monthly": {"amount": 4, "currency": "USD"},
+        "yearly": {"amount": 30, "currency": "USD"},
     },
 }
 
