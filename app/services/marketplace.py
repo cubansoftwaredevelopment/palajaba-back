@@ -480,24 +480,46 @@ def _split_sellers_by_locality(
     return local_ids, delivery_ids
 
 
-def _normalize_display_currency(currency: str | None) -> str | None:
+def _normalize_display_currencies(currency: str | list[str] | None) -> list[str] | None:
     if currency is None:
         return None
-    code = str(currency).strip().upper()
-    if not code:
-        return None
-    if code not in CURRENCY_CODES:
-        raise ValueError("Moneda no válida.")
-    return code
+    values = currency if isinstance(currency, list) else [currency]
+    codes: list[str] = []
+    for raw in values:
+        if raw is None:
+            continue
+        for part in str(raw).split(","):
+            code = part.strip().upper()
+            if not code:
+                continue
+            if code not in CURRENCY_CODES:
+                raise ValueError("Moneda no válida.")
+            if code not in codes:
+                codes.append(code)
+    return codes or None
 
 
-def _currency_acceptance_clause(currency: str | None) -> dict[str, Any] | None:
-    if not currency:
+def _normalize_display_currency(currency: str | list[str] | None) -> str | None:
+    codes = _normalize_display_currencies(currency)
+    return codes[0] if codes else None
+
+
+def _currency_acceptance_clause(currency: str | list[str] | None) -> dict[str, Any] | None:
+    currencies = _normalize_display_currencies(currency)
+    if not currencies:
         return None
+    if len(currencies) == 1:
+        code = currencies[0]
+        return {
+            "$or": [
+                {"base_currency": code},
+                {"accepted_currencies": code},
+            ]
+        }
     return {
         "$or": [
-            {"base_currency": currency},
-            {"accepted_currencies": currency},
+            {"base_currency": {"$in": currencies}},
+            {"accepted_currencies": {"$in": currencies}},
         ]
     }
 
@@ -797,7 +819,8 @@ async def list_availability_hints(
     category_id: str | None = None,
 ) -> MarketplaceAvailabilityHintsPublic:
     """Ejemplos de monedas y categorías con productos cuando la configuración actual no tiene."""
-    currency = _normalize_display_currency(currency)
+    currencies = _normalize_display_currencies(currency)
+    selected_currencies = set(currencies or [])
     normalized_category = (
         _normalize_marketplace_category_id(category_id) if category_id and category_id.strip() else None
     )
@@ -836,7 +859,7 @@ async def list_availability_hints(
             codes = _product_currency_codes(doc)
             category = normalize_business_category_id(str(doc.get("global_category_id") or "otros"))
             category_any[category] = category_any.get(category, 0) + 1
-            matches_currency = currency is None or currency in codes
+            matches_currency = not selected_currencies or any(code in selected_currencies for code in codes)
             in_scope = normalized_category is None or category == normalized_category
             if matches_currency:
                 category_in_currency[category] = category_in_currency.get(category, 0) + 1
@@ -849,7 +872,7 @@ async def list_availability_hints(
         return [
             code
             for code, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-            if code != currency
+            if code not in selected_currencies
         ][:3]
 
     def _top_categories(counts: dict[str, int]) -> list[str]:
@@ -880,7 +903,7 @@ async def list_home_feed(
     municipios_adicionales: list[str] | None = None,
     currency: str | None = None,
 ) -> MarketplaceHomeFeedPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
     safe_offset = max(0, section_offset)
@@ -988,7 +1011,7 @@ async def list_category_products(
     municipios_adicionales: list[str] | None = None,
     currency: str | None = None,
 ) -> MarketplaceCategoryProductsPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     _ = province_name, municipality_name
 
@@ -1315,7 +1338,7 @@ async def search_products(
     store_slug: str | None = None,
     gestor_username: str | None = None,
 ) -> MarketplaceSearchPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     _ = province_name, municipality_name
 
@@ -1453,7 +1476,7 @@ async def get_store_catalog(
     limit_per_category: int = DEFAULT_PAGE_SIZE,
     currency: str | None = None,
 ) -> MarketplaceStoreCatalogPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
     await refresh_popularity_window()
@@ -1563,7 +1586,7 @@ async def list_store_category_products(
     offset: int = 0,
     currency: str | None = None,
 ) -> MarketplaceStoreCategoryProductsPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
 
     page_size = _normalize_page_size(limit)
@@ -1698,7 +1721,7 @@ async def get_gestor_store_catalog(
     limit_per_category: int = DEFAULT_PAGE_SIZE,
     currency: str | None = None,
 ) -> MarketplaceGestorStoreCatalogPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit_per_category)
     await refresh_popularity_window()
@@ -1842,7 +1865,7 @@ async def list_gestor_store_category_products(
     offset: int = 0,
     currency: str | None = None,
 ) -> MarketplaceGestorStoreCategoryProductsPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
@@ -2043,7 +2066,7 @@ async def list_businesses(
     municipios_adicionales: list[str] | None = None,
     currency: str | None = None,
 ) -> MarketplaceBusinessesPublic:
-    currency = _normalize_display_currency(currency)
+    currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
