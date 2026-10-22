@@ -21,7 +21,6 @@ class RegistrationPublic(BaseModel):
     status: RegistrationStatus
     subscription_starts_at: UtcDateTime | None = None
     subscription_ends_at: UtcDateTime | None = None
-    expiry_notice_email_sent: bool = False
     expiry_notice_sms_sent: bool = False
     rejection_reason: str | None = None
     created_at: UtcDateTime

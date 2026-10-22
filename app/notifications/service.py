@@ -9,7 +9,7 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
-from app.register.otp import send_custom_email, send_custom_sms, send_otp, send_sms_campaign
+from app.register.otp import send_custom_sms, send_sms_campaign
 from app.services.registrations import phone_e164
 from app.notifications.schemas import (
     AdminNotificationBroadcastPublic,
@@ -28,7 +28,6 @@ from app.services.plans import (
 )
 from app.services.subscriptions import (
     ACTION_RENEW_SUBSCRIPTION,
-    EXPIRY_NOTICE_EMAIL_FIELD,
     EXPIRY_NOTICE_FOR_FIELD,
     EXPIRY_NOTICE_SMS_FIELD,
     NOTIFICATION_KIND_EXPIRING,
@@ -47,7 +46,6 @@ logger = logging.getLogger(__name__)
 NOTIFICATION_KIND_NEW_ORDER = "new_order"
 ACTION_VIEW_ORDERS = "view_orders"
 SUBSCRIPTION_REMINDER_POLL_SECONDS = 1800
-CONTACT_REMINDER_EMAIL_SUBJECT = "Tu suscripción en Pa' La Jaba vence pronto"
 
 _reminder_task: asyncio.Task | None = None
 
@@ -83,10 +81,6 @@ def _sms_error_message(detail: Any) -> str:
     return _channel_error_message(detail, "No pudimos enviar el SMS del aviso.")
 
 
-def _email_error_message(detail: Any) -> str:
-    return _channel_error_message(detail, "No pudimos enviar el correo del aviso.")
-
-
 def _system_notifications_filter(seller_object_id: ObjectId) -> dict[str, Any]:
     return {
         "seller_id": seller_object_id,
@@ -102,11 +96,6 @@ def _seller_phone_e164(seller: dict[str, Any]) -> str | None:
     if len(digits) != 8:
         return None
     return phone_e164(digits)
-
-
-def _seller_email(seller: dict[str, Any]) -> str | None:
-    email = str(seller.get("email") or "").strip().lower()
-    return email or None
 
 
 async def _deliver_contact_channel(send) -> str:
@@ -160,27 +149,8 @@ async def _send_subscription_contact_reminder(
     ends_at: Any,
 ) -> None:
     message = contact_reminder_content(days_remaining, store_name=seller.get("store_name"))
-    email_state = expiry_notice_channel_state(seller, "email", ends_at)
     sms_state = expiry_notice_channel_state(seller, "sms", ends_at)
     updates: dict[str, Any] = {EXPIRY_NOTICE_FOR_FIELD: to_utc_naive(ends_at)}
-
-    if email_state not in ("sent", "skipped"):
-        email = _seller_email(seller)
-        if not email:
-            email_state = "skipped"
-        else:
-            status_value = await _deliver_contact_channel(
-                lambda: send_custom_email(
-                    email=email,
-                    subject=CONTACT_REMINDER_EMAIL_SUBJECT,
-                    message=message,
-                )
-            )
-            if status_value != "sent":
-                status_value = await _deliver_contact_channel(lambda: send_otp(email=email))
-            email_state = "sent" if status_value == "sent" else status_value
-        updates["subscription_expiry_notice_email"] = email_state
-        updates[EXPIRY_NOTICE_EMAIL_FIELD] = email_state == "sent"
 
     if sms_state not in ("sent", "skipped"):
         phone = _seller_phone_e164(seller)
@@ -229,13 +199,10 @@ async def ensure_subscription_expiring_notifications() -> int:
         {
             "_id": 1,
             "subscription_ends_at": 1,
-            "email": 1,
             "phone": 1,
             "store_name": 1,
             EXPIRY_NOTICE_FOR_FIELD: 1,
-            EXPIRY_NOTICE_EMAIL_FIELD: 1,
             EXPIRY_NOTICE_SMS_FIELD: 1,
-            "subscription_expiry_notice_email": 1,
             "subscription_expiry_notice_sms": 1,
         },
     )
@@ -444,7 +411,6 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
             "plan_tier": 1,
             "billing_period": 1,
             "phone": 1,
-            "email": 1,
         },
     )
     if seller is None:
@@ -487,7 +453,6 @@ async def send_notification_to_sellers(
                 "billing_period": 1,
                 "store_name": 1,
                 "phone": 1,
-                "email": 1,
             },
         ).to_list(length=None)
         sellers = [seller for seller in sellers if is_subscription_active(seller)]
@@ -513,22 +478,18 @@ async def send_notification_to_sellers(
     content_clean = content.strip()
     sms_targets: list[tuple[str, str]] = []
     seen_phones: set[str] = set()
-    email_targets: list[tuple[str, str]] = []
-    seen_emails: set[str] = set()
     for seller in sellers:
-        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
         digits = "".join(ch for ch in str(seller.get("phone") or "") if ch.isdigit())
         if digits.startswith("53") and len(digits) == 10:
             digits = digits[2:]
-        if len(digits) == 8:
-            phone = phone_e164(digits)
-            if phone not in seen_phones:
-                seen_phones.add(phone)
-                sms_targets.append((phone, store_name))
-        email = _seller_email(seller)
-        if email and email not in seen_emails:
-            seen_emails.add(email)
-            email_targets.append((email, store_name))
+        if len(digits) != 8:
+            continue
+        phone = phone_e164(digits)
+        if phone in seen_phones:
+            continue
+        seen_phones.add(phone)
+        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
+        sms_targets.append((phone, store_name))
 
     documents = [
         {
@@ -641,56 +602,6 @@ async def send_notification_to_sellers(
             elif sent_count:
                 sms_error = None
 
-    email_sent = False
-    email_error: str | None = None
-    email_body = title_clean if not content_clean else f"{title_clean}\n{content_clean}"
-    if not email_targets:
-        email_error = "No hay correos para enviar el aviso."
-        events.append(AdminNotificationSendEvent(type="error", message=email_error))
-    else:
-        sent_count = 0
-        fail_count = 0
-        last_fail: str | None = None
-        for index, (email, store_name) in enumerate(email_targets):
-            if index:
-                await asyncio.sleep(0.4)
-            try:
-                await send_custom_email(
-                    email=email,
-                    subject=title_clean,
-                    message=email_body,
-                )
-                sent_count += 1
-                email_sent = True
-                events.append(
-                    AdminNotificationSendEvent(
-                        type="success",
-                        message=f"Correo enviado a {store_name} ({email}).",
-                    )
-                )
-            except HTTPException as exc:
-                fail_count += 1
-                last_fail = _email_error_message(exc.detail)
-                events.append(
-                    AdminNotificationSendEvent(
-                        type="error",
-                        message=f"Correo a {store_name} ({email}): {last_fail}",
-                    )
-                )
-            except Exception:
-                fail_count += 1
-                last_fail = "No pudimos enviar el correo del aviso."
-                events.append(
-                    AdminNotificationSendEvent(
-                        type="error",
-                        message=f"Correo a {store_name} ({email}): {last_fail}",
-                    )
-                )
-        if fail_count and not sent_count:
-            email_error = last_fail or "No pudimos enviar el correo del aviso."
-        elif fail_count:
-            email_error = f"Correos: {sent_count} enviados, {fail_count} fallidos."
-
     return AdminNotificationSendResult(
         batch_id=batch_id,
         title=title_clean,
@@ -701,8 +612,6 @@ async def send_notification_to_sellers(
         target_store_name=target_store_name,
         sms_sent=sms_sent,
         sms_error=sms_error,
-        email_sent=email_sent,
-        email_error=email_error,
         events=events,
     )
 

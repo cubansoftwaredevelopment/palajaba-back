@@ -269,47 +269,6 @@ async def send_sms_campaign(*, name: str, message: str, recipients: list[str]) -
     return payload
 
 
-async def send_custom_email(*, email: str, subject: str, message: str) -> dict[str, Any]:
-    if not settings.otp_token_secret.strip():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="El servicio de correo no está configurado.",
-        )
-    to = str(email or "").strip()
-    subject_text = str(subject or "").strip()
-    text = str(message or "").strip()
-    if not to or not text:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Indica un correo y un mensaje.",
-        )
-
-    body = {"email": to, "to": to, "subject": subject_text or "Pa' La Jaba", "message": text}
-    try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            response = await client.post(
-                _v2_resource_url("email", "send"),
-                headers=_campaign_headers(),
-                json=body,
-            )
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="No pudimos enviar el correo del aviso.",
-        ) from exc
-
-    if response.status_code >= 400:
-        _raise_campaign_http_error(response)
-
-    payload = _parse_json(response)
-    if not isinstance(payload, dict) or payload.get("success") is False:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=_detail_from_payload(payload, "No pudimos enviar el correo del aviso."),
-        )
-    return payload
-
-
 async def send_custom_sms(*, phone_e164: str, message: str) -> dict[str, Any]:
     if not settings.otp_token_secret.strip():
         raise HTTPException(

@@ -12,7 +12,6 @@ SUBSCRIPTION_CONTACT_REMINDER_DAYS = 2
 SUBSCRIPTION_URGENT_BANNER_HOURS = 24
 NOTIFICATION_KIND_EXPIRING = "subscription_expiring"
 ACTION_RENEW_SUBSCRIPTION = "renew_subscription"
-EXPIRY_NOTICE_EMAIL_FIELD = "subscription_expiry_notice_email_sent"
 EXPIRY_NOTICE_SMS_FIELD = "subscription_expiry_notice_sms_sent"
 EXPIRY_NOTICE_FOR_FIELD = "subscription_expiry_notice_for"
 
@@ -20,9 +19,7 @@ EXPIRY_NOTICE_FOR_FIELD = "subscription_expiry_notice_for"
 def expiry_notice_reset() -> dict[str, Any]:
     return {
         EXPIRY_NOTICE_FOR_FIELD: None,
-        EXPIRY_NOTICE_EMAIL_FIELD: False,
         EXPIRY_NOTICE_SMS_FIELD: False,
-        "subscription_expiry_notice_email": None,
         "subscription_expiry_notice_sms": None,
     }
 
@@ -39,8 +36,7 @@ def expiry_notice_channel_state(doc: dict[str, Any], channel: str, ends_at: date
     value = doc.get(f"subscription_expiry_notice_{channel}")
     if value in ("sent", "skipped", "retry"):
         return value
-    sent_field = EXPIRY_NOTICE_EMAIL_FIELD if channel == "email" else EXPIRY_NOTICE_SMS_FIELD
-    if doc.get(sent_field) is True:
+    if channel == "sms" and doc.get(EXPIRY_NOTICE_SMS_FIELD) is True:
         return "sent"
     return None
 

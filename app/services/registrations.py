@@ -74,9 +74,6 @@ def document_to_public(
         status=doc["status"],
         subscription_starts_at=doc.get("subscription_starts_at"),
         subscription_ends_at=doc.get("subscription_ends_at"),
-        expiry_notice_email_sent=expiry_notice_sent(
-            doc, "email", doc.get("subscription_ends_at")
-        ),
         expiry_notice_sms_sent=expiry_notice_sent(
             doc, "sms", doc.get("subscription_ends_at")
         ),

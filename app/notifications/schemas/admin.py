@@ -51,8 +51,6 @@ class AdminNotificationSendResult(BaseModel):
     target_store_name: str | None = None
     sms_sent: bool = True
     sms_error: str | None = None
-    email_sent: bool = True
-    email_error: str | None = None
     events: list[AdminNotificationSendEvent] = Field(default_factory=list)
 
 
