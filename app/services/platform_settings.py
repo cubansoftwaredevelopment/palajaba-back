@@ -35,6 +35,7 @@ def _period_from_raw(raw: Any, fallback: dict[str, Any]) -> PlanPeriodPrices:
     source = raw if isinstance(raw, dict) else {}
     return PlanPeriodPrices(
         monthly=_price_from_raw(source.get("monthly"), fallback["monthly"]),
+        quarterly=_price_from_raw(source.get("quarterly"), fallback["quarterly"]),
         yearly=_price_from_raw(source.get("yearly"), fallback["yearly"]),
     )
 

@@ -168,6 +168,8 @@ async def assert_contact_available(*, phone: str, email: str, store_name: str) -
 def default_subscription_end(start: datetime, billing_period: str) -> datetime:
     if billing_period == "yearly":
         return start + timedelta(days=365)
+    if billing_period == "quarterly":
+        return start + timedelta(days=90)
     return start + timedelta(days=30)
 
 
@@ -424,7 +426,7 @@ async def update_subscription_end(
     if plan_tier is not None:
         updates["plan_tier"] = normalize_plan_tier(plan_tier)
     if billing_period is not None:
-        if billing_period not in ("monthly", "yearly"):
+        if billing_period not in ("monthly", "quarterly", "yearly"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Periodo de facturación inválido.",
@@ -492,7 +494,7 @@ async def renew_registration(
     if plan_tier is not None:
         updates["plan_tier"] = normalize_plan_tier(plan_tier)
     if billing_period is not None:
-        if billing_period not in ("monthly", "yearly"):
+        if billing_period not in ("monthly", "quarterly", "yearly"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Periodo de facturación inválido.",

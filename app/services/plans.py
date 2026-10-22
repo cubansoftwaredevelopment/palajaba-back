@@ -3,7 +3,8 @@ from typing import Literal
 from app.utils.currency_conversion import convert_amount
 
 PlanTier = Literal["standard", "pro", "premium"]
-BillingPeriod = Literal["monthly", "yearly"]
+BillingPeriod = Literal["monthly", "quarterly", "yearly"]
+BILLING_PERIODS: tuple[BillingPeriod, ...] = ("monthly", "quarterly", "yearly")
 
 STANDARD_PLAN_TIER: PlanTier = "standard"
 PRO_PLAN_TIER: PlanTier = "pro"
@@ -89,7 +90,11 @@ def seller_can_add_gestor(plan_tier: str | None, current_count: int) -> bool:
 
 
 def normalize_billing_period(value: str | None) -> BillingPeriod:
-    return "yearly" if value == "yearly" else "monthly"
+    if value == "yearly":
+        return "yearly"
+    if value == "quarterly":
+        return "quarterly"
+    return "monthly"
 
 
 async def plan_price_cup(plan_tier: str, billing_period: str) -> int:

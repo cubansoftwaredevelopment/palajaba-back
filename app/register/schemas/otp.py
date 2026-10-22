@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.registration import PlanTier, RegistrationStatus
 
-BillingPeriod = Literal["monthly", "yearly"]
+BillingPeriod = Literal["monthly", "quarterly", "yearly"]
 RegisterKind = Literal["trial", "paid"]
 OtpChannel = Literal["email", "phone"]
 

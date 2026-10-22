@@ -94,7 +94,7 @@ async def start_password_reset(payload: PasswordResetStartRequest):
     )
 
 
-@router.post("/password-reset/otp/resend", response_model=PasswordResetStartResponse)
+@router.post("/password-reset/otp/resimage.pngend", response_model=PasswordResetStartResponse)
 async def resend_password_reset_otp(payload: PasswordResetResendRequest):
     return await password_reset_service.resend_password_reset_otp(
         challenge_id=payload.challenge_id,

@@ -6,7 +6,7 @@ from app.constants import CURRENCY_CODES, DEFAULT_PLAN_PRICES
 
 PlanCurrency = Literal["CUP", "USD", "EUR", "MLC"]
 PlanTierKey = Literal["standard", "pro", "premium"]
-BillingPeriodKey = Literal["monthly", "yearly"]
+BillingPeriodKey = Literal["monthly", "quarterly", "yearly"]
 
 
 class PlanPriceConfig(BaseModel):
@@ -24,6 +24,7 @@ class PlanPriceConfig(BaseModel):
 
 class PlanPeriodPrices(BaseModel):
     monthly: PlanPriceConfig
+    quarterly: PlanPriceConfig
     yearly: PlanPriceConfig
 
 
@@ -39,7 +40,11 @@ class PlanPricesSettings(BaseModel):
             tier_prices = self.pro
         else:
             tier_prices = self.standard
-        return tier_prices.yearly if period == "yearly" else tier_prices.monthly
+        if period == "yearly":
+            return tier_prices.yearly
+        if period == "quarterly":
+            return tier_prices.quarterly
+        return tier_prices.monthly
 
 
 def default_plan_prices() -> PlanPricesSettings:

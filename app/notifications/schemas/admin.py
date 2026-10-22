@@ -7,10 +7,13 @@ from app.utils.datetime import UtcDateTime
 NotificationAudienceInput = Literal[
     "all",
     "premium_monthly",
+    "premium_quarterly",
     "premium_yearly",
     "pro_monthly",
+    "pro_quarterly",
     "pro_yearly",
     "standard_monthly",
+    "standard_quarterly",
     "standard_yearly",
     "single",
 ]

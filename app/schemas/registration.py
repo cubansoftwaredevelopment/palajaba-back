@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from app.utils.datetime import UtcDateTime
 
-BillingPeriod = Literal["monthly", "yearly"]
+BillingPeriod = Literal["monthly", "quarterly", "yearly"]
 PlanTier = Literal["standard", "pro", "premium"]
 RegistrationStatus = Literal["pending", "approved", "rejected", "expired"]
 

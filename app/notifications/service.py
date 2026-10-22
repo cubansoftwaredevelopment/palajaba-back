@@ -350,19 +350,25 @@ async def notify_seller_new_order(
 
 AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
     "premium_monthly": (PREMIUM_PLAN_TIER, "monthly"),
+    "premium_quarterly": (PREMIUM_PLAN_TIER, "quarterly"),
     "premium_yearly": (PREMIUM_PLAN_TIER, "yearly"),
     "pro_monthly": (PRO_PLAN_TIER, "monthly"),
+    "pro_quarterly": (PRO_PLAN_TIER, "quarterly"),
     "pro_yearly": (PRO_PLAN_TIER, "yearly"),
     "standard_monthly": (STANDARD_PLAN_TIER, "monthly"),
+    "standard_quarterly": (STANDARD_PLAN_TIER, "quarterly"),
     "standard_yearly": (STANDARD_PLAN_TIER, "yearly"),
 }
 
 AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
     "premium_monthly": "No hay vendedores Premium con facturación mensual activos.",
+    "premium_quarterly": "No hay vendedores Premium con facturación trimestral activos.",
     "premium_yearly": "No hay vendedores Premium con facturación anual activos.",
     "pro_monthly": "No hay vendedores Pro con facturación mensual activos.",
+    "pro_quarterly": "No hay vendedores Pro con facturación trimestral activos.",
     "pro_yearly": "No hay vendedores Pro con facturación anual activos.",
     "standard_monthly": "No hay vendedores Básico con facturación mensual activos.",
+    "standard_quarterly": "No hay vendedores Básico con facturación trimestral activos.",
     "standard_yearly": "No hay vendedores Básico con facturación anual activos.",
 }
 
