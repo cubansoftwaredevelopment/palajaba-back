@@ -36,6 +36,9 @@ async def ensure_registration_otp_indexes() -> None:
     await collection.create_index("expires_at", expireAfterSeconds=0)
     await collection.create_index("email")
     await collection.create_index("phone")
+    from app.register.sms_cooldown import ensure_sms_cooldown_indexes
+
+    await ensure_sms_cooldown_indexes()
 
 
 async def _get_challenge(challenge_id: str) -> dict:
@@ -64,6 +67,7 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
     )
     now = to_utc_naive(utc_now())
     collection = get_registration_otp_challenges_collection()
+    phone_result = await send_otp(phone_e164=phone_e164(payload.phone))
     email_result = await send_otp(email=payload.email)
     document = {
         "kind": payload.kind,
@@ -76,33 +80,15 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
         "plan_tier": payload.plan_tier,
         "discount_code": payload.discount_code,
         "email_hash": email_result.hash,
-        "phone_hash": "",
+        "phone_hash": phone_result.hash,
         "email_verified": False,
         "phone_verified": False,
         "email_expires_at": email_result.expires_at,
-        "phone_expires_at": None,
+        "phone_expires_at": phone_result.expires_at,
         "created_at": now,
         "expires_at": now + timedelta(seconds=CHALLENGE_TTL_SECONDS),
     }
     result = await collection.insert_one(document)
-    try:
-        phone_result = await send_otp(phone_e164=phone_e164(payload.phone))
-    except HTTPException:
-        return RegisterOtpStartResponse(
-            challenge_id=str(result.inserted_id),
-            email_expires_at=email_result.expires_at,
-            phone_expires_at=None,
-            message="Enviamos el código al correo. El SMS no se pudo enviar; reenvíalo desde la siguiente pantalla.",
-        )
-    await collection.update_one(
-        {"_id": result.inserted_id},
-        {
-            "$set": {
-                "phone_hash": phone_result.hash,
-                "phone_expires_at": phone_result.expires_at,
-            }
-        },
-    )
     return RegisterOtpStartResponse(
         challenge_id=str(result.inserted_id),
         email_expires_at=email_result.expires_at,

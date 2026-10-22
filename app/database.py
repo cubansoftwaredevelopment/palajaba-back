@@ -90,6 +90,12 @@ def get_registration_otp_challenges_collection() -> AsyncIOMotorCollection:
     return db["registration_otp_challenges"]
 
 
+def get_registration_otp_sms_cooldowns_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["registration_otp_sms_cooldowns"]
+
+
 def get_registrations_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")

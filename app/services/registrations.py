@@ -441,10 +441,10 @@ async def renew_registration(
     collection = get_registrations_collection()
     doc = await _get_document_or_404(collection, registration_id)
 
-    if doc["status"] != "expired":
+    if doc["status"] not in ("expired", "approved"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Solo se pueden renovar tiendas con suscripción vencida.",
+            detail="Solo se pueden renovar tiendas aprobadas o con suscripción vencida.",
         )
 
     now = to_utc_naive(utc_now())

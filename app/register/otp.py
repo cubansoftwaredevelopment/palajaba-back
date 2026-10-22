@@ -4,6 +4,11 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.config import settings
+from app.register.sms_cooldown import (
+    mark_sms_cooldown,
+    raise_if_sms_cooldown,
+    sms_fail_http_exception,
+)
 
 # OTP Cuba solo acepta 60–600 segundos.
 OTP_EXPIRES_IN_SECONDS = 600
@@ -50,6 +55,20 @@ def _detail_from_payload(payload: Any, fallback: str) -> str:
     return fallback
 
 
+def _sms_provider_failed(response: httpx.Response, payload: Any) -> bool:
+    if isinstance(payload, dict) and payload.get("success") is False:
+        return True
+    if response.status_code in (401, 403, 429):
+        return False
+    if response.status_code == 402:
+        return False
+    if response.status_code >= 400:
+        return True
+    if not isinstance(payload, dict):
+        return True
+    return not str(payload.get("hash") or "").strip()
+
+
 def _raise_otp_http_error(response: httpx.Response, *, fallback: str) -> None:
     payload = _parse_json(response)
     message = _detail_from_payload(payload, fallback)
@@ -90,6 +109,9 @@ async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -
             detail="Indica un correo o un teléfono para enviar el código.",
         )
 
+    if phone_e164:
+        await raise_if_sms_cooldown(phone_e164)
+
     body: dict[str, Any] = {"expiresInSeconds": OTP_EXPIRES_IN_SECONDS}
     if email:
         body["email"] = email
@@ -100,10 +122,18 @@ async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -
         async with httpx.AsyncClient(timeout=20) as client:
             response = await client.post(_otp_url("send"), headers=_headers(), json=body)
     except httpx.HTTPError as exc:
+        if phone_e164:
+            until = await mark_sms_cooldown(phone_e164)
+            raise sms_fail_http_exception(until) from exc
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="No pudimos enviar el código de verificación.",
         ) from exc
+
+    payload = _parse_json(response)
+    if phone_e164 and _sms_provider_failed(response, payload):
+        until = await mark_sms_cooldown(phone_e164)
+        raise sms_fail_http_exception(until)
 
     if response.status_code >= 400:
         _raise_otp_http_error(
@@ -111,7 +141,6 @@ async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -
             fallback="No pudimos enviar el código de verificación.",
         )
 
-    payload = _parse_json(response)
     if not isinstance(payload, dict):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
