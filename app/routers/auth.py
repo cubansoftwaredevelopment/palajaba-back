@@ -16,10 +16,13 @@ from app.schemas.catalog import (
     CatalogThemeUpdate,
     CurrencyPublic,
 )
-from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import CreateSellerManualOrderRequest, InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import (
     CategoryPublic,
+    SellerContactOtpConfirmRequest,
+    SellerContactOtpResendRequest,
+    SellerContactOtpStartResponse,
+    SellerEmailUpdate,
     SellerPhoneUpdate,
     SellerProfileUpdate,
     SellerStoreNameUpdate,
@@ -42,7 +45,6 @@ from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import catalog_theme_settings as catalog_theme_service
 from app.services import gestores as gestores_service
-from app.services import notifications as notification_service
 from app.services import orders as orders_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
@@ -96,12 +98,65 @@ async def update_seller_profile(
 
 @router.patch("/me/phone", response_model=SellerPublic)
 async def update_seller_phone(
+    _payload: SellerPhoneUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Verifica el nuevo teléfono con el código SMS.",
+    )
+
+
+@router.post("/me/phone/otp/start", response_model=SellerContactOtpStartResponse)
+async def start_seller_phone_otp(
     payload: SellerPhoneUpdate,
     seller_payload: dict = Depends(require_seller),
 ):
-    return await profile_service.update_seller_phone(
-        seller_payload["seller_id"],
-        payload,
+    from app.register.contact_changes import start_phone_change
+
+    return await start_phone_change(
+        seller_id=seller_payload["seller_id"],
+        phone=payload.phone,
+    )
+
+
+@router.post("/me/email/otp/start", response_model=SellerContactOtpStartResponse)
+async def start_seller_email_otp(
+    payload: SellerEmailUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import start_email_change
+
+    return await start_email_change(
+        seller_id=seller_payload["seller_id"],
+        email=payload.email,
+    )
+
+
+@router.post("/me/contact-otp/resend", response_model=SellerContactOtpStartResponse)
+async def resend_seller_contact_otp(
+    payload: SellerContactOtpResendRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import resend_contact_change
+
+    return await resend_contact_change(
+        seller_id=seller_payload["seller_id"],
+        challenge_id=payload.challenge_id,
+    )
+
+
+@router.post("/me/contact-otp/confirm", response_model=SellerPublic)
+async def confirm_seller_contact_otp(
+    payload: SellerContactOtpConfirmRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import confirm_contact_change
+
+    return await confirm_contact_change(
+        seller_id=seller_payload["seller_id"],
+        challenge_id=payload.challenge_id,
+        code=payload.code,
     )
 
 
@@ -170,34 +225,6 @@ async def remove_store_banner(
     return await profile_service.delete_store_banner(
         seller_payload["seller_id"],
         banner_id,
-    )
-
-
-@router.get("/me/notifications", response_model=list[SellerNotificationPublic])
-async def list_my_notifications(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.list_seller_notifications(seller_payload["seller_id"])
-
-
-@router.get("/me/notifications/unread-count", response_model=SellerNotificationUnreadCount)
-async def my_notifications_unread_count(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.get_unread_count(seller_payload["seller_id"])
-
-
-@router.patch("/me/notifications/read-system", response_model=SellerNotificationBulkReadResult)
-async def mark_my_system_notifications_read(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.mark_system_notifications_read(
-        seller_payload["seller_id"],
-    )
-
-
-@router.patch("/me/notifications/{notification_id}/read", response_model=SellerNotificationPublic)
-async def mark_my_notification_read(
-    notification_id: str,
-    seller_payload: dict = Depends(require_seller),
-):
-    return await notification_service.mark_notification_read(
-        seller_payload["seller_id"],
-        notification_id,
     )
 
 

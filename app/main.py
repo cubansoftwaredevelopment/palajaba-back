@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
+from app.notifications.routes import router as notifications_router
 from app.register.routes import router as register_router
 from app.finance_admin.routes import router as finance_router
 from app.seller_statistics.routes import router as seller_statistics_router
@@ -54,6 +55,7 @@ app.include_router(statistics_router)
 app.include_router(statistics_public_router)
 app.include_router(finance_router)
 app.include_router(seller_statistics_router)
+app.include_router(notifications_router)
 app.include_router(live_router)
 
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)

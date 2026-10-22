@@ -14,7 +14,7 @@ from app.schemas.orders import (
     OrderSubtotalPublic,
     UpdateOrderRequest,
 )
-from app.services import notifications as notification_service
+from app.notifications import service as notification_service
 from app.services.product_popularity import bump_products_on_order_completed
 from app.services.subscriptions import is_subscription_active
 from app.services.order_totals import compute_order_products_revenue

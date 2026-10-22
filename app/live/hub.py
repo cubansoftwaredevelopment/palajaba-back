@@ -2,7 +2,7 @@ from fastapi import WebSocket
 
 from app.live.push import notify_seller_devices
 from app.live.schemas.event import LiveNotificationEvent
-from app.schemas.notifications import SellerNotificationPublic
+from app.notifications.schemas import SellerNotificationPublic
 
 
 class LiveHub:

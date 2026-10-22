@@ -11,11 +11,6 @@ from app.schemas.discount_code import (
 )
 from app.schemas.admin_products import AdminProductList
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse
-from app.schemas.notifications import (
-    AdminNotificationBroadcastPublic,
-    AdminNotificationCreate,
-    AdminNotificationSendResult,
-)
 from app.schemas.banners import BannerAdminPublic, BannerUpdate
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
 from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
@@ -28,7 +23,6 @@ from app.utils.dates import parse_subscription_end
 from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import discount_codes as discount_codes_service
-from app.services import notifications as notification_service
 from app.services import banners as banners_service
 from app.services import platform_settings as platform_settings_service
 from app.services import registrations as registration_service
@@ -270,25 +264,6 @@ async def delete_feedback(
     _: dict = Depends(require_admin),
 ):
     return await seller_feedback_service.delete_admin_feedback(feedback_id)
-
-
-@router.get("/notifications", response_model=list[AdminNotificationBroadcastPublic])
-async def list_notifications(_: dict = Depends(require_admin)):
-    return await notification_service.list_admin_broadcasts()
-
-
-@router.post("/notifications", response_model=AdminNotificationSendResult)
-async def send_notification(
-    payload: AdminNotificationCreate,
-    admin_payload: dict = Depends(require_admin),
-):
-    return await notification_service.send_notification_to_sellers(
-        admin_payload["admin_id"],
-        payload.title,
-        payload.content,
-        payload.audience,
-        seller_id=payload.seller_id,
-    )
 
 
 @router.get("/settings", response_model=PlatformSettingsPublic)

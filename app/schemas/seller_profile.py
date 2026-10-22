@@ -130,6 +130,33 @@ class SellerPhoneUpdate(BaseModel):
         return normalize_phone_digits(value)
 
 
+class SellerEmailUpdate(BaseModel):
+    email: str = Field(..., min_length=5, max_length=254)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        email = str(value).strip().lower()
+        if "@" not in email or "." not in email.split("@")[-1]:
+            raise ValueError("El correo no es válido.")
+        return email
+
+
+class SellerContactOtpStartResponse(BaseModel):
+    challenge_id: str
+    expires_at: str | None = None
+    message: str
+
+
+class SellerContactOtpResendRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=1, max_length=40)
+
+
+class SellerContactOtpConfirmRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=1, max_length=40)
+    code: str = Field(..., min_length=4, max_length=8)
+
+
 class SellerStoreNameUpdate(BaseModel):
     store_name: str = Field(..., min_length=1, max_length=120)
 

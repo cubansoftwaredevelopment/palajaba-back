@@ -14,6 +14,7 @@ from app.schemas.seller_profile import (
     BusinessArea,
     BusinessLocation,
     CategoryPublic,
+    SellerEmailUpdate,
     SellerPhoneUpdate,
     SellerProfileUpdate,
     SellerSocialLink,
@@ -422,6 +423,32 @@ async def update_seller_phone(seller_id: str, payload: SellerPhoneUpdate) -> Sel
     await collection.update_one(
         {"_id": doc["_id"]},
         {"$set": {"phone": new_phone, "updated_at": now}},
+    )
+
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def update_seller_email(seller_id: str, payload: SellerEmailUpdate) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    new_email = payload.email
+    current_email = (doc.get("email") or "").strip().lower()
+
+    if new_email == current_email:
+        return document_to_seller(doc)
+
+    collection = get_registrations_collection()
+    existing = await collection.find_one({"email": new_email, "_id": {"$ne": doc["_id"]}})
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este correo ya está registrado.",
+        )
+
+    now = to_utc_naive(utc_now())
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"email": new_email, "updated_at": now}},
     )
 
     updated = await collection.find_one({"_id": doc["_id"]})

@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 import httpx
@@ -160,13 +161,18 @@ async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -
     )
 
 
-def _campaign_url() -> str:
+def _v2_sms_url(path: str) -> str:
     base = settings.otp_api_base.rstrip("/")
+    suffix = path.lstrip("/")
     if base.endswith("/api/v2"):
-        return f"{base}/sms/campaign"
+        return f"{base}/sms/{suffix}"
     if base.endswith("/api"):
-        return f"{base}/v2/sms/campaign"
-    return f"{base}/v2/sms/campaign"
+        return f"{base}/v2/sms/{suffix}"
+    return f"{base}/v2/sms/{suffix}"
+
+
+def _campaign_url() -> str:
+    return _v2_sms_url("campaign")
 
 
 def _campaign_headers() -> dict[str, str]:
@@ -256,6 +262,55 @@ async def send_sms_campaign(*, name: str, message: str, recipients: list[str]) -
             detail=_detail_from_payload(payload, "No pudimos enviar el SMS del aviso."),
         )
     return payload
+
+
+async def send_custom_sms(*, phone_e164: str, message: str) -> dict[str, Any]:
+    if not settings.otp_token_secret.strip():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El servicio de SMS no está configurado.",
+        )
+    phone = str(phone_e164 or "").strip()
+    text = str(message or "").strip()
+    if not phone or not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indica un teléfono y un mensaje para el SMS.",
+        )
+
+    body = {"phoneNumber": phone, "message": text}
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                response = await client.post(
+                    _v2_sms_url("send"),
+                    headers=_campaign_headers(),
+                    json=body,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="No pudimos enviar el SMS del aviso.",
+            ) from exc
+
+        if response.status_code == 429 and attempt == 0:
+            await asyncio.sleep(3)
+            continue
+        if response.status_code >= 400:
+            _raise_campaign_http_error(response)
+
+        payload = _parse_json(response)
+        if not isinstance(payload, dict) or payload.get("success") is False:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=_detail_from_payload(payload, "No pudimos enviar el SMS del aviso."),
+            )
+        return payload
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Demasiados envíos de SMS. Espera unos segundos e inténtalo de nuevo.",
+    )
 
 
 async def verify_otp(*, otp_hash: str, code: str) -> None:
