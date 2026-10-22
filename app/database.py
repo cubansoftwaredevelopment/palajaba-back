@@ -26,6 +26,7 @@ async def connect_to_mongo():
     from app.services.orders import ensure_order_indexes
     from app.register.challenges import ensure_registration_otp_indexes
     from app.register.contact_changes import ensure_seller_contact_otp_indexes
+    from app.password_reset.service import ensure_password_reset_indexes
     from app.services.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
@@ -41,6 +42,7 @@ async def connect_to_mongo():
     await ensure_registration_indexes()
     await ensure_registration_otp_indexes()
     await ensure_seller_contact_otp_indexes()
+    await ensure_password_reset_indexes()
     await ensure_order_indexes()
     await ensure_admin_indexes()
     await ensure_platform_settings_indexes()
@@ -102,6 +104,12 @@ def get_seller_contact_otp_challenges_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["seller_contact_otp_challenges"]
+
+
+def get_password_reset_challenges_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["password_reset_challenges"]
 
 
 def get_registrations_collection() -> AsyncIOMotorCollection:

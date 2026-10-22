@@ -41,6 +41,16 @@ from app.schemas.gestores import (
     GestorPublic,
 )
 from app.security import create_seller_token
+from app.password_reset.schemas import (
+    PasswordResetCompleteRequest,
+    PasswordResetCompleteResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetConfirmResponse,
+    PasswordResetResendRequest,
+    PasswordResetStartRequest,
+    PasswordResetStartResponse,
+)
+from app.password_reset import service as password_reset_service
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import catalog_theme_settings as catalog_theme_service
@@ -72,6 +82,40 @@ async def seller_login(payload: SellerLoginRequest):
             store_name=seller.store_name,
         ),
         seller=seller,
+    )
+
+
+@router.post("/password-reset/start", response_model=PasswordResetStartResponse)
+async def start_password_reset(payload: PasswordResetStartRequest):
+    return await password_reset_service.start_password_reset(
+        method=payload.method,
+        phone=payload.phone,
+        store_name=payload.store_name,
+    )
+
+
+@router.post("/password-reset/otp/resend", response_model=PasswordResetStartResponse)
+async def resend_password_reset_otp(payload: PasswordResetResendRequest):
+    return await password_reset_service.resend_password_reset_otp(
+        challenge_id=payload.challenge_id,
+        channel=payload.channel,
+    )
+
+
+@router.post("/password-reset/otp/confirm", response_model=PasswordResetConfirmResponse)
+async def confirm_password_reset_otp(payload: PasswordResetConfirmRequest):
+    return await password_reset_service.confirm_password_reset_otp(
+        challenge_id=payload.challenge_id,
+        email_code=payload.email_code,
+        phone_code=payload.phone_code,
+    )
+
+
+@router.post("/password-reset/complete", response_model=PasswordResetCompleteResponse)
+async def complete_password_reset(payload: PasswordResetCompleteRequest):
+    return await password_reset_service.complete_password_reset(
+        challenge_id=payload.challenge_id,
+        password=payload.password,
     )
 
 
