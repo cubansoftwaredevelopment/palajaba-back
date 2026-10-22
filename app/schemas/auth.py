@@ -49,6 +49,8 @@ class SellerPublic(BaseModel):
     store_name: str
     store_slug: str | None = None
     phone: str
+    email: str | None = None
+    is_trial: bool = False
     billing_period: str
     plan_tier: str = "standard"
     has_statistics: bool = False

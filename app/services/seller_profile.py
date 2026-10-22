@@ -250,6 +250,8 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         store_name=doc["store_name"],
         store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         phone=phone_display(doc["phone"]),
+        email=doc.get("email") or None,
+        is_trial=bool(doc.get("is_trial")),
         billing_period=doc["billing_period"],
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
         has_statistics=seller_has_statistics(doc),

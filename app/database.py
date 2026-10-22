@@ -24,6 +24,7 @@ async def connect_to_mongo():
         ensure_subscription_expiring_notifications,
     )
     from app.services.orders import ensure_order_indexes
+    from app.register.challenges import ensure_registration_otp_indexes
     from app.services.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
@@ -37,6 +38,7 @@ async def connect_to_mongo():
     init_cloudinary()
 
     await ensure_registration_indexes()
+    await ensure_registration_otp_indexes()
     await ensure_order_indexes()
     await ensure_admin_indexes()
     await ensure_platform_settings_indexes()
@@ -80,6 +82,12 @@ async def close_mongo_connection():
     global client
     if client:
         client.close()
+
+
+def get_registration_otp_challenges_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["registration_otp_challenges"]
 
 
 def get_registrations_collection() -> AsyncIOMotorCollection:

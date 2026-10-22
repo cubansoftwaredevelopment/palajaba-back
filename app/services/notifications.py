@@ -7,6 +7,8 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
+from app.register.otp import send_sms_campaign
+from app.services.registrations import phone_e164
 from app.schemas.notifications import (
     AdminNotificationBroadcastPublic,
     AdminNotificationSendResult,
@@ -264,6 +266,7 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
             "subscription_ends_at": 1,
             "plan_tier": 1,
             "billing_period": 1,
+            "phone": 1,
         },
     )
     if seller is None:
@@ -305,6 +308,7 @@ async def send_notification_to_sellers(
                 "plan_tier": 1,
                 "billing_period": 1,
                 "store_name": 1,
+                "phone": 1,
             },
         ).to_list(length=None)
         sellers = [seller for seller in sellers if is_subscription_active(seller)]
@@ -316,11 +320,6 @@ async def send_notification_to_sellers(
             detail=_audience_empty_message(audience),
         )
 
-    now = to_utc_naive(utc_now())
-    batch_id = uuid.uuid4().hex
-    title_clean = title.strip()
-    content_clean = content.strip()
-
     try:
         admin_object_id = ObjectId(admin_id)
     except Exception as exc:
@@ -328,6 +327,31 @@ async def send_notification_to_sellers(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Admin no válido.",
         ) from exc
+
+    now = to_utc_naive(utc_now())
+    batch_id = uuid.uuid4().hex
+    title_clean = title.strip()
+    content_clean = content.strip()
+    sms_recipients: list[str] = []
+    seen_phones: set[str] = set()
+    for seller in sellers:
+        digits = "".join(ch for ch in str(seller.get("phone") or "") if ch.isdigit())
+        if digits.startswith("53") and len(digits) == 10:
+            digits = digits[2:]
+        if len(digits) != 8:
+            continue
+        phone = phone_e164(digits)
+        if phone in seen_phones:
+            continue
+        seen_phones.add(phone)
+        sms_recipients.append(phone)
+
+    sms_body = title_clean if not content_clean else f"{title_clean}\n{content_clean}"
+    await send_sms_campaign(
+        name=title_clean,
+        message=sms_body,
+        recipients=sms_recipients,
+    )
 
     documents = [
         {

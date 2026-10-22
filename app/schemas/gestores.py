@@ -163,8 +163,15 @@ class GestorSetupRequest(BaseModel):
     """Primer ingreso: contraseña + teléfono (con setup_token del login)."""
 
     setup_token: str = Field(..., min_length=10)
-    password: str = Field(..., min_length=6, max_length=128)
+    password: str = Field(..., min_length=1, max_length=128)
     phone: str = Field(..., min_length=8, max_length=20)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_length(cls, value: str) -> str:
+        if len(value) < 6:
+            raise ValueError("La contraseña debe tener al menos 6 caracteres.")
+        return value
 
     @field_validator("phone")
     @classmethod

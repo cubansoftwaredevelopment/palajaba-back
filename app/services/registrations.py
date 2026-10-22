@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -25,6 +26,7 @@ from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
 
 PHONE_PREFIX = "+53"
+TRIAL_DAYS = 15
 
 
 def normalize_transfer_id(value: str) -> str:
@@ -59,7 +61,9 @@ def document_to_public(
         id=str(doc["_id"]),
         transfer_id=doc["transfer_id"],
         store_name=doc["store_name"],
+        email=doc.get("email") or None,
         phone=phone_display(doc["phone"]),
+        is_trial=bool(doc.get("is_trial")),
         billing_period=(
             normalize_billing_period(doc["billing_period"])
             if "billing_period" in doc
@@ -132,6 +136,31 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
     )
 
 
+def normalize_email(value: str) -> str:
+    return value.strip().lower()
+
+
+def phone_e164(digits: str) -> str:
+    return f"{PHONE_PREFIX}{digits}"
+
+
+async def assert_contact_available(*, phone: str, email: str, store_name: str) -> None:
+    collection = get_registrations_collection()
+    existing_phone = await collection.find_one({"phone": phone})
+    if existing_phone:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este número de teléfono ya está registrado.",
+        )
+    existing_email = await collection.find_one({"email": normalize_email(email)})
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este correo ya está registrado.",
+        )
+    await ensure_store_name_available(store_name)
+
+
 def default_subscription_end(start: datetime, billing_period: str) -> datetime:
     if billing_period == "yearly":
         return start + timedelta(days=365)
@@ -140,61 +169,73 @@ def default_subscription_end(start: datetime, billing_period: str) -> datetime:
 
 async def create_registration(
     *,
-    transfer_id: str,
+    transfer_id: str | None,
     store_name: str,
     phone: str,
-    password: str,
+    email: str,
+    password: str | None = None,
+    password_hash: str | None = None,
     billing_period: str,
     plan_tier: str = "standard",
     discount_code: str | None = None,
+    is_trial: bool = False,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     now = to_utc_naive(utc_now())
+    normalized_email = normalize_email(email)
 
-    if not transfer_id or not str(transfer_id).strip():
+    if is_trial:
+        normalized_transfer_id = f"TRIAL-{uuid.uuid4()}"
+        billing_period = "monthly"
+        plan_tier = "standard"
+        discount_code = None
+    else:
+        if not transfer_id or not str(transfer_id).strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El ID de la transferencia es obligatorio.",
+            )
+        normalized_transfer_id = normalize_transfer_id(transfer_id)
+        existing_transfer = await collection.find_one(
+            {"transfer_id": normalized_transfer_id}
+        )
+        if existing_transfer:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Ya existe un registro con ese ID de transferencia.",
+            )
+
+    await assert_contact_available(phone=phone, email=normalized_email, store_name=store_name)
+
+    if not password_hash and not password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El ID de la transferencia es obligatorio.",
+            detail="La contraseña es obligatoria.",
         )
-    normalized_transfer_id = normalize_transfer_id(transfer_id)
+    hashed = password_hash or hash_password(password)
 
-    existing_transfer = await collection.find_one(
-        {"transfer_id": normalized_transfer_id}
-    )
-    if existing_transfer:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe un registro con ese ID de transferencia.",
-        )
-
-    existing_phone = await collection.find_one({"phone": phone})
-    if existing_phone:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Este número de teléfono ya está registrado.",
-        )
-
-    await ensure_store_name_available(store_name)
-
+    ends_at = now + timedelta(days=TRIAL_DAYS) if is_trial else None
     document = {
         "transfer_id": normalized_transfer_id,
         "store_name": store_name,
         "store_slug": store_name_to_slug(store_name),
+        "email": normalized_email,
         "phone": phone,
-        "password_hash": hash_password(password),
+        "password_hash": hashed,
         "billing_period": billing_period,
         "plan_tier": normalize_plan_tier(plan_tier),
-        "status": "pending",
-        "subscription_starts_at": None,
-        "subscription_ends_at": None,
+        "is_trial": bool(is_trial),
+        "status": "approved" if is_trial else "pending",
+        "subscription_starts_at": now if is_trial else None,
+        "subscription_ends_at": ends_at,
         "rejection_reason": None,
         "created_at": now,
         "updated_at": now,
-        "approved_at": None,
-        "payment_amount_cup": None,
+        "approved_at": now if is_trial else None,
+        "payment_amount_cup": 0 if is_trial else None,
         "discount_code": None,
         "discount_percent": None,
-        "expected_payment_cup": None,
+        "expected_payment_cup": 0 if is_trial else None,
         "profile_photo_url": None,
         "business_location": None,
         "biography": None,
@@ -438,6 +479,7 @@ async def renew_registration(
         "approved_at": now,
         "rejection_reason": None,
         "updated_at": now,
+        "is_trial": False,
     }
     if plan_tier is not None:
         updates["plan_tier"] = normalize_plan_tier(plan_tier)
@@ -573,6 +615,7 @@ async def ensure_registration_indexes() -> None:
 
     await collection.create_index("transfer_id", unique=True)
     await collection.create_index("phone", unique=True)
+    await collection.create_index("email", unique=True, sparse=True)
     await collection.create_index("status")
     await collection.create_index("created_at")
     await collection.create_index("store_name")

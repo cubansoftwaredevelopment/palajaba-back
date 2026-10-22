@@ -8,11 +8,12 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
+from app.register.routes import router as register_router
 from app.finance_admin.routes import router as finance_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
 from app.statistics_admin.routes import router as statistics_router
-from app.routers import admin, auth, categories, marketplace, platform, product_categories, register, seo, gestores
+from app.routers import admin, auth, categories, marketplace, platform, product_categories, seo, gestores
 from app.services.exchange_rates import (
     start_exchange_rates_refresh_task,
     stop_exchange_rates_refresh_task,
@@ -40,7 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(register.router)
+app.include_router(register_router)
 app.include_router(auth.router)
 app.include_router(gestores.router)
 app.include_router(categories.router)
