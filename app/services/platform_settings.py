@@ -43,6 +43,7 @@ def parse_plan_prices(raw: Any) -> PlanPricesSettings:
     source = raw if isinstance(raw, dict) else {}
     return PlanPricesSettings(
         standard=_period_from_raw(source.get("standard"), DEFAULT_PLAN_PRICES["standard"]),
+        pro=_period_from_raw(source.get("pro"), DEFAULT_PLAN_PRICES["pro"]),
         premium=_period_from_raw(source.get("premium"), DEFAULT_PLAN_PRICES["premium"]),
     )
 

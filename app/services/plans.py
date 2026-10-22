@@ -2,16 +2,49 @@ from typing import Literal
 
 from app.utils.currency_conversion import convert_amount
 
-PlanTier = Literal["standard", "premium"]
+PlanTier = Literal["standard", "pro", "premium"]
 BillingPeriod = Literal["monthly", "yearly"]
 
 STANDARD_PLAN_TIER: PlanTier = "standard"
+PRO_PLAN_TIER: PlanTier = "pro"
 PREMIUM_PLAN_TIER: PlanTier = "premium"
-PREMIUM_RECOMMENDATION_MULTIPLIER = 2
-STANDARD_GESTOR_LIMIT = 3
+PLAN_TIER_ORDER: tuple[PlanTier, ...] = (
+    STANDARD_PLAN_TIER,
+    PRO_PLAN_TIER,
+    PREMIUM_PLAN_TIER,
+)
+
+STANDARD_GESTOR_LIMIT = 1
+PRO_GESTOR_LIMIT = 3
+PRO_RECOMMENDATION_MULTIPLIER = 2
+PREMIUM_RECOMMENDATION_MULTIPLIER = 4
+
+PLAN_DISPLAY_NAMES: dict[PlanTier, str] = {
+    STANDARD_PLAN_TIER: "Básico",
+    PRO_PLAN_TIER: "Pro",
+    PREMIUM_PLAN_TIER: "Premium",
+}
+
+_PLAN_RANK: dict[PlanTier, int] = {
+    STANDARD_PLAN_TIER: 0,
+    PRO_PLAN_TIER: 1,
+    PREMIUM_PLAN_TIER: 2,
+}
+
+STATISTICS_PLAN_REQUIRED_MESSAGE = (
+    "Las estadísticas están disponibles en los planes Pro y Premium."
+)
+STORE_BANNERS_PLAN_REQUIRED_MESSAGE = (
+    "Los banners de tienda están disponibles en los planes Pro y Premium."
+)
+CATALOG_THEME_PLAN_REQUIRED_MESSAGE = (
+    "La personalización del catálogo está disponible en el plan Premium."
+)
 
 
 def normalize_plan_tier(value: str | None) -> PlanTier:
+    if value == PRO_PLAN_TIER:
+        return PRO_PLAN_TIER
     if value == PREMIUM_PLAN_TIER:
         return PREMIUM_PLAN_TIER
     return STANDARD_PLAN_TIER
@@ -21,10 +54,26 @@ def effective_plan_tier(doc: dict) -> PlanTier:
     return normalize_plan_tier(doc.get("plan_tier"))
 
 
+def plan_rank(plan_tier: str | None) -> int:
+    return _PLAN_RANK[normalize_plan_tier(plan_tier)]
+
+
+def plan_search_rank(doc: dict) -> int:
+    """0 = Premium (primero), 1 = Pro, 2 = Básico."""
+    return 2 - plan_rank(effective_plan_tier(doc))
+
+
+def plan_display_name(plan_tier: str | None) -> str:
+    return PLAN_DISPLAY_NAMES[normalize_plan_tier(plan_tier)]
+
+
 def max_gestores_for_plan(plan_tier: str | None) -> int | None:
     """Tope de gestores por plan. None = ilimitado (Premium)."""
-    if normalize_plan_tier(plan_tier) == PREMIUM_PLAN_TIER:
+    tier = normalize_plan_tier(plan_tier)
+    if tier == PREMIUM_PLAN_TIER:
         return None
+    if tier == PRO_PLAN_TIER:
+        return PRO_GESTOR_LIMIT
     return STANDARD_GESTOR_LIMIT
 
 
@@ -55,14 +104,25 @@ async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
 
 
 def seller_has_statistics(doc: dict) -> bool:
-    return effective_plan_tier(doc) == PREMIUM_PLAN_TIER
+    return plan_rank(effective_plan_tier(doc)) >= 1
 
 
 def seller_has_recommendation_boost(doc: dict) -> bool:
     return seller_has_statistics(doc)
 
 
+def seller_has_store_banners(doc: dict) -> bool:
+    return plan_rank(effective_plan_tier(doc)) >= 1
+
+
+def seller_has_full_store_customization(doc: dict) -> bool:
+    return effective_plan_tier(doc) == PREMIUM_PLAN_TIER
+
+
 def recommendation_multiplier(doc: dict) -> int:
-    if seller_has_recommendation_boost(doc):
+    tier = effective_plan_tier(doc)
+    if tier == PREMIUM_PLAN_TIER:
         return PREMIUM_RECOMMENDATION_MULTIPLIER
+    if tier == PRO_PLAN_TIER:
+        return PRO_RECOMMENDATION_MULTIPLIER
     return 1

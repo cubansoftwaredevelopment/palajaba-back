@@ -55,6 +55,8 @@ class SellerPublic(BaseModel):
     plan_tier: str = "standard"
     has_statistics: bool = False
     has_recommendation_boost: bool = False
+    has_store_banners: bool = False
+    has_full_store_customization: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
     business_location: BusinessLocation | None = None

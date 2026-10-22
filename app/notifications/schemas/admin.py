@@ -8,12 +8,14 @@ NotificationAudienceInput = Literal[
     "all",
     "premium_monthly",
     "premium_yearly",
+    "pro_monthly",
+    "pro_yearly",
     "standard_monthly",
     "standard_yearly",
     "single",
 ]
 
-NotificationAudience = NotificationAudienceInput | Literal["premium", "standard"]
+NotificationAudience = NotificationAudienceInput | Literal["premium", "pro", "standard"]
 
 
 class AdminNotificationCreate(BaseModel):

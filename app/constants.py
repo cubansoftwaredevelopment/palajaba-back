@@ -7,6 +7,10 @@ DEFAULT_PLAN_PRICES = {
         "monthly": {"amount": 2, "currency": "USD"},
         "yearly": {"amount": 20, "currency": "USD"},
     },
+    "pro": {
+        "monthly": {"amount": 8, "currency": "USD"},
+        "yearly": {"amount": 80, "currency": "USD"},
+    },
     "premium": {
         "monthly": {"amount": 4, "currency": "USD"},
         "yearly": {"amount": 30, "currency": "USD"},

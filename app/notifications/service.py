@@ -22,6 +22,7 @@ from app.notifications.schemas import (
 )
 from app.services.plans import (
     PREMIUM_PLAN_TIER,
+    PRO_PLAN_TIER,
     STANDARD_PLAN_TIER,
     normalize_billing_period,
     normalize_plan_tier,
@@ -350,6 +351,8 @@ async def notify_seller_new_order(
 AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
     "premium_monthly": (PREMIUM_PLAN_TIER, "monthly"),
     "premium_yearly": (PREMIUM_PLAN_TIER, "yearly"),
+    "pro_monthly": (PRO_PLAN_TIER, "monthly"),
+    "pro_yearly": (PRO_PLAN_TIER, "yearly"),
     "standard_monthly": (STANDARD_PLAN_TIER, "monthly"),
     "standard_yearly": (STANDARD_PLAN_TIER, "yearly"),
 }
@@ -357,6 +360,8 @@ AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
 AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
     "premium_monthly": "No hay vendedores Premium con facturación mensual activos.",
     "premium_yearly": "No hay vendedores Premium con facturación anual activos.",
+    "pro_monthly": "No hay vendedores Pro con facturación mensual activos.",
+    "pro_yearly": "No hay vendedores Pro con facturación anual activos.",
     "standard_monthly": "No hay vendedores Básico con facturación mensual activos.",
     "standard_yearly": "No hay vendedores Básico con facturación anual activos.",
 }

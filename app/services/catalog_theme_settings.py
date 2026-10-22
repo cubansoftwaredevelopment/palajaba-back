@@ -6,6 +6,10 @@ from fastapi import HTTPException, status
 
 from app.database import get_registrations_collection
 from app.services.catalog_theme import DEFAULT_CATALOG_THEME, normalize_catalog_theme, parse_catalog_theme
+from app.services.plans import (
+    CATALOG_THEME_PLAN_REQUIRED_MESSAGE,
+    seller_has_full_store_customization,
+)
 from app.services.seller_profile import _get_seller_doc, document_to_seller
 from app.utils.datetime import to_utc_naive, utc_now
 
@@ -42,6 +46,11 @@ async def get_seller_catalog_theme(seller_id: str) -> str:
 async def update_seller_catalog_theme(seller_id: str, theme: str) -> str:
     doc = await _get_seller_doc(seller_id)
     next_theme = parse_catalog_theme(theme)
+    if next_theme != DEFAULT_CATALOG_THEME and not seller_has_full_store_customization(doc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=CATALOG_THEME_PLAN_REQUIRED_MESSAGE,
+        )
     now = to_utc_naive(utc_now())
 
     collection = get_registrations_collection()

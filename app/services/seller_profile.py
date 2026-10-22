@@ -27,9 +27,12 @@ from app.services.categories import categories_for_profile, validate_category_id
 from app.services.cuba_locations import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access
 from app.services.plans import (
+    STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
     normalize_plan_tier,
+    seller_has_full_store_customization,
     seller_has_recommendation_boost,
     seller_has_statistics,
+    seller_has_store_banners,
 )
 from app.services.subscriptions import (
     is_publicly_visible,
@@ -257,6 +260,8 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
         has_statistics=seller_has_statistics(doc),
         has_recommendation_boost=seller_has_recommendation_boost(doc),
+        has_store_banners=seller_has_store_banners(doc),
+        has_full_store_customization=seller_has_full_store_customization(doc),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
         business_location=business_location,
@@ -487,8 +492,17 @@ def ensure_uploads_dir() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _require_store_banners(doc: dict) -> None:
+    if not seller_has_store_banners(doc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
+        )
+
+
 async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
+    _require_store_banners(doc)
     banners = _store_banner_documents(doc)
 
     content, content_type = await read_image_upload(file)
@@ -549,6 +563,8 @@ async def set_store_banner_active(
     payload: StoreBannerUpdate,
 ) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
+    if payload.is_active:
+        _require_store_banners(doc)
     banners = _store_banner_documents(doc)
     target = next((banner for banner in banners if banner["id"] == banner_id), None)
     if target is None:

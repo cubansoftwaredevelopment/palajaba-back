@@ -50,14 +50,23 @@ class ProductPopularityE2ETests(unittest.TestCase):
         self.assertEqual(product["name"], PRODUCT_NAME)
         self.assertEqual(product["popularity"], 6)
 
-    def test_premium_plan_doubles_the_three_week_sum(self) -> None:
-        product, events = self._run_buyer_flow("premium")
+    def test_pro_plan_doubles_the_three_week_sum(self) -> None:
+        product, events = self._run_buyer_flow("pro")
         recent_points = sum(
             event["points"] for event in events if event["points"] != STALE_EVENT_POINTS
         )
 
         self.assertEqual(recent_points, 6)
         self.assertEqual(product["popularity"], 12)
+
+    def test_premium_plan_quadruples_the_three_week_sum(self) -> None:
+        product, events = self._run_buyer_flow("premium")
+        recent_points = sum(
+            event["points"] for event in events if event["points"] != STALE_EVENT_POINTS
+        )
+
+        self.assertEqual(recent_points, 6)
+        self.assertEqual(product["popularity"], 24)
 
     def test_unknown_product_does_not_record_an_event(self) -> None:
         missing_id = str(ObjectId())
