@@ -14,7 +14,7 @@ from app.register.schemas.otp import (
     RegisterResponse,
 )
 
-router = APIRouter()
+router = APIRouter(prefix="/api/register", tags=["register"])
 
 
 @router.post("", response_model=RegisterResponse, status_code=201)
