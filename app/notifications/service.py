@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from typing import Any
 
@@ -8,7 +9,7 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
-from app.register.otp import send_custom_sms, send_sms_campaign
+from app.register.otp import send_custom_email, send_custom_sms, send_otp, send_sms_campaign
 from app.services.registrations import phone_e164
 from app.notifications.schemas import (
     AdminNotificationBroadcastPublic,
@@ -27,16 +28,28 @@ from app.services.plans import (
 )
 from app.services.subscriptions import (
     ACTION_RENEW_SUBSCRIPTION,
+    EXPIRY_NOTICE_EMAIL_FIELD,
+    EXPIRY_NOTICE_FOR_FIELD,
+    EXPIRY_NOTICE_SMS_FIELD,
     NOTIFICATION_KIND_EXPIRING,
+    contact_reminder_content,
+    expiry_notice_channel_state,
     is_subscription_active,
+    is_within_contact_reminder_window,
     is_within_warning_window,
     subscription_days_remaining,
     warning_notification_content,
 )
 from app.utils.datetime import to_utc_naive, utc_now
 
+logger = logging.getLogger(__name__)
+
 NOTIFICATION_KIND_NEW_ORDER = "new_order"
 ACTION_VIEW_ORDERS = "view_orders"
+SUBSCRIPTION_REMINDER_POLL_SECONDS = 1800
+CONTACT_REMINDER_EMAIL_SUBJECT = "Tu suscripción en Pa' La Jaba vence pronto"
+
+_reminder_task: asyncio.Task | None = None
 
 
 async def ensure_notification_indexes() -> None:
@@ -75,6 +88,112 @@ def _system_notifications_filter(seller_object_id: ObjectId) -> dict[str, Any]:
     }
 
 
+def _seller_phone_e164(seller: dict[str, Any]) -> str | None:
+    digits = "".join(ch for ch in str(seller.get("phone") or "") if ch.isdigit())
+    if digits.startswith("53") and len(digits) == 10:
+        digits = digits[2:]
+    if len(digits) != 8:
+        return None
+    return phone_e164(digits)
+
+
+def _seller_email(seller: dict[str, Any]) -> str | None:
+    email = str(seller.get("email") or "").strip().lower()
+    return email or None
+
+
+async def _deliver_contact_channel(send) -> str:
+    try:
+        await send()
+        return "sent"
+    except HTTPException as exc:
+        logger.warning("Aviso de vencimiento por OTP falló: %s", exc.detail)
+        if exc.status_code in (429, 503, 402):
+            return "retry"
+        return "skipped"
+    except Exception:
+        logger.exception("Aviso de vencimiento por OTP falló")
+        return "retry"
+
+
+async def _ensure_expiry_in_app_notice(
+    seller: dict[str, Any],
+    *,
+    ends_at: Any,
+    days_remaining: int,
+    existing: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if existing is not None:
+        return existing
+
+    now = to_utc_naive(utc_now())
+    document = {
+        "_id": ObjectId(),
+        "seller_id": seller["_id"],
+        "batch_id": f"subscription-expiring-{seller['_id']}-{ends_at.isoformat()}",
+        "kind": NOTIFICATION_KIND_EXPIRING,
+        "subscription_ends_at": ends_at,
+        "title": "Tu suscripción vence pronto",
+        "content": warning_notification_content(days_remaining),
+        "action_label": "Renovar plan",
+        "action_type": ACTION_RENEW_SUBSCRIPTION,
+        "read_at": None,
+        "created_at": now,
+        "created_by_admin_id": None,
+    }
+    await get_notifications_collection().insert_one(document)
+    await publish_seller_notification(str(seller["_id"]), _document_to_public(document))
+    return document
+
+
+async def _send_subscription_contact_reminder(
+    seller: dict[str, Any],
+    *,
+    days_remaining: int,
+    ends_at: Any,
+) -> None:
+    message = contact_reminder_content(days_remaining, store_name=seller.get("store_name"))
+    email_state = expiry_notice_channel_state(seller, "email", ends_at)
+    sms_state = expiry_notice_channel_state(seller, "sms", ends_at)
+    updates: dict[str, Any] = {EXPIRY_NOTICE_FOR_FIELD: to_utc_naive(ends_at)}
+
+    if email_state not in ("sent", "skipped"):
+        email = _seller_email(seller)
+        if not email:
+            email_state = "skipped"
+        else:
+            status_value = await _deliver_contact_channel(
+                lambda: send_custom_email(
+                    email=email,
+                    subject=CONTACT_REMINDER_EMAIL_SUBJECT,
+                    message=message,
+                )
+            )
+            if status_value != "sent":
+                status_value = await _deliver_contact_channel(lambda: send_otp(email=email))
+            email_state = "sent" if status_value == "sent" else status_value
+        updates["subscription_expiry_notice_email"] = email_state
+        updates[EXPIRY_NOTICE_EMAIL_FIELD] = email_state == "sent"
+
+    if sms_state not in ("sent", "skipped"):
+        phone = _seller_phone_e164(seller)
+        if not phone:
+            sms_state = "skipped"
+        else:
+            status_value = await _deliver_contact_channel(
+                lambda: send_custom_sms(phone_e164=phone, message=message)
+            )
+            sms_state = "sent" if status_value == "sent" else status_value
+        updates["subscription_expiry_notice_sms"] = sms_state
+        updates[EXPIRY_NOTICE_SMS_FIELD] = sms_state == "sent"
+
+    if len(updates) == 1:
+        return
+
+    await get_registrations_collection().update_one({"_id": seller["_id"]}, {"$set": updates})
+    seller.update(updates)
+
+
 def _document_to_public(doc: dict[str, Any]) -> SellerNotificationPublic:
     return SellerNotificationPublic(
         id=str(doc["_id"]),
@@ -100,11 +219,24 @@ async def ensure_subscription_expiring_notifications() -> int:
             "status": "approved",
             "subscription_ends_at": {"$ne": None},
         },
-        {"_id": 1, "subscription_ends_at": 1},
+        {
+            "_id": 1,
+            "subscription_ends_at": 1,
+            "email": 1,
+            "phone": 1,
+            "store_name": 1,
+            EXPIRY_NOTICE_FOR_FIELD: 1,
+            EXPIRY_NOTICE_EMAIL_FIELD: 1,
+            EXPIRY_NOTICE_SMS_FIELD: 1,
+            "subscription_expiry_notice_email": 1,
+            "subscription_expiry_notice_sms": 1,
+        },
     )
 
     async for doc in cursor:
-        if not is_within_warning_window(doc, now=now):
+        in_warning = is_within_warning_window(doc, now=now)
+        in_contact = is_within_contact_reminder_window(doc, now=now)
+        if not in_warning and not in_contact:
             continue
 
         ends_at = doc["subscription_ends_at"]
@@ -119,27 +251,51 @@ async def ensure_subscription_expiring_notifications() -> int:
                 "subscription_ends_at": ends_at,
             },
         )
-        if existing:
-            continue
+        if existing is None and (in_warning or in_contact):
+            existing = await _ensure_expiry_in_app_notice(
+                doc,
+                ends_at=ends_at,
+                days_remaining=days_remaining,
+                existing=None,
+            )
+            created += 1
 
-        await notifications.insert_one(
-            {
-                "seller_id": doc["_id"],
-                "batch_id": f"subscription-expiring-{doc['_id']}-{ends_at.isoformat()}",
-                "kind": NOTIFICATION_KIND_EXPIRING,
-                "subscription_ends_at": ends_at,
-                "title": "Tu suscripción vence pronto",
-                "content": warning_notification_content(days_remaining),
-                "action_label": "Renovar plan",
-                "action_type": ACTION_RENEW_SUBSCRIPTION,
-                "read_at": None,
-                "created_at": to_utc_naive(now),
-                "created_by_admin_id": None,
-            },
-        )
-        created += 1
+        if in_contact:
+            await _send_subscription_contact_reminder(
+                doc,
+                days_remaining=days_remaining,
+                ends_at=ends_at,
+            )
 
     return created
+
+
+async def _subscription_reminder_loop() -> None:
+    while True:
+        await asyncio.sleep(SUBSCRIPTION_REMINDER_POLL_SECONDS)
+        try:
+            await ensure_subscription_expiring_notifications()
+        except Exception:
+            logger.exception("Error al revisar suscripciones por vencer")
+
+
+def start_subscription_reminder_task() -> asyncio.Task:
+    global _reminder_task
+    if _reminder_task is None or _reminder_task.done():
+        _reminder_task = asyncio.create_task(_subscription_reminder_loop())
+    return _reminder_task
+
+
+async def stop_subscription_reminder_task() -> None:
+    global _reminder_task
+    if _reminder_task is None:
+        return
+    _reminder_task.cancel()
+    try:
+        await _reminder_task
+    except asyncio.CancelledError:
+        pass
+    _reminder_task = None
 
 
 async def ensure_pending_order_notifications() -> int:

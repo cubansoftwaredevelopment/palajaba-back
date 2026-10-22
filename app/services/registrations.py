@@ -15,6 +15,7 @@ from app.services.admin_registration_insights import (
     build_marketplace_visibility_notes,
 )
 from app.services.plans import normalize_billing_period, normalize_plan_tier
+from app.services.subscriptions import expiry_notice_reset, expiry_notice_sent
 from app.services.discount_codes import validate_discount_code
 from app.services.seller_profile import ensure_store_name_available, is_profile_complete
 from app.services.subscription_payments import (
@@ -73,6 +74,12 @@ def document_to_public(
         status=doc["status"],
         subscription_starts_at=doc.get("subscription_starts_at"),
         subscription_ends_at=doc.get("subscription_ends_at"),
+        expiry_notice_email_sent=expiry_notice_sent(
+            doc, "email", doc.get("subscription_ends_at")
+        ),
+        expiry_notice_sms_sent=expiry_notice_sent(
+            doc, "sms", doc.get("subscription_ends_at")
+        ),
         rejection_reason=doc.get("rejection_reason"),
         created_at=(
             doc["created_at"]
@@ -228,6 +235,7 @@ async def create_registration(
         "status": "approved" if is_trial else "pending",
         "subscription_starts_at": now if is_trial else None,
         "subscription_ends_at": ends_at,
+        **expiry_notice_reset(),
         "rejection_reason": None,
         "created_at": now,
         "updated_at": now,
@@ -368,6 +376,7 @@ async def approve_registration(
                 "approved_at": now,
                 "payment_amount_cup": payment_amount_cup,
                 "updated_at": now,
+                **expiry_notice_reset(),
             }
         },
     )
@@ -413,6 +422,7 @@ async def update_subscription_end(
     updates: dict[str, Any] = {
         "subscription_ends_at": ends_at,
         "updated_at": now,
+        **expiry_notice_reset(),
     }
     if plan_tier is not None:
         updates["plan_tier"] = normalize_plan_tier(plan_tier)
@@ -480,6 +490,7 @@ async def renew_registration(
         "rejection_reason": None,
         "updated_at": now,
         "is_trial": False,
+        **expiry_notice_reset(),
     }
     if plan_tier is not None:
         updates["plan_tier"] = normalize_plan_tier(plan_tier)

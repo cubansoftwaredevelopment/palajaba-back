@@ -8,9 +8,45 @@ from app.database import get_registrations_collection
 from app.utils.datetime import to_utc_naive, utc_now
 
 SUBSCRIPTION_WARNING_DAYS = 3
+SUBSCRIPTION_CONTACT_REMINDER_DAYS = 2
 SUBSCRIPTION_URGENT_BANNER_HOURS = 24
 NOTIFICATION_KIND_EXPIRING = "subscription_expiring"
 ACTION_RENEW_SUBSCRIPTION = "renew_subscription"
+EXPIRY_NOTICE_EMAIL_FIELD = "subscription_expiry_notice_email_sent"
+EXPIRY_NOTICE_SMS_FIELD = "subscription_expiry_notice_sms_sent"
+EXPIRY_NOTICE_FOR_FIELD = "subscription_expiry_notice_for"
+
+
+def expiry_notice_reset() -> dict[str, Any]:
+    return {
+        EXPIRY_NOTICE_FOR_FIELD: None,
+        EXPIRY_NOTICE_EMAIL_FIELD: False,
+        EXPIRY_NOTICE_SMS_FIELD: False,
+        "subscription_expiry_notice_email": None,
+        "subscription_expiry_notice_sms": None,
+    }
+
+
+def _same_subscription_end(left: datetime | None, right: datetime | None) -> bool:
+    if left is None or right is None:
+        return False
+    return to_utc_naive(left) == to_utc_naive(right)
+
+
+def expiry_notice_channel_state(doc: dict[str, Any], channel: str, ends_at: datetime | None) -> str | None:
+    if not _same_subscription_end(doc.get(EXPIRY_NOTICE_FOR_FIELD), ends_at):
+        return None
+    value = doc.get(f"subscription_expiry_notice_{channel}")
+    if value in ("sent", "skipped", "retry"):
+        return value
+    sent_field = EXPIRY_NOTICE_EMAIL_FIELD if channel == "email" else EXPIRY_NOTICE_SMS_FIELD
+    if doc.get(sent_field) is True:
+        return "sent"
+    return None
+
+
+def expiry_notice_sent(doc: dict[str, Any], channel: str, ends_at: datetime | None) -> bool:
+    return expiry_notice_channel_state(doc, channel, ends_at) == "sent"
 
 
 def normalize_subscription_end(value: datetime | None) -> datetime | None:
@@ -159,9 +195,23 @@ def is_within_warning_window(doc: dict[str, Any], *, now: datetime | None = None
     return days is not None and 0 < days <= SUBSCRIPTION_WARNING_DAYS
 
 
+def is_within_contact_reminder_window(doc: dict[str, Any], *, now: datetime | None = None) -> bool:
+    days = subscription_days_remaining(doc, now=now)
+    return days is not None and 0 < days <= SUBSCRIPTION_CONTACT_REMINDER_DAYS
+
+
 def warning_notification_content(days_remaining: int) -> str:
     day_label = "día" if days_remaining == 1 else "días"
     return (
         f"Te quedan {days_remaining} {day_label} antes de que termine tu suscripción. "
         "Renueva a tiempo para que tu tienda siga visible para los clientes."
+    )
+
+
+def contact_reminder_content(days_remaining: int, *, store_name: str | None = None) -> str:
+    day_label = "día" if days_remaining == 1 else "días"
+    store = (store_name or "").strip() or "tu tienda"
+    return (
+        f"Pa' La Jaba: a {store} le quedan {days_remaining} {day_label} de suscripción. "
+        "Renueva a tiempo para que tu tienda siga visible."
     )
