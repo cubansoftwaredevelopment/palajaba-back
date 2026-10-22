@@ -68,8 +68,7 @@ def _is_admin_notification(doc: dict[str, Any]) -> bool:
     return isinstance(doc.get("created_by_admin_id"), ObjectId)
 
 
-def _sms_error_message(detail: Any) -> str:
-    fallback = "No pudimos enviar el SMS del aviso."
+def _channel_error_message(detail: Any, fallback: str) -> str:
     if isinstance(detail, str) and detail.strip():
         return detail.strip()
     if isinstance(detail, dict):
@@ -78,6 +77,14 @@ def _sms_error_message(detail: Any) -> str:
             if isinstance(value, str) and value.strip():
                 return value.strip()
     return fallback
+
+
+def _sms_error_message(detail: Any) -> str:
+    return _channel_error_message(detail, "No pudimos enviar el SMS del aviso.")
+
+
+def _email_error_message(detail: Any) -> str:
+    return _channel_error_message(detail, "No pudimos enviar el correo del aviso.")
 
 
 def _system_notifications_filter(seller_object_id: ObjectId) -> dict[str, Any]:
@@ -437,6 +444,7 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
             "plan_tier": 1,
             "billing_period": 1,
             "phone": 1,
+            "email": 1,
         },
     )
     if seller is None:
@@ -479,6 +487,7 @@ async def send_notification_to_sellers(
                 "billing_period": 1,
                 "store_name": 1,
                 "phone": 1,
+                "email": 1,
             },
         ).to_list(length=None)
         sellers = [seller for seller in sellers if is_subscription_active(seller)]
@@ -504,18 +513,22 @@ async def send_notification_to_sellers(
     content_clean = content.strip()
     sms_targets: list[tuple[str, str]] = []
     seen_phones: set[str] = set()
+    email_targets: list[tuple[str, str]] = []
+    seen_emails: set[str] = set()
     for seller in sellers:
+        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
         digits = "".join(ch for ch in str(seller.get("phone") or "") if ch.isdigit())
         if digits.startswith("53") and len(digits) == 10:
             digits = digits[2:]
-        if len(digits) != 8:
-            continue
-        phone = phone_e164(digits)
-        if phone in seen_phones:
-            continue
-        seen_phones.add(phone)
-        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
-        sms_targets.append((phone, store_name))
+        if len(digits) == 8:
+            phone = phone_e164(digits)
+            if phone not in seen_phones:
+                seen_phones.add(phone)
+                sms_targets.append((phone, store_name))
+        email = _seller_email(seller)
+        if email and email not in seen_emails:
+            seen_emails.add(email)
+            email_targets.append((email, store_name))
 
     documents = [
         {
@@ -628,6 +641,56 @@ async def send_notification_to_sellers(
             elif sent_count:
                 sms_error = None
 
+    email_sent = False
+    email_error: str | None = None
+    email_body = title_clean if not content_clean else f"{title_clean}\n{content_clean}"
+    if not email_targets:
+        email_error = "No hay correos para enviar el aviso."
+        events.append(AdminNotificationSendEvent(type="error", message=email_error))
+    else:
+        sent_count = 0
+        fail_count = 0
+        last_fail: str | None = None
+        for index, (email, store_name) in enumerate(email_targets):
+            if index:
+                await asyncio.sleep(0.4)
+            try:
+                await send_custom_email(
+                    email=email,
+                    subject=title_clean,
+                    message=email_body,
+                )
+                sent_count += 1
+                email_sent = True
+                events.append(
+                    AdminNotificationSendEvent(
+                        type="success",
+                        message=f"Correo enviado a {store_name} ({email}).",
+                    )
+                )
+            except HTTPException as exc:
+                fail_count += 1
+                last_fail = _email_error_message(exc.detail)
+                events.append(
+                    AdminNotificationSendEvent(
+                        type="error",
+                        message=f"Correo a {store_name} ({email}): {last_fail}",
+                    )
+                )
+            except Exception:
+                fail_count += 1
+                last_fail = "No pudimos enviar el correo del aviso."
+                events.append(
+                    AdminNotificationSendEvent(
+                        type="error",
+                        message=f"Correo a {store_name} ({email}): {last_fail}",
+                    )
+                )
+        if fail_count and not sent_count:
+            email_error = last_fail or "No pudimos enviar el correo del aviso."
+        elif fail_count:
+            email_error = f"Correos: {sent_count} enviados, {fail_count} fallidos."
+
     return AdminNotificationSendResult(
         batch_id=batch_id,
         title=title_clean,
@@ -638,6 +701,8 @@ async def send_notification_to_sellers(
         target_store_name=target_store_name,
         sms_sent=sms_sent,
         sms_error=sms_error,
+        email_sent=email_sent,
+        email_error=email_error,
         events=events,
     )
 
