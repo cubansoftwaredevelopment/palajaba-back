@@ -143,10 +143,8 @@ class CategoriesE2ETests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200, saved.text)
         self.assertEqual(saved.json()["category_ids"], ["vehiculos-repuestos", "comida"])
         self.assertEqual(listed.status_code, 200, listed.text)
+        expected = sorted(DEFAULT_CATEGORIES, key=lambda item: item["name"].lower())
         self.assertEqual(
-            listed.json(),
-            [
-                {"id": "vehiculos-repuestos", "name": "Medios de transporte"},
-                {"id": "comida", "name": "Comida y bebidas"},
-            ],
+            [(item["id"], item["name"]) for item in listed.json()],
+            [(item["id"], item["name"]) for item in expected],
         )

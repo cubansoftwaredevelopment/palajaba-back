@@ -16,10 +16,13 @@ from app.schemas.catalog import (
     CatalogThemeUpdate,
     CurrencyPublic,
 )
-from app.schemas.notifications import SellerNotificationPublic, SellerNotificationUnreadCount, SellerNotificationBulkReadResult
 from app.schemas.orders import CreateSellerManualOrderRequest, InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import (
     CategoryPublic,
+    SellerContactOtpConfirmRequest,
+    SellerContactOtpResendRequest,
+    SellerContactOtpStartResponse,
+    SellerEmailUpdate,
     SellerPhoneUpdate,
     SellerProfileUpdate,
     SellerStoreNameUpdate,
@@ -38,11 +41,20 @@ from app.schemas.gestores import (
     GestorPublic,
 )
 from app.security import create_seller_token
+from app.password_reset.schemas import (
+    PasswordResetCompleteRequest,
+    PasswordResetCompleteResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetConfirmResponse,
+    PasswordResetResendRequest,
+    PasswordResetStartRequest,
+    PasswordResetStartResponse,
+)
+from app.password_reset import service as password_reset_service
 from app.services import auth as auth_service
 from app.services import catalog as catalog_service
 from app.services import catalog_theme_settings as catalog_theme_service
 from app.services import gestores as gestores_service
-from app.services import notifications as notification_service
 from app.services import orders as orders_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
@@ -73,6 +85,40 @@ async def seller_login(payload: SellerLoginRequest):
     )
 
 
+@router.post("/password-reset/start", response_model=PasswordResetStartResponse)
+async def start_password_reset(payload: PasswordResetStartRequest):
+    return await password_reset_service.start_password_reset(
+        method=payload.method,
+        phone=payload.phone,
+        store_name=payload.store_name,
+    )
+
+
+@router.post("/password-reset/otp/resimage.pngend", response_model=PasswordResetStartResponse)
+async def resend_password_reset_otp(payload: PasswordResetResendRequest):
+    return await password_reset_service.resend_password_reset_otp(
+        challenge_id=payload.challenge_id,
+        channel=payload.channel,
+    )
+
+
+@router.post("/password-reset/otp/confirm", response_model=PasswordResetConfirmResponse)
+async def confirm_password_reset_otp(payload: PasswordResetConfirmRequest):
+    return await password_reset_service.confirm_password_reset_otp(
+        challenge_id=payload.challenge_id,
+        email_code=payload.email_code,
+        phone_code=payload.phone_code,
+    )
+
+
+@router.post("/password-reset/complete", response_model=PasswordResetCompleteResponse)
+async def complete_password_reset(payload: PasswordResetCompleteRequest):
+    return await password_reset_service.complete_password_reset(
+        challenge_id=payload.challenge_id,
+        password=payload.password,
+    )
+
+
 @router.get("/me", response_model=SellerPublic)
 async def seller_me(seller_payload: dict = Depends(require_seller)):
     return await profile_service.get_seller_public(seller_payload["seller_id"])
@@ -96,12 +142,65 @@ async def update_seller_profile(
 
 @router.patch("/me/phone", response_model=SellerPublic)
 async def update_seller_phone(
+    _payload: SellerPhoneUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Verifica el nuevo teléfono con el código SMS.",
+    )
+
+
+@router.post("/me/phone/otp/start", response_model=SellerContactOtpStartResponse)
+async def start_seller_phone_otp(
     payload: SellerPhoneUpdate,
     seller_payload: dict = Depends(require_seller),
 ):
-    return await profile_service.update_seller_phone(
-        seller_payload["seller_id"],
-        payload,
+    from app.register.contact_changes import start_phone_change
+
+    return await start_phone_change(
+        seller_id=seller_payload["seller_id"],
+        phone=payload.phone,
+    )
+
+
+@router.post("/me/email/otp/start", response_model=SellerContactOtpStartResponse)
+async def start_seller_email_otp(
+    payload: SellerEmailUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import start_email_change
+
+    return await start_email_change(
+        seller_id=seller_payload["seller_id"],
+        email=payload.email,
+    )
+
+
+@router.post("/me/contact-otp/resend", response_model=SellerContactOtpStartResponse)
+async def resend_seller_contact_otp(
+    payload: SellerContactOtpResendRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import resend_contact_change
+
+    return await resend_contact_change(
+        seller_id=seller_payload["seller_id"],
+        challenge_id=payload.challenge_id,
+    )
+
+
+@router.post("/me/contact-otp/confirm", response_model=SellerPublic)
+async def confirm_seller_contact_otp(
+    payload: SellerContactOtpConfirmRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    from app.register.contact_changes import confirm_contact_change
+
+    return await confirm_contact_change(
+        seller_id=seller_payload["seller_id"],
+        challenge_id=payload.challenge_id,
+        code=payload.code,
     )
 
 
@@ -170,34 +269,6 @@ async def remove_store_banner(
     return await profile_service.delete_store_banner(
         seller_payload["seller_id"],
         banner_id,
-    )
-
-
-@router.get("/me/notifications", response_model=list[SellerNotificationPublic])
-async def list_my_notifications(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.list_seller_notifications(seller_payload["seller_id"])
-
-
-@router.get("/me/notifications/unread-count", response_model=SellerNotificationUnreadCount)
-async def my_notifications_unread_count(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.get_unread_count(seller_payload["seller_id"])
-
-
-@router.patch("/me/notifications/read-system", response_model=SellerNotificationBulkReadResult)
-async def mark_my_system_notifications_read(seller_payload: dict = Depends(require_seller)):
-    return await notification_service.mark_system_notifications_read(
-        seller_payload["seller_id"],
-    )
-
-
-@router.patch("/me/notifications/{notification_id}/read", response_model=SellerNotificationPublic)
-async def mark_my_notification_read(
-    notification_id: str,
-    seller_payload: dict = Depends(require_seller),
-):
-    return await notification_service.mark_notification_read(
-        seller_payload["seller_id"],
-        notification_id,
     )
 
 
@@ -338,11 +409,15 @@ async def update_my_catalog_theme(
     payload: CatalogThemeUpdate,
     seller_payload: dict = Depends(require_seller),
 ):
-    theme = await catalog_theme_service.update_seller_catalog_theme(
+    saved = await catalog_theme_service.update_seller_catalog_theme(
         seller_payload["seller_id"],
         payload.catalog_theme,
+        payload.catalog_palette.model_dump() if payload.catalog_palette else None,
     )
-    return CatalogThemePublic(catalog_theme=theme)
+    return CatalogThemePublic(
+        catalog_theme=saved["catalog_theme"],
+        catalog_palette=saved["catalog_palette"],
+    )
 
 
 @router.get("/me/catalog/currencies", response_model=list[CurrencyPublic])

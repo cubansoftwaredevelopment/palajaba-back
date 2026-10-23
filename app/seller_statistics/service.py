@@ -53,7 +53,7 @@ async def _seller_doc(seller_id: str) -> dict[str, Any]:
     if not seller_has_statistics(doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en el plan Premium.",
+            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
         )
     return doc
 

@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.constants import CURRENCY_CODES, DEFAULT_PLAN_PRICES
 
 PlanCurrency = Literal["CUP", "USD", "EUR", "MLC"]
-PlanTierKey = Literal["standard", "premium"]
-BillingPeriodKey = Literal["monthly", "yearly"]
+PlanTierKey = Literal["standard", "pro", "premium"]
+BillingPeriodKey = Literal["monthly", "quarterly", "yearly"]
 
 
 class PlanPriceConfig(BaseModel):
@@ -24,16 +24,27 @@ class PlanPriceConfig(BaseModel):
 
 class PlanPeriodPrices(BaseModel):
     monthly: PlanPriceConfig
+    quarterly: PlanPriceConfig
     yearly: PlanPriceConfig
 
 
 class PlanPricesSettings(BaseModel):
     standard: PlanPeriodPrices
+    pro: PlanPeriodPrices
     premium: PlanPeriodPrices
 
     def get_price(self, tier: str, period: str) -> PlanPriceConfig:
-        tier_prices = self.premium if tier == "premium" else self.standard
-        return tier_prices.yearly if period == "yearly" else tier_prices.monthly
+        if tier == "premium":
+            tier_prices = self.premium
+        elif tier == "pro":
+            tier_prices = self.pro
+        else:
+            tier_prices = self.standard
+        if period == "yearly":
+            return tier_prices.yearly
+        if period == "quarterly":
+            return tier_prices.quarterly
+        return tier_prices.monthly
 
 
 def default_plan_prices() -> PlanPricesSettings:

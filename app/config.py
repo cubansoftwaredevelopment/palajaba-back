@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     exchange_rates_refresh_seconds: int = 1200
     catalog_repair_store_slugs: str = ""
     public_site_url: str = "https://palajaba.com"
+    otp_api_base: str = "https://otp.noxcreation.dev/api"
+    otp_api_key: str = ""
+    otp_token_secret: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

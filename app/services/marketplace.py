@@ -51,7 +51,16 @@ from app.services.categories import (
 from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
 from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
-from app.services.catalog_theme import normalize_catalog_theme
+from app.services.catalog_theme import (
+    DEFAULT_CATALOG_THEME,
+    normalize_catalog_theme,
+    public_catalog_palette,
+)
+from app.services.plans import (
+    plan_search_rank,
+    seller_has_full_store_customization,
+    seller_has_store_banners,
+)
 from app.services.seller_profile import is_profile_complete, social_links_from_document
 from app.services.subscriptions import is_subscription_active
 from app.services.gestores import (
@@ -183,8 +192,21 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
             for category_id in category_ids
         ],
         "offers_delivery": seller.get("offers_delivery"),
-        "catalog_theme": normalize_catalog_theme(seller.get("catalog_theme")),
-        "banners": store_banners_from_document(seller, active_only=True),
+        "catalog_theme": (
+            normalize_catalog_theme(seller.get("catalog_theme"))
+            if seller_has_full_store_customization(seller)
+            else DEFAULT_CATALOG_THEME
+        ),
+        "catalog_palette": (
+            public_catalog_palette(seller.get("catalog_palette"), seller.get("catalog_theme"))
+            if seller_has_full_store_customization(seller)
+            else None
+        ),
+        "banners": (
+            store_banners_from_document(seller, active_only=True)
+            if seller_has_store_banners(seller)
+            else []
+        ),
     }
 
 
@@ -328,7 +350,6 @@ async def _get_visible_sellers(
     seller_query = {
         "status": "approved",
         "profile_photo_url": {"$exists": True, "$ne": None},
-        "category_ids": {"$exists": True, "$not": {"$size": 0}},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},
         "$or": [
@@ -368,7 +389,6 @@ async def _get_pickup_sellers_in_municipalities(
     seller_query = {
         "status": "approved",
         "profile_photo_url": {"$exists": True, "$ne": None},
-        "category_ids": {"$exists": True, "$not": {"$size": 0}},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},
         "$or": [
@@ -2105,7 +2125,7 @@ async def list_businesses(
     popularity_by_seller = await _aggregate_seller_popularity(list(seller_by_id.keys()))
     product_counts_by_seller = await aggregate_product_counts_by_seller(list(seller_by_id.keys()))
     acceptance_counts = await _seller_acceptance_counts(list(seller_by_id.keys()), currency)
-    ranked: list[tuple[int, str, dict[str, Any], bool, int]] = []
+    ranked: list[tuple[int, int, str, dict[str, Any], bool, int]] = []
     for seller_id, seller in seller_by_id.items():
         if not _seller_matches_business_search(seller, normalized_query):
             continue
@@ -2123,6 +2143,7 @@ async def list_businesses(
         popularity = popularity_by_seller.get(seller_id, 0)
         ranked.append(
             (
+                plan_search_rank(seller),
                 -popularity,
                 seller.get("store_name", "").casefold(),
                 seller,
@@ -2131,7 +2152,7 @@ async def list_businesses(
             )
         )
 
-    ranked.sort(key=lambda item: (item[0], item[1]))
+    ranked.sort(key=lambda item: (item[0], item[1], item[2]))
     total_businesses = len(ranked)
     page_rows = ranked[safe_offset : safe_offset + page_size]
     businesses = [
@@ -2143,7 +2164,7 @@ async def list_businesses(
             province_id=province_id,
             municipality_id=municipality_id,
         )
-        for popularity, _, seller, is_local, accepted_count in page_rows
+        for _rank, popularity, _, seller, is_local, accepted_count in page_rows
     ]
 
     loaded = safe_offset + len(businesses)

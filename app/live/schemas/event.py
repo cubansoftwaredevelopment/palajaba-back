@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from app.schemas.notifications import SellerNotificationPublic
+from app.notifications.schemas import SellerNotificationPublic
 
 
 class LiveNotificationEvent(BaseModel):

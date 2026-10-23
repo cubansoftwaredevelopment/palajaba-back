@@ -35,6 +35,7 @@ def _period_from_raw(raw: Any, fallback: dict[str, Any]) -> PlanPeriodPrices:
     source = raw if isinstance(raw, dict) else {}
     return PlanPeriodPrices(
         monthly=_price_from_raw(source.get("monthly"), fallback["monthly"]),
+        quarterly=_price_from_raw(source.get("quarterly"), fallback["quarterly"]),
         yearly=_price_from_raw(source.get("yearly"), fallback["yearly"]),
     )
 
@@ -43,6 +44,7 @@ def parse_plan_prices(raw: Any) -> PlanPricesSettings:
     source = raw if isinstance(raw, dict) else {}
     return PlanPricesSettings(
         standard=_period_from_raw(source.get("standard"), DEFAULT_PLAN_PRICES["standard"]),
+        pro=_period_from_raw(source.get("pro"), DEFAULT_PLAN_PRICES["pro"]),
         premium=_period_from_raw(source.get("premium"), DEFAULT_PLAN_PRICES["premium"]),
     )
 

@@ -2,6 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.catalog import CatalogPalette
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerSocialLink, StoreBannerPublic
 from app.schemas.gestores import GestorCatalogAccess
 from app.utils.datetime import UtcDateTime
@@ -49,10 +50,14 @@ class SellerPublic(BaseModel):
     store_name: str
     store_slug: str | None = None
     phone: str
+    email: str | None = None
+    is_trial: bool = False
     billing_period: str
     plan_tier: str = "standard"
     has_statistics: bool = False
     has_recommendation_boost: bool = False
+    has_store_banners: bool = False
+    has_full_store_customization: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
     business_location: BusinessLocation | None = None
@@ -71,6 +76,7 @@ class SellerPublic(BaseModel):
     subscription_days_remaining: int | None = None
     subscription_hours_remaining: int | None = None
     catalog_theme: str = "default"
+    catalog_palette: CatalogPalette | None = None
     store_banners: list[StoreBannerPublic] = Field(default_factory=list)
     gestor_catalog_access: GestorCatalogAccess = Field(
         default_factory=lambda: GestorCatalogAccess(mode="selected", product_ids=[])

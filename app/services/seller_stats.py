@@ -687,7 +687,7 @@ async def get_seller_stats_summary(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en el plan Premium.",
+            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
         )
 
     target_year, target_month = year, month
@@ -741,7 +741,7 @@ async def get_seller_revenue_chart(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en el plan Premium.",
+            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
         )
 
     period, ranges, range_start, range_end, chart_year, chart_month = _resolve_chart_ranges(
@@ -797,7 +797,7 @@ async def get_seller_products_sold_chart(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en el plan Premium.",
+            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
         )
 
     period, ranges, range_start, range_end, chart_year, chart_month = _resolve_chart_ranges(
@@ -870,7 +870,7 @@ async def get_seller_top_products(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en el plan Premium.",
+            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
         )
 
     products_col = get_catalog_products_collection()

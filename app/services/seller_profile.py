@@ -14,6 +14,7 @@ from app.schemas.seller_profile import (
     BusinessArea,
     BusinessLocation,
     CategoryPublic,
+    SellerEmailUpdate,
     SellerPhoneUpdate,
     SellerProfileUpdate,
     SellerSocialLink,
@@ -21,14 +22,17 @@ from app.schemas.seller_profile import (
     StoreBannerPublic,
     StoreBannerUpdate,
 )
-from app.services.catalog_theme import normalize_catalog_theme
-from app.services.categories import categories_for_profile, validate_category_ids
+from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
+from app.services.categories import categories_for_profile, list_categories, validate_category_ids
 from app.services.cuba_locations import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access
 from app.services.plans import (
+    STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
     normalize_plan_tier,
+    seller_has_full_store_customization,
     seller_has_recommendation_boost,
     seller_has_statistics,
+    seller_has_store_banners,
 )
 from app.services.subscriptions import (
     is_publicly_visible,
@@ -139,7 +143,6 @@ def _normalize_delivery_areas(
 def is_profile_complete(doc: dict[str, Any]) -> bool:
     return bool(
         doc.get("profile_photo_url")
-        and doc.get("category_ids")
         and doc.get("offers_delivery") is not None
         and _parse_business_area(doc.get("business_area")) is not None
     )
@@ -250,10 +253,14 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         store_name=doc["store_name"],
         store_slug=doc.get("store_slug") or store_name_to_slug(doc["store_name"]),
         phone=phone_display(doc["phone"]),
+        email=doc.get("email") or None,
+        is_trial=bool(doc.get("is_trial")),
         billing_period=doc["billing_period"],
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
         has_statistics=seller_has_statistics(doc),
         has_recommendation_boost=seller_has_recommendation_boost(doc),
+        has_store_banners=seller_has_store_banners(doc),
+        has_full_store_customization=seller_has_full_store_customization(doc),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
         business_location=business_location,
@@ -272,6 +279,10 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         subscription_days_remaining=days_remaining,
         subscription_hours_remaining=hours_remaining,
         catalog_theme=normalize_catalog_theme(doc.get("catalog_theme")),
+        catalog_palette=public_catalog_palette(
+            doc.get("catalog_palette"),
+            doc.get("catalog_theme"),
+        ),
         store_banners=store_banners_from_document(doc),
         gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
     )
@@ -304,8 +315,8 @@ async def get_seller_public(seller_id: str) -> SellerPublic:
 
 
 async def get_seller_business_categories(seller_id: str) -> list[CategoryPublic]:
-    doc = await _get_seller_doc(seller_id)
-    return categories_for_profile(doc.get("category_ids") or [])
+    await _get_seller_doc(seller_id)
+    return await list_categories()
 
 
 async def update_seller_profile(
@@ -313,7 +324,8 @@ async def update_seller_profile(
     payload: SellerProfileUpdate,
 ) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
-    await validate_category_ids(payload.category_ids)
+    if payload.category_ids is not None:
+        await validate_category_ids(payload.category_ids)
 
     if not doc.get("profile_photo_url"):
         raise HTTPException(
@@ -338,7 +350,6 @@ async def update_seller_profile(
         "social_instagram": social_instagram,
         "social_facebook": social_facebook,
         "social_links": [link.model_dump() for link in social_links],
-        "category_ids": payload.category_ids,
         "offers_delivery": payload.offers_delivery,
         "gestores_enabled": bool(payload.gestores_enabled),
         "business_area": business_area,
@@ -351,10 +362,12 @@ async def update_seller_profile(
     elif payload.business_location is not None:
         update_fields["business_location"] = payload.business_location.model_dump()
 
+    if payload.category_ids is not None:
+        update_fields["category_ids"] = payload.category_ids
+
     was_complete = is_profile_complete(doc)
     will_be_complete = bool(
         doc.get("profile_photo_url")
-        and payload.category_ids
         and payload.offers_delivery is not None
         and business_area
     )
@@ -426,6 +439,32 @@ async def update_seller_phone(seller_id: str, payload: SellerPhoneUpdate) -> Sel
     return document_to_seller(updated)
 
 
+async def update_seller_email(seller_id: str, payload: SellerEmailUpdate) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    new_email = payload.email
+    current_email = (doc.get("email") or "").strip().lower()
+
+    if new_email == current_email:
+        return document_to_seller(doc)
+
+    collection = get_registrations_collection()
+    existing = await collection.find_one({"email": new_email, "_id": {"$ne": doc["_id"]}})
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este correo ya está registrado.",
+        )
+
+    now = to_utc_naive(utc_now())
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"email": new_email, "updated_at": now}},
+    )
+
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
 async def save_profile_photo(seller_id: str, file: UploadFile) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
 
@@ -458,8 +497,17 @@ def ensure_uploads_dir() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _require_store_banners(doc: dict) -> None:
+    if not seller_has_store_banners(doc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
+        )
+
+
 async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
+    _require_store_banners(doc)
     banners = _store_banner_documents(doc)
 
     content, content_type = await read_image_upload(file)
@@ -520,6 +568,8 @@ async def set_store_banner_active(
     payload: StoreBannerUpdate,
 ) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
+    if payload.is_active:
+        _require_store_banners(doc)
     banners = _store_banner_documents(doc)
     target = next((banner for banner in banners if banner["id"] == banner_id), None)
     if target is None:

@@ -12,7 +12,7 @@ from app.database import (
     get_product_popularity_events_collection,
     get_registrations_collection,
 )
-from app.services.plans import PREMIUM_RECOMMENDATION_MULTIPLIER, recommendation_multiplier
+from app.services.plans import recommendation_multiplier
 from app.utils.datetime import to_utc_naive, utc_now
 
 PopularityEvent = Literal["view", "jaba", "purchase"]
@@ -37,11 +37,10 @@ def popularity_cutoff(now: datetime | None = None) -> datetime:
     return moment - POPULARITY_WINDOW
 
 
-def popularity_score(points: int, *, premium: bool) -> int:
+def popularity_score(points: int, *, multiplier: int = 1) -> int:
     total = max(0, int(points))
-    if premium:
-        return total * PREMIUM_RECOMMENDATION_MULTIPLIER
-    return total
+    factor = max(1, int(multiplier))
+    return total * factor
 
 
 def _parse_product_oid(product_id: str) -> ObjectId:
@@ -52,8 +51,8 @@ def _parse_product_oid(product_id: str) -> ObjectId:
 
 
 def _score_for_seller(points: int, seller: dict[str, Any] | None) -> int:
-    premium = bool(seller) and recommendation_multiplier(seller) > 1
-    return popularity_score(points, premium=premium)
+    multiplier = recommendation_multiplier(seller) if seller else 1
+    return popularity_score(points, multiplier=multiplier)
 
 
 async def ensure_popularity_field() -> None:

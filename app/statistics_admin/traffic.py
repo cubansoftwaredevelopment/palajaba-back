@@ -43,13 +43,52 @@ from app.utils.month_bounds import (
 )
 
 
+async def _drop_duplicate_marketplace_visits(collection) -> None:
+    pipeline = [
+        {"$sort": {"viewed_at": -1, "_id": -1}},
+        {
+            "$group": {
+                "_id": {
+                    "session_id": "$session_id",
+                    "page": "$page",
+                    "cuba_date": "$cuba_date",
+                },
+                "keep": {"$first": "$_id"},
+                "ids": {"$push": "$_id"},
+                "count": {"$sum": 1},
+            }
+        },
+        {"$match": {"count": {"$gt": 1}}},
+    ]
+    extra_ids: list = []
+    async for row in collection.aggregate(pipeline, allowDiskUse=True):
+        keep = row.get("keep")
+        for doc_id in row.get("ids") or []:
+            if doc_id != keep:
+                extra_ids.append(doc_id)
+        if len(extra_ids) >= 500:
+            await collection.delete_many({"_id": {"$in": extra_ids}})
+            extra_ids = []
+    if extra_ids:
+        await collection.delete_many({"_id": {"$in": extra_ids}})
+
+
 async def ensure_marketplace_visit_indexes() -> None:
     collection = get_marketplace_visits_collection()
-    await collection.create_index(
-        [("session_id", 1), ("page", 1), ("cuba_date", 1)],
-        unique=True,
-        name="marketplace_visit_session_day",
-    )
+    await _drop_duplicate_marketplace_visits(collection)
+    try:
+        await collection.create_index(
+            [("session_id", 1), ("page", 1), ("cuba_date", 1)],
+            unique=True,
+            name="marketplace_visit_session_day",
+        )
+    except DuplicateKeyError:
+        await _drop_duplicate_marketplace_visits(collection)
+        await collection.create_index(
+            [("session_id", 1), ("page", 1), ("cuba_date", 1)],
+            unique=True,
+            name="marketplace_visit_session_day",
+        )
     await collection.create_index([("viewed_at", -1)])
     await collection.create_index([("province_id", 1), ("municipality_id", 1), ("viewed_at", -1)])
 

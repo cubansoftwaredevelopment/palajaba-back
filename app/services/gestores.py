@@ -310,9 +310,11 @@ async def count_seller_gestores(seller_id: str) -> int:
     )
 
 
-def gestor_limit_reached_detail(limit: int) -> str:
+def gestor_limit_reached_detail(limit: int, plan_tier: str | None = None) -> str:
+    from app.services.plans import plan_display_name
+
     return (
-        f"El plan Básico permite hasta {limit} gestores. "
+        f"El plan {plan_display_name(plan_tier)} permite hasta {limit} gestores. "
         "Pasa a Premium para gestores ilimitados."
     )
 
@@ -325,7 +327,7 @@ async def create_seller_gestor(seller_id: str, username: str) -> GestorPublic:
         limit = max_gestores_for_plan(plan_tier) or 0
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=gestor_limit_reached_detail(limit),
+            detail=gestor_limit_reached_detail(limit, plan_tier),
         )
 
     try:

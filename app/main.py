@@ -8,11 +8,17 @@ from fastapi.staticfiles import StaticFiles
 from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
+from app.notifications.routes import router as notifications_router
+from app.register.routes import router as register_router
 from app.finance_admin.routes import router as finance_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
 from app.statistics_admin.routes import router as statistics_router
-from app.routers import admin, auth, categories, marketplace, platform, product_categories, register, seo, gestores
+from app.routers import admin, auth, categories, marketplace, platform, product_categories, seo, gestores
+from app.notifications.service import (
+    start_subscription_reminder_task,
+    stop_subscription_reminder_task,
+)
 from app.services.exchange_rates import (
     start_exchange_rates_refresh_task,
     stop_exchange_rates_refresh_task,
@@ -25,7 +31,9 @@ UPLOADS_ROOT = Path(__file__).resolve().parent.parent / "uploads"
 async def lifespan(app: FastAPI):
     await connect_to_mongo()
     start_exchange_rates_refresh_task()
+    start_subscription_reminder_task()
     yield
+    await stop_subscription_reminder_task()
     await stop_exchange_rates_refresh_task()
     await close_mongo_connection()
 
@@ -40,7 +48,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(register.router)
+app.include_router(register_router)
 app.include_router(auth.router)
 app.include_router(gestores.router)
 app.include_router(categories.router)
@@ -53,6 +61,7 @@ app.include_router(statistics_router)
 app.include_router(statistics_public_router)
 app.include_router(finance_router)
 app.include_router(seller_statistics_router)
+app.include_router(notifications_router)
 app.include_router(live_router)
 
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)

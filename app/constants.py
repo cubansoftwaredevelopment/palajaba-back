@@ -5,10 +5,17 @@ REJECTION_REASON_UNCONFIRMED_PAYMENT = (
 DEFAULT_PLAN_PRICES = {
     "standard": {
         "monthly": {"amount": 2, "currency": "USD"},
+        "quarterly": {"amount": 5, "currency": "USD"},
         "yearly": {"amount": 20, "currency": "USD"},
+    },
+    "pro": {
+        "monthly": {"amount": 8, "currency": "USD"},
+        "quarterly": {"amount": 22, "currency": "USD"},
+        "yearly": {"amount": 80, "currency": "USD"},
     },
     "premium": {
         "monthly": {"amount": 4, "currency": "USD"},
+        "quarterly": {"amount": 10, "currency": "USD"},
         "yearly": {"amount": 30, "currency": "USD"},
     },
 }

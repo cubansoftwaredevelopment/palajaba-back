@@ -14,7 +14,11 @@ from app.database import (
     get_orders_collection,
     get_registrations_collection,
 )
-from app.services.categories import business_category_name, resolve_product_global_category_id
+from app.services.categories import (
+    business_category_name,
+    normalize_business_category_id,
+    parse_product_global_category_id,
+)
 from app.services.product_categories import map_local_category_name_to_business_category
 from app.schemas.catalog import (
     CatalogCategoryCreate,
@@ -37,7 +41,6 @@ from app.services.catalog_product_sort import (
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.utils.datetime import to_utc_naive, utc_now
 
-MAX_CATEGORIES_PER_SELLER = 20
 MAX_PRODUCTS_PER_CATEGORY = 100
 MAX_PRODUCT_IMAGES = 6
 ORDERED_PRODUCT_PREVIEW_LIMIT = 12
@@ -246,38 +249,38 @@ async def _backfill_product_categories() -> None:
         )
 
 
-async def _get_seller_category_ids(seller_id: str) -> list[str]:
+def _validate_global_category_for_seller(seller_id: str, global_category_id: str) -> str:
+    del seller_id
     try:
-        seller_oid = ObjectId(seller_id)
-    except InvalidId as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vendedor no encontrado.",
-        ) from exc
-
-    seller = await get_registrations_collection().find_one({"_id": seller_oid})
-    if not seller:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Vendedor no encontrado.",
-        )
-    return list(seller.get("category_ids") or [])
-
-
-async def _validate_global_category_for_seller(seller_id: str, global_category_id: str) -> str:
-    allowed = await _get_seller_category_ids(seller_id)
-    if not allowed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Completa las categorías de tu negocio en el perfil antes de publicar productos.",
-        )
-    try:
-        return resolve_product_global_category_id(allowed, global_category_id)
+        return parse_product_global_category_id(global_category_id)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+async def _refresh_seller_global_categories(seller_id: str) -> None:
+    try:
+        seller_oid = ObjectId(seller_id)
+    except InvalidId:
+        return
+
+    product_ids = await get_catalog_products_collection().distinct(
+        "global_category_id",
+        {"seller_id": seller_id},
+    )
+    category_ids = sorted(
+        {
+            normalize_business_category_id(str(item))
+            for item in product_ids
+            if item
+        }
+    )
+    await get_registrations_collection().update_one(
+        {"_id": seller_oid},
+        {"$set": {"category_ids": category_ids, "updated_at": to_utc_naive(utc_now())}},
+    )
 
 
 async def _validate_local_category_id(seller_id: str, category_id: str) -> ObjectId:
@@ -434,13 +437,7 @@ async def get_catalog_summary(seller_id: str) -> CatalogSummaryPublic:
 async def create_catalog_category(seller_id: str, payload: CatalogCategoryCreate) -> CatalogCategoryPublic:
     name = _normalize_name(payload.name)
     collection = get_catalog_categories_collection()
-
     existing_count = await collection.count_documents({"seller_id": seller_id})
-    if existing_count >= MAX_CATEGORIES_PER_SELLER:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No puedes crear más de {MAX_CATEGORIES_PER_SELLER} categorías.",
-        )
 
     duplicate = await collection.find_one({"seller_id": seller_id, "name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}})
     if duplicate:
@@ -495,6 +492,7 @@ async def delete_catalog_category(seller_id: str, category_id: str) -> None:
 
     await categories_col.delete_one({"_id": oid})
     await _renormalize_category_sort_orders(seller_id)
+    await _refresh_seller_global_categories(seller_id)
 
 
 async def reorder_catalog_categories(
@@ -795,7 +793,7 @@ async def create_catalog_product(
     frontal_index: int = 0,
 ) -> CatalogProductPublic:
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
-    normalized_global_category_id = await _validate_global_category_for_seller(
+    normalized_global_category_id = _validate_global_category_for_seller(
         seller_id,
         global_category_id,
     )
@@ -884,6 +882,7 @@ async def create_catalog_product(
     result = await products.insert_one(doc)
     doc["_id"] = result.inserted_id
     await _sync_local_category_product_count(seller_id, local_category_oid)
+    await _refresh_seller_global_categories(seller_id)
 
     return document_to_product(doc)
 
@@ -1080,7 +1079,7 @@ async def update_catalog_product(
 ) -> CatalogProductPublic:
     doc = await _get_product_doc(seller_id, product_id)
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
-    normalized_global_category_id = await _validate_global_category_for_seller(
+    normalized_global_category_id = _validate_global_category_for_seller(
         seller_id,
         global_category_id,
     )
@@ -1126,6 +1125,7 @@ async def update_catalog_product(
     await _sync_local_category_product_count(seller_id, local_category_oid)
     if isinstance(previous_category_oid, ObjectId) and previous_category_oid != local_category_oid:
         await _sync_local_category_product_count(seller_id, previous_category_oid)
+    await _refresh_seller_global_categories(seller_id)
     updated = await products.find_one({"_id": doc["_id"]})
     return document_to_product(updated)
 
@@ -1141,4 +1141,5 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     category_oid = doc.get("category_id")
     if isinstance(category_oid, ObjectId):
         await _sync_local_category_product_count(seller_id, category_oid)
+    await _refresh_seller_global_categories(seller_id)
 
