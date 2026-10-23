@@ -51,7 +51,11 @@ from app.services.categories import (
 from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
 from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
-from app.services.catalog_theme import DEFAULT_CATALOG_THEME, normalize_catalog_theme
+from app.services.catalog_theme import (
+    DEFAULT_CATALOG_THEME,
+    normalize_catalog_theme,
+    public_catalog_palette,
+)
 from app.services.plans import (
     plan_search_rank,
     seller_has_full_store_customization,
@@ -192,6 +196,11 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
             normalize_catalog_theme(seller.get("catalog_theme"))
             if seller_has_full_store_customization(seller)
             else DEFAULT_CATALOG_THEME
+        ),
+        "catalog_palette": (
+            public_catalog_palette(seller.get("catalog_palette"), seller.get("catalog_theme"))
+            if seller_has_full_store_customization(seller)
+            else None
         ),
         "banners": (
             store_banners_from_document(seller, active_only=True)

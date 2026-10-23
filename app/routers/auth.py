@@ -409,11 +409,15 @@ async def update_my_catalog_theme(
     payload: CatalogThemeUpdate,
     seller_payload: dict = Depends(require_seller),
 ):
-    theme = await catalog_theme_service.update_seller_catalog_theme(
+    saved = await catalog_theme_service.update_seller_catalog_theme(
         seller_payload["seller_id"],
         payload.catalog_theme,
+        payload.catalog_palette.model_dump() if payload.catalog_palette else None,
     )
-    return CatalogThemePublic(catalog_theme=theme)
+    return CatalogThemePublic(
+        catalog_theme=saved["catalog_theme"],
+        catalog_palette=saved["catalog_palette"],
+    )
 
 
 @router.get("/me/catalog/currencies", response_model=list[CurrencyPublic])

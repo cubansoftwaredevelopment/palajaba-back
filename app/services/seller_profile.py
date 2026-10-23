@@ -22,7 +22,7 @@ from app.schemas.seller_profile import (
     StoreBannerPublic,
     StoreBannerUpdate,
 )
-from app.services.catalog_theme import normalize_catalog_theme
+from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
 from app.services.categories import categories_for_profile, validate_category_ids
 from app.services.cuba_locations import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access
@@ -280,6 +280,10 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         subscription_days_remaining=days_remaining,
         subscription_hours_remaining=hours_remaining,
         catalog_theme=normalize_catalog_theme(doc.get("catalog_theme")),
+        catalog_palette=public_catalog_palette(
+            doc.get("catalog_palette"),
+            doc.get("catalog_theme"),
+        ),
         store_banners=store_banners_from_document(doc),
         gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
     )

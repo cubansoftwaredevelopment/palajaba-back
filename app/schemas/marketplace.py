@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.catalog import CatalogProductImagePublic
+from app.schemas.catalog import CatalogPalette, CatalogProductImagePublic
 from app.schemas.seller_profile import (
     BusinessArea,
     BusinessLocation,
@@ -176,6 +176,7 @@ class MarketplaceStoreCatalogPublic(BaseModel):
     sections: list[MarketplaceStoreLocalSectionPublic] = Field(default_factory=list)
     total_products: int = 0
     catalog_theme: str = "default"
+    catalog_palette: CatalogPalette | None = None
     banners: list[StoreBannerPublic] = Field(default_factory=list)
     checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)
 
@@ -204,6 +205,7 @@ class MarketplaceGestorStoreCatalogPublic(BaseModel):
     sections: list[MarketplaceGestorStoreLocalSectionPublic] = Field(default_factory=list)
     total_products: int = 0
     catalog_theme: str = "default"
+    catalog_palette: CatalogPalette | None = None
     banners: list[StoreBannerPublic] = Field(default_factory=list)
     gestor: MarketplaceGestorPublic
 

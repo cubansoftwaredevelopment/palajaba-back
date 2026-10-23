@@ -108,8 +108,35 @@ class CatalogSummaryPublic(BaseModel):
     total_products: int = 0
 
 
+class CatalogPaletteColor(BaseModel):
+    hex: str
+    opacity: int = 100
+
+    @field_validator("hex")
+    @classmethod
+    def validate_hex(cls, value: str) -> str:
+        from app.services.catalog_theme import parse_hex_color
+
+        return parse_hex_color(value)
+
+    @field_validator("opacity")
+    @classmethod
+    def validate_opacity(cls, value: int) -> int:
+        from app.services.catalog_theme import parse_opacity
+
+        return parse_opacity(value)
+
+
+class CatalogPalette(BaseModel):
+    primary: CatalogPaletteColor
+    background: CatalogPaletteColor
+    accent: CatalogPaletteColor
+    secondary: CatalogPaletteColor
+
+
 class CatalogThemeUpdate(BaseModel):
     catalog_theme: str = Field(..., min_length=1, max_length=32)
+    catalog_palette: CatalogPalette | None = None
 
     @field_validator("catalog_theme")
     @classmethod
@@ -121,6 +148,7 @@ class CatalogThemeUpdate(BaseModel):
 
 class CatalogThemePublic(BaseModel):
     catalog_theme: str
+    catalog_palette: CatalogPalette | None = None
 
 
 class CurrencyPublic(BaseModel):
