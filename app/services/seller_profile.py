@@ -23,7 +23,7 @@ from app.schemas.seller_profile import (
     StoreBannerUpdate,
 )
 from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
-from app.services.categories import categories_for_profile, validate_category_ids
+from app.services.categories import categories_for_profile, list_categories, validate_category_ids
 from app.services.cuba_locations import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access
 from app.services.plans import (
@@ -143,7 +143,6 @@ def _normalize_delivery_areas(
 def is_profile_complete(doc: dict[str, Any]) -> bool:
     return bool(
         doc.get("profile_photo_url")
-        and doc.get("category_ids")
         and doc.get("offers_delivery") is not None
         and _parse_business_area(doc.get("business_area")) is not None
     )
@@ -316,8 +315,8 @@ async def get_seller_public(seller_id: str) -> SellerPublic:
 
 
 async def get_seller_business_categories(seller_id: str) -> list[CategoryPublic]:
-    doc = await _get_seller_doc(seller_id)
-    return categories_for_profile(doc.get("category_ids") or [])
+    await _get_seller_doc(seller_id)
+    return await list_categories()
 
 
 async def update_seller_profile(
@@ -325,7 +324,8 @@ async def update_seller_profile(
     payload: SellerProfileUpdate,
 ) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
-    await validate_category_ids(payload.category_ids)
+    if payload.category_ids is not None:
+        await validate_category_ids(payload.category_ids)
 
     if not doc.get("profile_photo_url"):
         raise HTTPException(
@@ -350,7 +350,6 @@ async def update_seller_profile(
         "social_instagram": social_instagram,
         "social_facebook": social_facebook,
         "social_links": [link.model_dump() for link in social_links],
-        "category_ids": payload.category_ids,
         "offers_delivery": payload.offers_delivery,
         "gestores_enabled": bool(payload.gestores_enabled),
         "business_area": business_area,
@@ -363,10 +362,12 @@ async def update_seller_profile(
     elif payload.business_location is not None:
         update_fields["business_location"] = payload.business_location.model_dump()
 
+    if payload.category_ids is not None:
+        update_fields["category_ids"] = payload.category_ids
+
     was_complete = is_profile_complete(doc)
     will_be_complete = bool(
         doc.get("profile_photo_url")
-        and payload.category_ids
         and payload.offers_delivery is not None
         and business_area
     )

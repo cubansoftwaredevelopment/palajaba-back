@@ -101,30 +101,22 @@ def business_category_sort_order(category_id: str) -> int:
     return BUSINESS_CATEGORY_SORT_ORDER.get(canonical, 99)
 
 
-def resolve_product_global_category_id(allowed_ids: list[str], global_category_id: str) -> str:
-    """El producto lleva una sola categoría, elegida entre las de la tienda."""
-    normalized = global_category_id.strip().lower()
-    allowed = [item.strip().lower() for item in allowed_ids if item and item.strip()]
-    if not allowed:
-        raise ValueError("La tienda no tiene categorías de negocio.")
-
-    if normalized in allowed:
+def parse_product_global_category_id(global_category_id: str) -> str:
+    """El producto elige cualquier categoría global del catálogo de negocio."""
+    normalized = (global_category_id or "").strip().lower()
+    if not normalized:
+        raise ValueError("Selecciona una categoría global.")
+    if normalized in _BUSINESS_CATEGORY_BY_ID:
         return normalized
+    aliased = CATEGORY_ID_ALIASES.get(normalized)
+    if aliased:
+        return aliased
+    raise ValueError("La categoría global no es válida.")
 
-    selected_canonical = normalize_business_category_id(normalized)
-    matches = [
-        allowed_id
-        for allowed_id in allowed
-        if normalize_business_category_id(allowed_id) == selected_canonical
-    ]
-    if not matches:
-        raise ValueError("La categoría global debe ser una de las categorías de tu negocio.")
 
-    if selected_canonical in matches:
-        return selected_canonical
-    if len(matches) == 1:
-        return matches[0]
-    return normalized if normalized in matches else matches[0]
+def resolve_product_global_category_id(allowed_ids: list[str], global_category_id: str) -> str:
+    del allowed_ids
+    return parse_product_global_category_id(global_category_id)
 
 
 async def ensure_category_seed() -> None:

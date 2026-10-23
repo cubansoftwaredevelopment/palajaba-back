@@ -87,7 +87,7 @@ class SellerProfileUpdate(BaseModel):
     social_instagram: str | None = Field(default=None, max_length=80)
     social_facebook: str | None = Field(default=None, max_length=120)
     social_links: list[SellerSocialLink] = Field(default_factory=list, max_length=12)
-    category_ids: list[str] = Field(..., min_length=1, max_length=5)
+    category_ids: list[str] | None = None
     offers_delivery: bool
     gestores_enabled: bool = False
 
@@ -107,7 +107,9 @@ class SellerProfileUpdate(BaseModel):
 
     @field_validator("category_ids")
     @classmethod
-    def normalize_category_ids(cls, value: list[str]) -> list[str]:
+    def normalize_category_ids(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
         seen: set[str] = set()
         normalized: list[str] = []
         for item in value:
@@ -116,8 +118,6 @@ class SellerProfileUpdate(BaseModel):
                 continue
             seen.add(cat_id)
             normalized.append(cat_id)
-        if not normalized:
-            raise ValueError("Selecciona al menos una categoría.")
         return normalized
 
 

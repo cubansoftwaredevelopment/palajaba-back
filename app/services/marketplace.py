@@ -350,7 +350,6 @@ async def _get_visible_sellers(
     seller_query = {
         "status": "approved",
         "profile_photo_url": {"$exists": True, "$ne": None},
-        "category_ids": {"$exists": True, "$not": {"$size": 0}},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},
         "$or": [
@@ -390,7 +389,6 @@ async def _get_pickup_sellers_in_municipalities(
     seller_query = {
         "status": "approved",
         "profile_photo_url": {"$exists": True, "$ne": None},
-        "category_ids": {"$exists": True, "$not": {"$size": 0}},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},
         "$or": [
