@@ -15,22 +15,24 @@ async def connect_to_mongo():
     db = client[settings.database_name]
 
     from app.services.admins import ensure_admin_indexes, seed_default_admin
-    from app.services.catalog import ensure_catalog_indexes
+    from app.products.service import ensure_catalog_indexes
     from app.services.categories import ensure_category_seed
-    from app.services.product_categories import ensure_product_category_seed
+    from app.products.categories import ensure_product_category_seed
     from app.notifications.service import (
         ensure_notification_indexes,
         ensure_pending_order_notifications,
         ensure_subscription_expiring_notifications,
     )
     from app.services.orders import ensure_order_indexes
-    from app.register.challenges import ensure_registration_otp_indexes
-    from app.register.contact_changes import ensure_seller_contact_otp_indexes
-    from app.password_reset.service import ensure_password_reset_indexes
-    from app.services.registrations import ensure_registration_indexes
+    from app.auth.service import (
+        ensure_password_reset_indexes,
+        ensure_registration_otp_indexes,
+    )
+    from app.auth.contact_changes import ensure_seller_contact_otp_indexes
+    from app.auth.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
-    from app.services.subscription_payments import ensure_subscription_payment_indexes
+    from app.subscriptions.service import ensure_subscription_payment_indexes
     from app.statistics_admin.traffic import ensure_marketplace_visit_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.services.platform_settings import ensure_platform_settings_indexes

@@ -3,7 +3,7 @@ from datetime import date
 from fastapi import APIRouter, Body, Depends, Query, status
 
 from app.constants import CURRENCY_CODES
-from app.dependencies import require_admin
+from app.auth.utils import require_admin
 from app.finance_admin import service
 from app.finance_admin.schemas import (
     DebtIdsPayload,

@@ -9,7 +9,7 @@ from app.config import settings
 from app.database import get_registrations_collection
 from app.services.admins import is_admin_username
 from app.services.media_storage import read_image_upload, remove_image, store_image
-from app.schemas.auth import SellerPublic
+from app.auth.schemas import SellerPublic
 from app.schemas.seller_profile import (
     BusinessArea,
     BusinessLocation,
@@ -24,17 +24,18 @@ from app.schemas.seller_profile import (
 )
 from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
 from app.services.categories import categories_for_profile, list_categories, validate_category_ids
-from app.services.cuba_locations import validate_business_area
+from app.constants import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access
-from app.services.plans import (
+from app.subscriptions.service import (
     STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
     normalize_plan_tier,
     seller_has_full_store_customization,
+    seller_has_product_discounts,
     seller_has_recommendation_boost,
     seller_has_statistics,
     seller_has_store_banners,
 )
-from app.services.subscriptions import (
+from app.subscriptions.service import (
     is_publicly_visible,
     is_subscription_active,
     subscription_days_remaining,
@@ -261,6 +262,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         has_recommendation_boost=seller_has_recommendation_boost(doc),
         has_store_banners=seller_has_store_banners(doc),
         has_full_store_customization=seller_has_full_store_customization(doc),
+        has_product_discounts=seller_has_product_discounts(doc),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
         business_location=business_location,

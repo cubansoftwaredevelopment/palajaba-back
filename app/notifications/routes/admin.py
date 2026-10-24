@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies import require_admin
+from app.auth.utils import require_admin
 from app.notifications import service
 from app.notifications.schemas import (
     AdminNotificationBroadcastPublic,

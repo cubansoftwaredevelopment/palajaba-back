@@ -16,7 +16,7 @@ from app.statistics_admin.schemas.stats import (
     AdminStatsSummary,
 )
 from app.schemas.seller_stats import RevenueDataPoint
-from app.services.cuba_locations import PROVINCE_NAMES
+from app.constants import PROVINCE_NAMES
 from app.statistics_admin.traffic import count_visits_in_month
 from app.services.seller_stats import (
     Granularity,

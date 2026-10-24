@@ -6,7 +6,7 @@ from xml.sax.saxutils import escape
 
 from app.database import get_registrations_collection
 from app.services.seller_profile import is_profile_complete
-from app.services.subscriptions import is_subscription_active
+from app.subscriptions.service import is_subscription_active
 from app.utils.reserved_store_slugs import is_reserved_store_slug
 from app.utils.store_slug import store_name_to_slug
 

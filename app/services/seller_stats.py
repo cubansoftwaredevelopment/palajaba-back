@@ -21,7 +21,7 @@ from app.schemas.seller_stats import (
     SellerTopProducts,
 )
 from app.services.order_totals import compute_order_products_revenue
-from app.services.plans import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
+from app.subscriptions.service import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
 from app.services.product_popularity import refresh_popularity_window
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import (

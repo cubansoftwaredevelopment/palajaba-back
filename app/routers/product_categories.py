@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.schemas.seller_profile import CategoryPublic
-from app.services import product_categories as product_categories_service
+from app.products import categories as product_categories_service
 
 router = APIRouter(prefix="/api/product-categories", tags=["product-categories"])
 

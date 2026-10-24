@@ -92,7 +92,7 @@ async def delete_seller_data(seller_id: str, registration_doc: dict[str, Any]) -
 
 
 async def delete_registration_document(registration_id: str) -> dict[str, str]:
-    from app.services.registrations import _get_document_or_404
+    from app.auth.registrations import _get_document_or_404
 
     collection = get_registrations_collection()
     doc = await _get_document_or_404(collection, registration_id)

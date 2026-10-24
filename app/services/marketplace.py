@@ -4,7 +4,7 @@ from typing import Any
 from bson import ObjectId
 from bson.errors import InvalidId
 
-from app.constants import CURRENCY_CODES
+from app.constants import CURRENCY_CODES, MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.database import (
     get_catalog_categories_collection,
     get_catalog_products_collection,
@@ -37,10 +37,9 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
-from app.services.catalog import public_product_images
+from app.products.service import public_product_images
 from app.services.seller_profile import store_banners_from_document
 from app.services.admin_registration_insights import aggregate_product_counts_by_seller
-from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.services.categories import (
     DEFAULT_CATEGORIES,
     business_category_name,
@@ -48,21 +47,25 @@ from app.services.categories import (
     business_category_source_ids,
     normalize_business_category_id,
 )
-from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
+from app.products.categories import REVOLICO_PRODUCT_CATEGORIES
 from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
-from app.services.catalog_product_sort import mongo_sort_for_product_mode, sort_product_docs
+from app.products.utils import (
+    mongo_sort_for_product_mode,
+    public_discount_percent,
+    sort_product_docs,
+)
 from app.services.catalog_theme import (
     DEFAULT_CATALOG_THEME,
     normalize_catalog_theme,
     public_catalog_palette,
 )
-from app.services.plans import (
+from app.subscriptions.service import (
     plan_search_rank,
     seller_has_full_store_customization,
     seller_has_store_banners,
 )
 from app.services.seller_profile import is_profile_complete, social_links_from_document
-from app.services.subscriptions import is_subscription_active
+from app.subscriptions.service import is_subscription_active
 from app.services.gestores import (
     compute_gestor_display_price,
     parse_gestor_catalog_access,
@@ -330,6 +333,7 @@ def _product_to_public(
         images=images,
         base_price=float(product["base_price"]),
         base_currency=product["base_currency"],
+        discount_percent=public_discount_percent(product, seller),
         accepted_currencies=list(product.get("accepted_currencies") or []),
         offers_delivery=bool(product.get("offers_delivery")),
         is_available=bool(product.get("is_available", True)),
@@ -1704,7 +1708,12 @@ async def _resolve_public_gestor(seller: dict[str, Any], username: str) -> dict[
     gestor = await get_gestores_collection().find_one(
         {"seller_id": seller["_id"], "username": normalized}
     )
-    if gestor is None or not gestor.get("password_hash") or not gestor.get("phone"):
+    if (
+        gestor is None
+        or gestor.get("is_active", True) is False
+        or not gestor.get("password_hash")
+        or not gestor.get("phone")
+    ):
         raise ValueError("Gestor no encontrado.")
     return gestor
 

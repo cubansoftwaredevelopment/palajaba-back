@@ -9,7 +9,9 @@ from app.config import settings
 from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
 from app.notifications.routes import router as notifications_router
-from app.register.routes import router as register_router
+from app.auth.routes import router as account_router
+from app.products.routes import router as products_router
+from app.subscriptions.routes import router as subscriptions_router
 from app.finance_admin.routes import router as finance_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
@@ -48,8 +50,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(register_router)
+app.include_router(account_router)
 app.include_router(auth.router)
+app.include_router(products_router)
+app.include_router(subscriptions_router)
 app.include_router(gestores.router)
 app.include_router(categories.router)
 app.include_router(product_categories.router)

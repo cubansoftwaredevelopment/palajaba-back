@@ -9,8 +9,8 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
-from app.register.otp import send_custom_sms, send_sms_campaign
-from app.services.registrations import phone_e164
+from app.auth.utils import send_custom_sms, send_sms_campaign
+from app.auth.registrations import phone_e164
 from app.notifications.schemas import (
     AdminNotificationBroadcastPublic,
     AdminNotificationSendEvent,
@@ -20,20 +20,21 @@ from app.notifications.schemas import (
     SellerNotificationPublic,
     SellerNotificationUnreadCount,
 )
-from app.services.plans import (
+from app.subscriptions.service import (
     PREMIUM_PLAN_TIER,
     PRO_PLAN_TIER,
     STANDARD_PLAN_TIER,
     normalize_billing_period,
     normalize_plan_tier,
 )
-from app.services.subscriptions import (
+from app.subscriptions.service import (
     ACTION_RENEW_SUBSCRIPTION,
     EXPIRY_NOTICE_FOR_FIELD,
     EXPIRY_NOTICE_SMS_FIELD,
     NOTIFICATION_KIND_EXPIRING,
     contact_reminder_content,
     expiry_notice_channel_state,
+    expiry_notice_title,
     is_subscription_active,
     is_within_contact_reminder_window,
     is_within_warning_window,
@@ -124,14 +125,15 @@ async def _ensure_expiry_in_app_notice(
         return existing
 
     now = to_utc_naive(utc_now())
+    is_trial = bool(seller.get("is_trial"))
     document = {
         "_id": ObjectId(),
         "seller_id": seller["_id"],
         "batch_id": f"subscription-expiring-{seller['_id']}-{ends_at.isoformat()}",
         "kind": NOTIFICATION_KIND_EXPIRING,
         "subscription_ends_at": ends_at,
-        "title": "Tu suscripción vence pronto",
-        "content": warning_notification_content(days_remaining),
+        "title": expiry_notice_title(is_trial=is_trial),
+        "content": warning_notification_content(days_remaining, is_trial=is_trial),
         "action_label": "Renovar plan",
         "action_type": ACTION_RENEW_SUBSCRIPTION,
         "read_at": None,
@@ -149,7 +151,11 @@ async def _send_subscription_contact_reminder(
     days_remaining: int,
     ends_at: Any,
 ) -> None:
-    message = contact_reminder_content(days_remaining, store_name=seller.get("store_name"))
+    message = contact_reminder_content(
+        days_remaining,
+        store_name=seller.get("store_name"),
+        is_trial=bool(seller.get("is_trial")),
+    )
     sms_state = expiry_notice_channel_state(seller, "sms", ends_at)
     updates: dict[str, Any] = {EXPIRY_NOTICE_FOR_FIELD: to_utc_naive(ends_at)}
 
@@ -202,6 +208,7 @@ async def ensure_subscription_expiring_notifications() -> int:
             "subscription_ends_at": 1,
             "phone": 1,
             "store_name": 1,
+            "is_trial": 1,
             EXPIRY_NOTICE_FOR_FIELD: 1,
             EXPIRY_NOTICE_SMS_FIELD: 1,
             "subscription_expiry_notice_sms": 1,

@@ -1,338 +1,117 @@
 from typing import Literal
-
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
-
-from app.dependencies import require_admin
-from app.schemas.discount_code import (
-    DiscountCodeCreate,
-    DiscountCodeDeleteResult,
-    DiscountCodePublic,
-    DiscountCodeUpdate,
-)
-from app.schemas.admin_products import AdminProductList
+from app.auth.utils import create_admin_token, require_admin
+from app.schemas.discount_code import DiscountCodeCreate, DiscountCodeDeleteResult, DiscountCodePublic, DiscountCodeUpdate
 from app.schemas.admin import AdminLoginRequest, AdminLoginResponse
 from app.schemas.banners import BannerAdminPublic, BannerUpdate
 from app.schemas.platform_settings import PlatformSettingsPublic, PlatformSettingsUpdate
-from app.schemas.registration import BillingPeriod, PlanTier, RegistrationDeleteResult, RegistrationPublic
-from app.schemas.seller_feedback import (
-    AdminFeedbackDeleteResult,
-    AdminFeedbackPublic,
-    AdminFeedbackUnreadCount,
-)
+from app.schemas.gestores import GestorPublic
+from app.auth.schemas import RegistrationDeleteResult, RegistrationPublic
+from app.schemas.seller_feedback import AdminFeedbackDeleteResult, AdminFeedbackPublic, AdminFeedbackUnreadCount
 from app.utils.dates import parse_subscription_end
-from app.security import create_admin_token
 from app.services import admins as admin_service
 from app.services import discount_codes as discount_codes_service
 from app.services import banners as banners_service
 from app.services import platform_settings as platform_settings_service
-from app.services import registrations as registration_service
+from app.services import gestores as gestores_service
+from app.auth import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
-from app.services import admin_products as admin_products_service
+router = APIRouter(prefix='/api/admin', tags=['admin'])
 
-router = APIRouter(prefix="/api/admin", tags=["admin"])
-
-
-@router.post("/login", response_model=AdminLoginResponse)
+@router.post('/login', response_model=AdminLoginResponse)
 async def admin_login(payload: AdminLoginRequest):
     from fastapi import HTTPException, status
-
-    admin = await admin_service.authenticate_admin(
-        payload.username.strip(),
-        payload.password,
-    )
+    admin = await admin_service.authenticate_admin(payload.username.strip(), payload.password)
     if admin is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Credenciales incorrectas",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail='Credenciales incorrectas')
+    return AdminLoginResponse(access_token=create_admin_token(username=admin['username'], admin_id=str(admin['_id'])))
 
-    return AdminLoginResponse(
-        access_token=create_admin_token(
-            username=admin["username"],
-            admin_id=str(admin["_id"]),
-        )
-    )
-
-
-@router.get("/registrations", response_model=list[RegistrationPublic])
-async def list_registrations(
-    status: Literal["pending", "approved", "rejected", "expired", "all"] = Query(
-        default="pending"
-    ),
-    _: dict = Depends(require_admin),
-):
+@router.get('/registrations', response_model=list[RegistrationPublic])
+async def list_registrations(status: Literal['pending', 'approved', 'rejected', 'expired', 'all']=Query(default='pending'), _: dict=Depends(require_admin)):
     return await registration_service.list_registrations(status)
 
-
-@router.get("/registrations/{registration_id}", response_model=RegistrationPublic)
-async def get_registration(
-    registration_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.get('/registrations/{registration_id}', response_model=RegistrationPublic)
+async def get_registration(registration_id: str, _: dict=Depends(require_admin)):
     return await registration_service.get_registration(registration_id)
 
-
-@router.delete(
-    "/registrations/{registration_id}",
-    response_model=RegistrationDeleteResult,
-)
-async def delete_registration(
-    registration_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.delete('/registrations/{registration_id}', response_model=RegistrationDeleteResult)
+async def delete_registration(registration_id: str, _: dict=Depends(require_admin)):
     result = await seller_deletion_service.delete_registration_document(registration_id)
     return RegistrationDeleteResult(**result)
 
+@router.post('/registrations/{registration_id}/approve', response_model=RegistrationPublic)
+async def approve_registration(registration_id: str, payment_amount_cup: int=Query(..., ge=0, description='Monto real transferido en CUP (0 = acceso gratuito)'), subscription_ends_at: str | None=Query(default=None, description='Fecha de fin de suscripción (YYYY-MM-DD)', pattern='^\\d{4}-\\d{2}-\\d{2}$'), _: dict=Depends(require_admin)):
+    return await registration_service.approve_registration(registration_id, parse_subscription_end(subscription_ends_at), payment_amount_cup)
 
-@router.post(
-    "/registrations/{registration_id}/approve",
-    response_model=RegistrationPublic,
-)
-async def approve_registration(
-    registration_id: str,
-    payment_amount_cup: int = Query(
-        ...,
-        ge=0,
-        description="Monto real transferido en CUP (0 = acceso gratuito)",
-    ),
-    subscription_ends_at: str | None = Query(
-        default=None,
-        description="Fecha de fin de suscripción (YYYY-MM-DD)",
-        pattern=r"^\d{4}-\d{2}-\d{2}$",
-    ),
-    _: dict = Depends(require_admin),
-):
-    return await registration_service.approve_registration(
-        registration_id,
-        parse_subscription_end(subscription_ends_at),
-        payment_amount_cup,
-    )
-
-
-
-
-@router.post(
-    "/registrations/{registration_id}/reject",
-    response_model=RegistrationPublic,
-)
-async def reject_registration(
-    registration_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.post('/registrations/{registration_id}/reject', response_model=RegistrationPublic)
+async def reject_registration(registration_id: str, _: dict=Depends(require_admin)):
     return await registration_service.reject_registration(registration_id)
 
+@router.get('/registrations/{registration_id}/gestores', response_model=list[GestorPublic])
+async def list_registration_gestores(registration_id: str, _: dict=Depends(require_admin)):
+    return await gestores_service.list_seller_gestores_for_admin(registration_id)
 
-@router.patch(
-    "/registrations/{registration_id}/subscription",
-    response_model=RegistrationPublic,
-)
-async def update_subscription(
-    registration_id: str,
-    subscription_ends_at: str = Query(
-        ...,
-        description="Nueva fecha de fin (YYYY-MM-DD)",
-        pattern=r"^\d{4}-\d{2}-\d{2}$",
-    ),
-    plan_tier: PlanTier | None = Query(default=None),
-    billing_period: BillingPeriod | None = Query(default=None),
-    _: dict = Depends(require_admin),
-):
-    parsed = parse_subscription_end(subscription_ends_at)
-    if parsed is None:
-        from fastapi import HTTPException, status
+@router.patch('/registrations/{registration_id}/payment', response_model=RegistrationPublic)
+async def update_payment(registration_id: str, payment_amount_cup: int=Query(..., ge=0, description='Monto transferido en CUP (0 = acceso gratuito)'), _: dict=Depends(require_admin)):
+    return await registration_service.update_payment_amount(registration_id, payment_amount_cup)
 
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Fecha de suscripción inválida.",
-        )
-    return await registration_service.update_subscription_end(
-        registration_id,
-        parsed,
-        plan_tier=plan_tier,
-        billing_period=billing_period,
-    )
-
-
-@router.post(
-    "/registrations/{registration_id}/renew",
-    response_model=RegistrationPublic,
-)
-async def renew_registration(
-    registration_id: str,
-    payment_amount_cup: int = Query(
-        ...,
-        ge=0,
-        description="Monto transferido en CUP (0 = acceso gratuito)",
-    ),
-    subscription_ends_at: str | None = Query(
-        default=None,
-        description="Fecha de fin de suscripción (YYYY-MM-DD)",
-        pattern=r"^\d{4}-\d{2}-\d{2}$",
-    ),
-    plan_tier: PlanTier | None = Query(default=None),
-    billing_period: BillingPeriod | None = Query(default=None),
-    _: dict = Depends(require_admin),
-):
-    parsed_end = parse_subscription_end(subscription_ends_at) if subscription_ends_at else None
-    return await registration_service.renew_registration(
-        registration_id,
-        parsed_end,
-        payment_amount_cup,
-        plan_tier=plan_tier,
-        billing_period=billing_period,
-    )
-
-
-@router.patch(
-    "/registrations/{registration_id}/payment",
-    response_model=RegistrationPublic,
-)
-async def update_payment(
-    registration_id: str,
-    payment_amount_cup: int = Query(
-        ...,
-        ge=0,
-        description="Monto transferido en CUP (0 = acceso gratuito)",
-    ),
-    _: dict = Depends(require_admin),
-):
-    return await registration_service.update_payment_amount(
-        registration_id,
-        payment_amount_cup,
-    )
-
-
-@router.get("/discount-codes", response_model=list[DiscountCodePublic])
-async def list_discount_codes(_: dict = Depends(require_admin)):
+@router.get('/discount-codes', response_model=list[DiscountCodePublic])
+async def list_discount_codes(_: dict=Depends(require_admin)):
     return await discount_codes_service.list_discount_codes()
 
+@router.post('/discount-codes', response_model=DiscountCodePublic, status_code=201)
+async def create_discount_code(payload: DiscountCodeCreate, _: dict=Depends(require_admin)):
+    return await discount_codes_service.create_discount_code(code=payload.code, percent_off=payload.percent_off, is_active=payload.is_active)
 
-@router.post("/discount-codes", response_model=DiscountCodePublic, status_code=201)
-async def create_discount_code(
-    payload: DiscountCodeCreate,
-    _: dict = Depends(require_admin),
-):
-    return await discount_codes_service.create_discount_code(
-        code=payload.code,
-        percent_off=payload.percent_off,
-        is_active=payload.is_active,
-    )
-
-
-@router.patch("/discount-codes/{discount_code_id}", response_model=DiscountCodePublic)
-async def update_discount_code(
-    discount_code_id: str,
-    payload: DiscountCodeUpdate,
-    _: dict = Depends(require_admin),
-):
+@router.patch('/discount-codes/{discount_code_id}', response_model=DiscountCodePublic)
+async def update_discount_code(discount_code_id: str, payload: DiscountCodeUpdate, _: dict=Depends(require_admin)):
     return await discount_codes_service.update_discount_code(discount_code_id, payload)
 
-
-@router.delete("/discount-codes/{discount_code_id}", response_model=DiscountCodeDeleteResult)
-async def delete_discount_code(
-    discount_code_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.delete('/discount-codes/{discount_code_id}', response_model=DiscountCodeDeleteResult)
+async def delete_discount_code(discount_code_id: str, _: dict=Depends(require_admin)):
     return await discount_codes_service.delete_discount_code(discount_code_id)
 
-
-@router.get("/feedback", response_model=list[AdminFeedbackPublic])
-async def list_feedback(
-    filter: Literal["all", "unread", "complaint", "suggestion"] = Query(default="all"),
-    _: dict = Depends(require_admin),
-):
+@router.get('/feedback', response_model=list[AdminFeedbackPublic])
+async def list_feedback(filter: Literal['all', 'unread', 'complaint', 'suggestion']=Query(default='all'), _: dict=Depends(require_admin)):
     return await seller_feedback_service.list_admin_feedback(feedback_filter=filter)
 
-
-@router.get("/feedback/unread-count", response_model=AdminFeedbackUnreadCount)
-async def feedback_unread_count(_: dict = Depends(require_admin)):
+@router.get('/feedback/unread-count', response_model=AdminFeedbackUnreadCount)
+async def feedback_unread_count(_: dict=Depends(require_admin)):
     return await seller_feedback_service.get_admin_feedback_unread_count()
 
-
-@router.patch("/feedback/{feedback_id}/read", response_model=AdminFeedbackPublic)
-async def mark_feedback_read(
-    feedback_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.patch('/feedback/{feedback_id}/read', response_model=AdminFeedbackPublic)
+async def mark_feedback_read(feedback_id: str, _: dict=Depends(require_admin)):
     return await seller_feedback_service.mark_admin_feedback_read(feedback_id)
 
-
-@router.delete("/feedback/{feedback_id}", response_model=AdminFeedbackDeleteResult)
-async def delete_feedback(
-    feedback_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.delete('/feedback/{feedback_id}', response_model=AdminFeedbackDeleteResult)
+async def delete_feedback(feedback_id: str, _: dict=Depends(require_admin)):
     return await seller_feedback_service.delete_admin_feedback(feedback_id)
 
-
-@router.get("/settings", response_model=PlatformSettingsPublic)
-async def get_settings(_: dict = Depends(require_admin)):
+@router.get('/settings', response_model=PlatformSettingsPublic)
+async def get_settings(_: dict=Depends(require_admin)):
     return await platform_settings_service.get_platform_settings()
 
-
-@router.patch("/settings", response_model=PlatformSettingsPublic)
-async def update_settings(
-    payload: PlatformSettingsUpdate,
-    _: dict = Depends(require_admin),
-):
+@router.patch('/settings', response_model=PlatformSettingsPublic)
+async def update_settings(payload: PlatformSettingsUpdate, _: dict=Depends(require_admin)):
     return await platform_settings_service.update_platform_settings(payload)
 
-
-@router.get("/banners", response_model=list[BannerAdminPublic])
-async def list_banners(_: dict = Depends(require_admin)):
+@router.get('/banners', response_model=list[BannerAdminPublic])
+async def list_banners(_: dict=Depends(require_admin)):
     return await banners_service.list_admin_banners()
 
+@router.post('/banners', response_model=BannerAdminPublic, status_code=201)
+async def create_banner(file: UploadFile=File(...), title: str | None=Form(default=None), link_url: str | None=Form(default=None), province_ids: list[str]=Form(default=[]), deactivate_at: str | None=Form(default=None), admin_payload: dict=Depends(require_admin)):
+    return await banners_service.create_banner(file, admin_id=admin_payload.get('admin_id', 'admin'), title=title, link_url=link_url, province_ids=province_ids, deactivate_at=deactivate_at)
 
-@router.post("/banners", response_model=BannerAdminPublic, status_code=201)
-async def create_banner(
-    file: UploadFile = File(...),
-    title: str | None = Form(default=None),
-    link_url: str | None = Form(default=None),
-    province_ids: list[str] = Form(default=[]),
-    deactivate_at: str | None = Form(default=None),
-    admin_payload: dict = Depends(require_admin),
-):
-    return await banners_service.create_banner(
-        file,
-        admin_id=admin_payload.get("admin_id", "admin"),
-        title=title,
-        link_url=link_url,
-        province_ids=province_ids,
-        deactivate_at=deactivate_at,
-    )
-
-
-@router.patch("/banners/{banner_id}", response_model=BannerAdminPublic)
-async def update_banner(
-    banner_id: str,
-    payload: BannerUpdate,
-    _: dict = Depends(require_admin),
-):
+@router.patch('/banners/{banner_id}', response_model=BannerAdminPublic)
+async def update_banner(banner_id: str, payload: BannerUpdate, _: dict=Depends(require_admin)):
     return await banners_service.update_banner(banner_id, payload)
 
+@router.post('/banners/{banner_id}/image', response_model=BannerAdminPublic)
+async def replace_banner_image(banner_id: str, file: UploadFile=File(...), admin_payload: dict=Depends(require_admin)):
+    return await banners_service.replace_banner_image(banner_id, file, admin_id=admin_payload.get('admin_id', 'admin'))
 
-@router.post("/banners/{banner_id}/image", response_model=BannerAdminPublic)
-async def replace_banner_image(
-    banner_id: str,
-    file: UploadFile = File(...),
-    admin_payload: dict = Depends(require_admin),
-):
-    return await banners_service.replace_banner_image(
-        banner_id,
-        file,
-        admin_id=admin_payload.get("admin_id", "admin"),
-    )
-
-
-@router.delete("/banners/{banner_id}")
-async def delete_banner(
-    banner_id: str,
-    _: dict = Depends(require_admin),
-):
+@router.delete('/banners/{banner_id}')
+async def delete_banner(banner_id: str, _: dict=Depends(require_admin)):
     return await banners_service.delete_banner(banner_id)
-
-
-@router.get("/products", response_model=AdminProductList)
-async def list_products(_: dict = Depends(require_admin)):
-    return await admin_products_service.list_admin_products()

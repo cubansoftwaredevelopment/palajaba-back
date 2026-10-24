@@ -3,7 +3,7 @@ from typing import Any
 
 from app.config import settings
 from app.database import get_admins_collection
-from app.security import hash_password, verify_password
+from app.auth.utils import hash_password, verify_password
 
 
 async def ensure_admin_indexes() -> None:

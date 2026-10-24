@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from starlette.testclient import TestClient
 
 from app.main import app
-from app.security import create_admin_token, create_seller_token
+from app.auth.utils import create_admin_token, create_seller_token
 
 
 @contextmanager

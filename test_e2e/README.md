@@ -27,7 +27,7 @@ Un solo test, con la clase y el método:
 Lista los módulos separados por espacio:
 
 ```powershell
-.\venv\Scripts\python.exe -m unittest test_e2e.product_search.test_product_search_e2e test_e2e.product_popularity.test_product_popularity_e2e test_e2e.categories.test_categories_e2e test_e2e.statistics.test_statistics_e2e -v
+.\venv\Scripts\python.exe -m unittest test_e2e.product_search.test_product_search_e2e test_e2e.product_popularity.test_product_popularity_e2e test_e2e.categories.test_categories_e2e test_e2e.statistics.test_statistics_e2e test_e2e.catalog_theme.test_catalog_theme_e2e test_e2e.subscription_replace.test_subscription_replace_e2e test_e2e.products.test_products_e2e test_e2e.auth.test_auth_e2e test_e2e.subscriptions.test_subscriptions_e2e -v
 ```
 
 Igual con tests sueltos: repite la ruta `módulo.Clase.método` por cada uno.

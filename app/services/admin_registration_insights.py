@@ -5,7 +5,7 @@ from typing import Any
 from app.database import get_catalog_products_collection, get_orders_collection
 from app.services.exchange_rates import get_cup_per_unit
 from app.services.seller_profile import is_profile_complete
-from app.services.subscriptions import is_subscription_active
+from app.subscriptions.service import is_subscription_active
 from app.utils.currency_conversion import convert_amount
 
 _EMPTY_COUNTS = {

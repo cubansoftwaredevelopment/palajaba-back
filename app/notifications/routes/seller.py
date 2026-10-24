@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from app.dependencies import require_seller
+from app.auth.utils import require_seller
 from app.notifications import service
 from app.notifications.schemas import (
     SellerNotificationBulkReadResult,

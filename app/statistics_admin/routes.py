@@ -3,7 +3,7 @@ from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Depends, Query
 
-from app.dependencies import require_admin
+from app.auth.utils import require_admin
 from app.services.seller_stats import Granularity
 from app.statistics_admin import devices as devices_service
 from app.statistics_admin import orders as order_stats_service

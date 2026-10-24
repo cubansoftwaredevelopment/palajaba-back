@@ -15,7 +15,7 @@ from app.schemas.discount_code import (
     DiscountCodeUpdate,
     ValidateDiscountCodePublic,
 )
-from app.services.plans import normalize_billing_period, normalize_plan_tier, plan_price_cup
+from app.subscriptions.service import normalize_billing_period, normalize_plan_tier, plan_price_cup
 from app.utils.datetime import to_utc_naive, utc_now
 
 _CODE_PATTERN = re.compile(r"^[A-Z0-9_-]+$")

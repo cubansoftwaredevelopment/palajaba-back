@@ -8,7 +8,7 @@ from bson import ObjectId
 
 from app.database import get_categories_collection, get_product_categories_collection, get_registrations_collection
 from app.services.categories import DEFAULT_CATEGORIES
-from app.services.product_categories import REVOLICO_PRODUCT_CATEGORIES
+from app.products.categories import REVOLICO_PRODUCT_CATEGORIES
 from test_e2e.utils.api import api_client, seller_auth_headers
 from test_e2e.utils.database import mongo_configured, run_db
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID

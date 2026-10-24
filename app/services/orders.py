@@ -16,7 +16,7 @@ from app.schemas.orders import (
 )
 from app.notifications import service as notification_service
 from app.services.product_popularity import bump_products_on_order_completed
-from app.services.subscriptions import is_subscription_active
+from app.subscriptions.service import is_subscription_active
 from app.services.order_totals import compute_order_products_revenue
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies import require_seller
+from app.auth.utils import require_seller
 from app.live.devices import delete_seller_device, register_seller_device
 from app.live.schemas.device import SellerDeviceDelete, SellerDevicePublic, SellerDeviceRegister
 

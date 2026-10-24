@@ -29,19 +29,23 @@ from app.schemas.gestores import (
     GestorSelectedProductsUpdate,
 )
 from app.schemas.marketplace import MarketplaceCheckoutPhonePublic
-from app.security import (
+from app.auth.utils import (
     create_gestor_setup_token,
     create_gestor_token,
     decode_gestor_setup_token,
     hash_password,
     verify_password,
 )
-from app.services.plans import (
+from app.subscriptions.service import (
     feature_plan_tier,
     max_gestores_for_plan,
     seller_can_add_gestor,
 )
-from app.services.subscriptions import is_subscription_active
+from app.subscriptions.utils import (
+    checkout_after_deactivate,
+    resolve_gestor_keep_on_plan_change,
+)
+from app.subscriptions.service import is_subscription_active
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
 from app.utils.store_slug import store_name_to_slug
@@ -140,9 +144,16 @@ def build_gestor_document(*, seller_id: ObjectId | str, username: str) -> dict[s
         "password_hash": None,
         "phone": None,
         "selected_products": [],
+        "is_active": True,
         "created_at": now,
         "updated_at": now,
     }
+
+
+def gestor_is_active(doc: dict[str, Any] | None) -> bool:
+    if not doc:
+        return False
+    return doc.get("is_active", True) is not False
 
 
 def document_to_gestor_public(doc: dict[str, Any]) -> GestorPublic:
@@ -153,6 +164,7 @@ def document_to_gestor_public(doc: dict[str, Any]) -> GestorPublic:
         username=doc["username"],
         phone=phone_display(phone_digits) if phone_digits else None,
         has_password=bool(doc.get("password_hash")),
+        is_active=gestor_is_active(doc),
         selected_products=parse_selected_products(doc.get("selected_products")),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
@@ -308,17 +320,91 @@ async def list_seller_gestores(seller_id: str) -> list[GestorPublic]:
     return [document_to_gestor_public(doc) for doc in docs]
 
 
-async def count_seller_gestores(seller_id: str) -> int:
-    return int(
-        await get_gestores_collection().count_documents({"seller_id": _seller_oid(seller_id)})
+async def count_seller_gestores(seller_id: str, *, active_only: bool = True) -> int:
+    query: dict[str, Any] = {"seller_id": _seller_oid(seller_id)}
+    if active_only:
+        query["is_active"] = {"$ne": False}
+    return int(await get_gestores_collection().count_documents(query))
+
+
+async def list_seller_gestores_for_admin(seller_id: str) -> list[GestorPublic]:
+    await _get_seller_doc(seller_id)
+    docs = (
+        await get_gestores_collection()
+        .find({"seller_id": _seller_oid(seller_id)})
+        .sort("username", ASCENDING)
+        .to_list(length=None)
+    )
+    return [document_to_gestor_public(doc) for doc in docs]
+
+
+async def apply_plan_gestor_keep_list(
+    seller_id: str,
+    plan_tier: str,
+    keep_gestor_ids: list[str] | None,
+) -> None:
+    """Si el nuevo plan no cabe, deja activos solo los IDs elegidos y desactiva el resto."""
+    docs = (
+        await get_gestores_collection()
+        .find({"seller_id": _seller_oid(seller_id)})
+        .to_list(length=None)
+    )
+    decision = resolve_gestor_keep_on_plan_change(
+        plan_tier=plan_tier,
+        gestores=docs,
+        keep_gestor_ids=keep_gestor_ids,
+    )
+    if decision["error"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=decision["error"],
+        )
+    if not decision["deactivate_ids"]:
+        return
+
+    deactivate_set = set(decision["deactivate_ids"])
+    deactivate_oids = [doc["_id"] for doc in docs if str(doc["_id"]) in deactivate_set]
+    now = to_utc_naive(utc_now())
+    await get_gestores_collection().update_many(
+        {"_id": {"$in": deactivate_oids}},
+        {"$set": {"is_active": False, "updated_at": now}},
     )
 
+    seller_oid = _seller_oid(seller_id)
+    seller = await get_registrations_collection().find_one({"_id": seller_oid}) or {}
+    remaining_checkout, include_store = checkout_after_deactivate(
+        parse_checkout_gestor_ids(seller.get("checkout_gestor_ids")),
+        decision["deactivate_ids"],
+        include_store_phone=parse_checkout_include_store_phone(
+            seller.get("checkout_include_store_phone")
+        ),
+    )
+    updates: dict[str, Any] = {
+        "checkout_gestor_ids": remaining_checkout,
+        "updated_at": now,
+    }
+    if include_store != parse_checkout_include_store_phone(
+        seller.get("checkout_include_store_phone")
+    ):
+        updates["checkout_include_store_phone"] = include_store
+    await get_registrations_collection().update_one({"_id": seller_oid}, {"$set": updates})
 
-def gestor_limit_reached_detail(limit: int, plan_tier: str | None = None) -> str:
-    from app.services.plans import plan_display_name
+
+async def assert_gestor_account_active(gestor_id: str, seller_id: str) -> dict[str, Any]:
+    doc = await _get_gestor_for_seller(seller_id, gestor_id)
+    if not gestor_is_active(doc):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta cuenta de gestor está desactivada.",
+        )
+    return doc
+
+
+def gestor_limit_reached_detail(limit: int, seller: dict | None = None) -> str:
+    from app.subscriptions.service import seller_plan_display_name
 
     return (
-        f"El plan {plan_display_name(plan_tier)} permite hasta {limit} gestores. "
+        f"El plan {seller_plan_display_name(seller)} permite hasta {limit} gestores. "
         "Pasa a Premium para gestores ilimitados."
     )
 
@@ -331,7 +417,7 @@ async def create_seller_gestor(seller_id: str, username: str) -> GestorPublic:
         limit = max_gestores_for_plan(plan_tier) or 0
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=gestor_limit_reached_detail(limit, plan_tier),
+            detail=gestor_limit_reached_detail(limit, seller),
         )
 
     try:
@@ -412,14 +498,14 @@ async def update_seller_checkout_phones(
             ) from exc
         doc = await get_gestores_collection().find_one(
             {"_id": gestor_oid, "seller_id": seller_oid},
-            {"_id": 1, "phone": 1, "password_hash": 1},
+            {"_id": 1, "phone": 1, "password_hash": 1, "is_active": 1},
         )
         if doc is None:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Algunos gestores no pertenecen a tu red.",
             )
-        if not doc.get("password_hash") or not doc.get("phone"):
+        if not gestor_is_active(doc) or not doc.get("password_hash") or not doc.get("phone"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Solo puedes habilitar gestores activos con teléfono configurado.",
@@ -491,6 +577,7 @@ async def resolve_store_checkout_phones(seller: dict[str, Any]) -> list[Marketpl
                     {
                         "_id": {"$in": oids},
                         "seller_id": seller_oid,
+                        "is_active": {"$ne": False},
                         "password_hash": {"$exists": True, "$nin": [None, ""]},
                         "phone": {"$exists": True, "$nin": [None, ""]},
                     }
@@ -730,6 +817,12 @@ async def login_gestor(
             detail="Credenciales incorrectas.",
         )
 
+    if not gestor_is_active(gestor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta cuenta de gestor está desactivada.",
+        )
+
     if not gestor.get("password_hash"):
         setup_token = create_gestor_setup_token(
             gestor_id=str(gestor["_id"]),
@@ -776,6 +869,11 @@ async def complete_gestor_setup(
         )
 
     gestor = await _get_gestor_for_seller(payload["seller_id"], payload["gestor_id"])
+    if not gestor_is_active(gestor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta cuenta de gestor está desactivada.",
+        )
     if gestor.get("password_hash"):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

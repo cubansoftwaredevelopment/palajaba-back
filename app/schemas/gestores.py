@@ -55,6 +55,7 @@ class GestorPublic(BaseModel):
     username: str
     phone: str | None = None
     has_password: bool
+    is_active: bool = True
     selected_products: list[GestorSelectedProduct] = Field(default_factory=list)
     created_at: UtcDateTime
     updated_at: UtcDateTime

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, status
 
-from app.dependencies import require_gestor
+from app.auth.utils import require_gestor
 from app.schemas.gestores import (
     GestorAllowedProductPublic,
     GestorLoginRequest,

@@ -9,7 +9,7 @@ from fastapi import HTTPException, status, UploadFile
 
 from app.database import get_marketplace_banners_collection
 from app.schemas.banners import BannerAdminPublic, BannerPublic, BannerUpdate
-from app.services.cuba_locations import PROVINCE_NAMES
+from app.constants import PROVINCE_NAMES
 from app.services.media_storage import read_image_upload, remove_image, store_image
 from app.utils.datetime import to_utc_naive, utc_now
 

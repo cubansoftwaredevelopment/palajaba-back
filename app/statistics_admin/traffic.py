@@ -20,8 +20,8 @@ from app.statistics_admin.schemas.traffic import (
     TrafficGranularity,
 )
 from app.schemas.seller_stats import PeriodComparison
-from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
-from app.services.cuba_time import (
+from app.constants import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
+from app.utils.cuba_time import (
     cuba_date_str,
     cuba_hour,
     cuba_hour_label,

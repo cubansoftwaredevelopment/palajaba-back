@@ -11,7 +11,7 @@ from app.services.catalog_theme import (
     parse_catalog_palette,
     parse_catalog_theme,
 )
-from app.services.plans import (
+from app.subscriptions.service import (
     CATALOG_THEME_PLAN_REQUIRED_MESSAGE,
     seller_has_full_store_customization,
 )

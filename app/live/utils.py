@@ -1,7 +1,7 @@
 from fastapi import HTTPException, status
 
-from app.security import decode_seller_token
-from app.services.subscriptions import assert_seller_subscription_active
+from app.auth.utils import decode_seller_token
+from app.subscriptions.service import assert_seller_subscription_active
 
 
 async def seller_id_from_access_token(token: str) -> str:
