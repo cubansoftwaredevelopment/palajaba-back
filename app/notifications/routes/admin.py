@@ -27,4 +27,6 @@ async def send_notification(
         payload.content,
         payload.audience,
         seller_id=payload.seller_id,
+        audiences=payload.audiences,
+        seller_ids=payload.seller_ids,
     )

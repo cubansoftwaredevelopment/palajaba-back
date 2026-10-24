@@ -380,24 +380,52 @@ AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
 }
 
 
+def _seller_matches_audience(seller: dict[str, Any], audience: str) -> bool:
+    if audience == "all":
+        return True
+    spec = AUDIENCE_SPECS.get(audience)
+    if spec is None:
+        return False
+    tier, billing = spec
+    return (
+        normalize_plan_tier(seller.get("plan_tier")) == tier
+        and normalize_billing_period(seller.get("billing_period")) == billing
+    )
+
+
 def _filter_sellers_by_audience(
     sellers: list[dict[str, Any]],
     audience: NotificationAudienceInput,
 ) -> list[dict[str, Any]]:
-    if audience == "all":
-        return sellers
+    return _filter_sellers_by_audiences(sellers, [audience])
 
-    spec = AUDIENCE_SPECS.get(audience)
-    if spec is None:
-        return sellers
 
-    tier, billing = spec
+def _filter_sellers_by_audiences(
+    sellers: list[dict[str, Any]],
+    audiences: list[str],
+) -> list[dict[str, Any]]:
+    groups = [item for item in audiences if item and item != "single"]
+    if "all" in groups:
+        return sellers
+    if not groups:
+        return []
     return [
         seller
         for seller in sellers
-        if normalize_plan_tier(seller.get("plan_tier")) == tier
-        and normalize_billing_period(seller.get("billing_period")) == billing
+        if any(_seller_matches_audience(seller, audience) for audience in groups)
     ]
+
+
+def _stored_audience(groups: list[str], seller_ids: list[str]) -> str:
+    if "all" in groups:
+        return "all"
+    if len(groups) == 1:
+        return groups[0]
+    if len(groups) > 1:
+        return "mixed"
+    if seller_ids:
+        return "single"
+    return "all"
 
 
 def _audience_empty_message(audience: NotificationAudienceInput) -> str:
@@ -439,6 +467,43 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
     return seller
 
 
+_SELLER_NOTIFY_PROJECTION = {
+    "_id": 1,
+    "subscription_ends_at": 1,
+    "status": 1,
+    "plan_tier": 1,
+    "billing_period": 1,
+    "store_name": 1,
+    "phone": 1,
+}
+
+
+async def _load_active_sellers() -> list[dict[str, Any]]:
+    sellers = await get_registrations_collection().find(
+        {"status": "approved"},
+        _SELLER_NOTIFY_PROJECTION,
+    ).to_list(length=None)
+    return [seller for seller in sellers if is_subscription_active(seller)]
+
+
+async def _resolve_notification_sellers(
+    *,
+    groups: list[str],
+    seller_ids: list[str],
+) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    if groups:
+        active = await _load_active_sellers()
+        for seller in _filter_sellers_by_audiences(active, groups):
+            by_id[str(seller["_id"])] = seller
+    for seller_id in seller_ids:
+        key = str(seller_id).strip()
+        if not key or key in by_id:
+            continue
+        by_id[key] = await _resolve_single_seller(key)
+    return list(by_id.values())
+
+
 async def send_notification_to_sellers(
     admin_id: str,
     title: str,
@@ -446,40 +511,46 @@ async def send_notification_to_sellers(
     audience: NotificationAudienceInput = "all",
     *,
     seller_id: str | None = None,
+    audiences: list[str] | None = None,
+    seller_ids: list[str] | None = None,
 ) -> AdminNotificationSendResult:
-    registrations = get_registrations_collection()
-    target_store_name: str | None = None
+    groups = [item for item in (audiences or []) if item and item != "single"]
+    if not groups and audience and audience != "single":
+        groups = [audience]
+    if "all" in groups:
+        groups = ["all"]
 
-    if seller_id:
-        seller = await _resolve_single_seller(seller_id)
-        sellers = [seller]
-        audience = "single"
-        target_store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
-    else:
-        if audience == "single":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indica el negocio destinatario.",
-            )
-        sellers = await registrations.find(
-            {"status": "approved"},
-            {
-                "_id": 1,
-                "subscription_ends_at": 1,
-                "status": 1,
-                "plan_tier": 1,
-                "billing_period": 1,
-                "store_name": 1,
-                "phone": 1,
-            },
-        ).to_list(length=None)
-        sellers = [seller for seller in sellers if is_subscription_active(seller)]
-        sellers = _filter_sellers_by_audience(sellers, audience)
+    ids: list[str] = []
+    seen_ids: set[str] = set()
+    for raw in [*(seller_ids or []), seller_id or ""]:
+        key = str(raw or "").strip()
+        if not key or key in seen_ids:
+            continue
+        seen_ids.add(key)
+        ids.append(key)
+
+    if not groups and not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Elige al menos un grupo o un negocio.",
+        )
+    if audience == "single" and not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indica el negocio destinatario.",
+        )
+
+    sellers = await _resolve_notification_sellers(groups=groups, seller_ids=ids)
+    audience = _stored_audience(groups, ids)
+    stored_audiences = groups if groups else ["single"]
+    target_store_name: str | None = None
+    if audience == "single" and len(sellers) == 1:
+        target_store_name = (sellers[0].get("store_name") or "Tienda").strip() or "Tienda"
 
     if not sellers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_audience_empty_message(audience),
+            detail=_audience_empty_message(groups[0] if len(groups) == 1 else "mixed"),
         )
 
     try:
@@ -517,6 +588,7 @@ async def send_notification_to_sellers(
             "title": title_clean,
             "content": content_clean,
             "audience": audience,
+            "audiences": stored_audiences,
             "target_store_name": target_store_name,
             "read_at": None,
             "created_at": now,
@@ -625,6 +697,7 @@ async def send_notification_to_sellers(
         title=title_clean,
         content=content_clean,
         audience=audience,
+        audiences=stored_audiences,
         recipient_count=len(documents),
         created_at=now,
         target_store_name=target_store_name,
@@ -646,6 +719,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "title": {"$first": "$title"},
                 "content": {"$first": "$content"},
                 "audience": {"$first": "$audience"},
+                "audiences": {"$first": "$audiences"},
                 "target_store_name": {"$first": "$target_store_name"},
                 "created_at": {"$first": "$created_at"},
                 "recipient_count": {"$sum": 1},
@@ -661,6 +735,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             title=row["title"],
             content=row["content"],
             audience=row.get("audience") or "all",
+            audiences=list(row.get("audiences") or []),
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
             target_store_name=row.get("target_store_name"),
