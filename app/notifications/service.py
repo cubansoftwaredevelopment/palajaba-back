@@ -416,6 +416,35 @@ def _filter_sellers_by_audiences(
     ]
 
 
+def _explicit_store_names(sellers: list[dict[str, Any]], seller_ids: list[str]) -> list[str]:
+    by_id = {str(seller.get("_id") or ""): seller for seller in sellers}
+    names: list[str] = []
+    seen: set[str] = set()
+    for seller_id in seller_ids:
+        seller = by_id.get(str(seller_id).strip())
+        if not seller:
+            continue
+        name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(name)
+    return names
+
+
+def _broadcast_store_names(row: dict[str, Any]) -> list[str]:
+    names = [
+        str(name).strip()
+        for name in (row.get("target_store_names") or [])
+        if str(name).strip()
+    ]
+    if names:
+        return names
+    single = str(row.get("target_store_name") or "").strip()
+    return [single] if single else []
+
+
 def _stored_audience(groups: list[str], seller_ids: list[str]) -> str:
     if "all" in groups:
         return "all"
@@ -538,9 +567,8 @@ async def send_notification_to_sellers(
     sellers = await _resolve_notification_sellers(groups=groups, seller_ids=ids)
     audience = _stored_audience(groups, ids)
     stored_audiences = groups if groups else ["single"]
-    target_store_name: str | None = None
-    if audience == "single" and len(sellers) == 1:
-        target_store_name = (sellers[0].get("store_name") or "Tienda").strip() or "Tienda"
+    target_store_names = _explicit_store_names(sellers, ids)
+    target_store_name = target_store_names[0] if target_store_names else None
 
     if not sellers:
         raise HTTPException(
@@ -571,6 +599,7 @@ async def send_notification_to_sellers(
             "audience": audience,
             "audiences": stored_audiences,
             "target_store_name": target_store_name,
+            "target_store_names": target_store_names,
             "sms_send_count": 0,
             "read_at": None,
             "created_at": now,
@@ -604,6 +633,7 @@ async def send_notification_to_sellers(
         recipient_count=len(documents),
         created_at=now,
         target_store_name=target_store_name,
+        target_store_names=target_store_names,
         sms_sent=False,
         sms_send_count=0,
         events=events,
@@ -740,7 +770,8 @@ async def send_broadcast_sms(batch_id: str) -> AdminNotificationSendResult:
     content_clean = str(first.get("content") or "").strip()
     audience = first.get("audience") or "all"
     stored_audiences = list(first.get("audiences") or [])
-    target_store_name = first.get("target_store_name")
+    target_store_names = _broadcast_store_names(first)
+    target_store_name = target_store_names[0] if target_store_names else None
     created_at = first.get("created_at") or to_utc_naive(utc_now())
     sms_send_count = int(first.get("sms_send_count") or 0)
 
@@ -788,6 +819,7 @@ async def send_broadcast_sms(batch_id: str) -> AdminNotificationSendResult:
         recipient_count=len(documents),
         created_at=created_at,
         target_store_name=target_store_name,
+        target_store_names=target_store_names,
         sms_sent=sms_sent,
         sms_error=sms_error,
         sms_send_count=sms_send_count,
@@ -809,6 +841,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "audience": {"$first": "$audience"},
                 "audiences": {"$first": "$audiences"},
                 "target_store_name": {"$first": "$target_store_name"},
+                "target_store_names": {"$first": "$target_store_names"},
                 "created_at": {"$first": "$created_at"},
                 "sms_send_count": {"$max": "$sms_send_count"},
                 "recipient_count": {"$sum": 1},
@@ -828,6 +861,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
             target_store_name=row.get("target_store_name"),
+            target_store_names=_broadcast_store_names(row),
             sms_send_count=int(row.get("sms_send_count") or 0),
         )
         for row in rows

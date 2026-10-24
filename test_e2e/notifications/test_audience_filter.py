@@ -5,7 +5,11 @@ from __future__ import annotations
 import unittest
 
 from app.notifications.schemas.admin import AdminNotificationCreate
-from app.notifications.service import _filter_sellers_by_audiences, _stored_audience
+from app.notifications.service import (
+    _explicit_store_names,
+    _filter_sellers_by_audiences,
+    _stored_audience,
+)
 from app.subscriptions.service import PREMIUM_PLAN_TIER, PRO_PLAN_TIER, STANDARD_PLAN_TIER
 
 
@@ -46,6 +50,17 @@ class AudienceFilterTests(unittest.TestCase):
         )
         self.assertEqual(payload.audience, "single")
         self.assertIsNone(payload.seller_id)
+
+    def test_explicit_store_names_keeps_selected_order(self) -> None:
+        sellers = [
+            {"_id": "aaa", "store_name": "Los Reyes"},
+            {"_id": "bbb", "store_name": "Sasha"},
+            {"_id": "ccc", "store_name": "Otra"},
+        ]
+        self.assertEqual(
+            _explicit_store_names(sellers, ["bbb", "aaa"]),
+            ["Sasha", "Los Reyes"],
+        )
 
     def test_stored_audience_for_selection(self) -> None:
         self.assertEqual(_stored_audience(["premium_monthly", "pro_yearly"], []), "mixed")

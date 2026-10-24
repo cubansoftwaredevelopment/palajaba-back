@@ -75,6 +75,7 @@ class AdminNotificationSendResult(BaseModel):
     recipient_count: int
     created_at: UtcDateTime
     target_store_name: str | None = None
+    target_store_names: list[str] = Field(default_factory=list)
     sms_sent: bool = False
     sms_send_count: int = 0
     sms_error: str | None = None
@@ -90,4 +91,5 @@ class AdminNotificationBroadcastPublic(BaseModel):
     recipient_count: int
     created_at: UtcDateTime
     target_store_name: str | None = None
+    target_store_names: list[str] = Field(default_factory=list)
     sms_send_count: int = 0
