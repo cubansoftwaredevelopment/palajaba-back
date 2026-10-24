@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 
+from app.notifications.schemas.admin import AdminNotificationCreate
 from app.notifications.service import _filter_sellers_by_audiences, _stored_audience
 from app.subscriptions.service import PREMIUM_PLAN_TIER, PRO_PLAN_TIER, STANDARD_PLAN_TIER
 
@@ -31,6 +32,20 @@ class AudienceFilterTests(unittest.TestCase):
     def test_all_keeps_every_active_seller(self) -> None:
         matched = _filter_sellers_by_audiences(self.sellers, ["all"])
         self.assertEqual(len(matched), 4)
+
+    def test_create_accepts_several_specific_stores(self) -> None:
+        payload = AdminNotificationCreate(
+            title="Aviso",
+            content="Texto del aviso",
+            audience="single",
+            seller_ids=["aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb"],
+        )
+        self.assertEqual(
+            payload.seller_ids,
+            ["aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb"],
+        )
+        self.assertEqual(payload.audience, "single")
+        self.assertIsNone(payload.seller_id)
 
     def test_stored_audience_for_selection(self) -> None:
         self.assertEqual(_stored_audience(["premium_monthly", "pro_yearly"], []), "mixed")

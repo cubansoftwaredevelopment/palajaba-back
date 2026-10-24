@@ -48,8 +48,6 @@ class AdminNotificationCreate(BaseModel):
 
         if not groups and not ids:
             raise ValueError("Elige al menos un grupo o un negocio.")
-        if self.audience == "single" and not ids:
-            raise ValueError("Indica el negocio destinatario (seller_id).")
 
         self.audiences = groups
         self.seller_ids = ids

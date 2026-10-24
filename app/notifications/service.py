@@ -534,11 +534,6 @@ async def send_notification_to_sellers(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Elige al menos un grupo o un negocio.",
         )
-    if audience == "single" and not ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Indica el negocio destinatario.",
-        )
 
     sellers = await _resolve_notification_sellers(groups=groups, seller_ids=ids)
     audience = _stored_audience(groups, ids)
