@@ -380,24 +380,52 @@ AUDIENCE_EMPTY_MESSAGES: dict[str, str] = {
 }
 
 
+def _seller_matches_audience(seller: dict[str, Any], audience: str) -> bool:
+    if audience == "all":
+        return True
+    spec = AUDIENCE_SPECS.get(audience)
+    if spec is None:
+        return False
+    tier, billing = spec
+    return (
+        normalize_plan_tier(seller.get("plan_tier")) == tier
+        and normalize_billing_period(seller.get("billing_period")) == billing
+    )
+
+
 def _filter_sellers_by_audience(
     sellers: list[dict[str, Any]],
     audience: NotificationAudienceInput,
 ) -> list[dict[str, Any]]:
-    if audience == "all":
-        return sellers
+    return _filter_sellers_by_audiences(sellers, [audience])
 
-    spec = AUDIENCE_SPECS.get(audience)
-    if spec is None:
-        return sellers
 
-    tier, billing = spec
+def _filter_sellers_by_audiences(
+    sellers: list[dict[str, Any]],
+    audiences: list[str],
+) -> list[dict[str, Any]]:
+    groups = [item for item in audiences if item and item != "single"]
+    if "all" in groups:
+        return sellers
+    if not groups:
+        return []
     return [
         seller
         for seller in sellers
-        if normalize_plan_tier(seller.get("plan_tier")) == tier
-        and normalize_billing_period(seller.get("billing_period")) == billing
+        if any(_seller_matches_audience(seller, audience) for audience in groups)
     ]
+
+
+def _stored_audience(groups: list[str], seller_ids: list[str]) -> str:
+    if "all" in groups:
+        return "all"
+    if len(groups) == 1:
+        return groups[0]
+    if len(groups) > 1:
+        return "mixed"
+    if seller_ids:
+        return "single"
+    return "all"
 
 
 def _audience_empty_message(audience: NotificationAudienceInput) -> str:
@@ -439,6 +467,43 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
     return seller
 
 
+_SELLER_NOTIFY_PROJECTION = {
+    "_id": 1,
+    "subscription_ends_at": 1,
+    "status": 1,
+    "plan_tier": 1,
+    "billing_period": 1,
+    "store_name": 1,
+    "phone": 1,
+}
+
+
+async def _load_active_sellers() -> list[dict[str, Any]]:
+    sellers = await get_registrations_collection().find(
+        {"status": "approved"},
+        _SELLER_NOTIFY_PROJECTION,
+    ).to_list(length=None)
+    return [seller for seller in sellers if is_subscription_active(seller)]
+
+
+async def _resolve_notification_sellers(
+    *,
+    groups: list[str],
+    seller_ids: list[str],
+) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    if groups:
+        active = await _load_active_sellers()
+        for seller in _filter_sellers_by_audiences(active, groups):
+            by_id[str(seller["_id"])] = seller
+    for seller_id in seller_ids:
+        key = str(seller_id).strip()
+        if not key or key in by_id:
+            continue
+        by_id[key] = await _resolve_single_seller(key)
+    return list(by_id.values())
+
+
 async def send_notification_to_sellers(
     admin_id: str,
     title: str,
@@ -446,40 +511,46 @@ async def send_notification_to_sellers(
     audience: NotificationAudienceInput = "all",
     *,
     seller_id: str | None = None,
+    audiences: list[str] | None = None,
+    seller_ids: list[str] | None = None,
 ) -> AdminNotificationSendResult:
-    registrations = get_registrations_collection()
-    target_store_name: str | None = None
+    groups = [item for item in (audiences or []) if item and item != "single"]
+    if not groups and audience and audience != "single":
+        groups = [audience]
+    if "all" in groups:
+        groups = ["all"]
 
-    if seller_id:
-        seller = await _resolve_single_seller(seller_id)
-        sellers = [seller]
-        audience = "single"
-        target_store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
-    else:
-        if audience == "single":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Indica el negocio destinatario.",
-            )
-        sellers = await registrations.find(
-            {"status": "approved"},
-            {
-                "_id": 1,
-                "subscription_ends_at": 1,
-                "status": 1,
-                "plan_tier": 1,
-                "billing_period": 1,
-                "store_name": 1,
-                "phone": 1,
-            },
-        ).to_list(length=None)
-        sellers = [seller for seller in sellers if is_subscription_active(seller)]
-        sellers = _filter_sellers_by_audience(sellers, audience)
+    ids: list[str] = []
+    seen_ids: set[str] = set()
+    for raw in [*(seller_ids or []), seller_id or ""]:
+        key = str(raw or "").strip()
+        if not key or key in seen_ids:
+            continue
+        seen_ids.add(key)
+        ids.append(key)
+
+    if not groups and not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Elige al menos un grupo o un negocio.",
+        )
+    if audience == "single" and not ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indica el negocio destinatario.",
+        )
+
+    sellers = await _resolve_notification_sellers(groups=groups, seller_ids=ids)
+    audience = _stored_audience(groups, ids)
+    stored_audiences = groups if groups else ["single"]
+    target_store_name: str | None = None
+    if audience == "single" and len(sellers) == 1:
+        target_store_name = (sellers[0].get("store_name") or "Tienda").strip() or "Tienda"
 
     if not sellers:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_audience_empty_message(audience),
+            detail=_audience_empty_message(groups[0] if len(groups) == 1 else "mixed"),
         )
 
     try:
@@ -494,20 +565,6 @@ async def send_notification_to_sellers(
     batch_id = uuid.uuid4().hex
     title_clean = title.strip()
     content_clean = content.strip()
-    sms_targets: list[tuple[str, str]] = []
-    seen_phones: set[str] = set()
-    for seller in sellers:
-        digits = "".join(ch for ch in str(seller.get("phone") or "") if ch.isdigit())
-        if digits.startswith("53") and len(digits) == 10:
-            digits = digits[2:]
-        if len(digits) != 8:
-            continue
-        phone = phone_e164(digits)
-        if phone in seen_phones:
-            continue
-        seen_phones.add(phone)
-        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
-        sms_targets.append((phone, store_name))
 
     documents = [
         {
@@ -517,7 +574,9 @@ async def send_notification_to_sellers(
             "title": title_clean,
             "content": content_clean,
             "audience": audience,
+            "audiences": stored_audiences,
             "target_store_name": target_store_name,
+            "sms_send_count": 0,
             "read_at": None,
             "created_at": now,
             "created_by_admin_id": admin_object_id,
@@ -540,96 +599,203 @@ async def send_notification_to_sellers(
             ),
         )
     ]
-    sms_sent = False
-    sms_error: str | None = None
-    if not sms_targets:
-        sms_error = "No hay teléfonos para enviar el SMS del aviso."
-        events.append(AdminNotificationSendEvent(type="error", message=sms_error))
-    else:
-        sms_body = title_clean if not content_clean else f"{title_clean}\n{content_clean}"
-        phones = [phone for phone, _store in sms_targets]
-        campaign_failed = False
-        try:
-            await send_sms_campaign(
-                name=title_clean,
-                message=sms_body,
-                recipients=phones,
-            )
-            sms_sent = True
-            events.append(
-                AdminNotificationSendEvent(
-                    type="success",
-                    message=f"SMS de campaña enviado a {len(phones)} número{'s' if len(phones) != 1 else ''}.",
-                )
-            )
-        except HTTPException as exc:
-            campaign_failed = True
-            sms_error = _sms_error_message(exc.detail)
-            events.append(
-                AdminNotificationSendEvent(
-                    type="error",
-                    message=f"La campaña SMS falló: {sms_error}",
-                )
-            )
-        except Exception:
-            campaign_failed = True
-            sms_error = "No pudimos enviar el SMS del aviso."
-            events.append(AdminNotificationSendEvent(type="error", message=sms_error))
-
-        if campaign_failed:
-            sent_count = 0
-            fail_count = 0
-            last_fail: str | None = None
-            for index, (phone, store_name) in enumerate(sms_targets):
-                if index:
-                    await asyncio.sleep(0.7)
-                try:
-                    await send_custom_sms(phone_e164=phone, message=sms_body)
-                    sent_count += 1
-                    sms_sent = True
-                    events.append(
-                        AdminNotificationSendEvent(
-                            type="success",
-                            message=f"SMS enviado a {store_name} ({phone}).",
-                        )
-                    )
-                except HTTPException as exc:
-                    fail_count += 1
-                    last_fail = _sms_error_message(exc.detail)
-                    events.append(
-                        AdminNotificationSendEvent(
-                            type="error",
-                            message=f"SMS a {store_name} ({phone}): {last_fail}",
-                        )
-                    )
-                except Exception:
-                    fail_count += 1
-                    last_fail = "No pudimos enviar el SMS del aviso."
-                    events.append(
-                        AdminNotificationSendEvent(
-                            type="error",
-                            message=f"SMS a {store_name} ({phone}): {last_fail}",
-                        )
-                    )
-            if fail_count and not sent_count:
-                sms_error = last_fail or sms_error
-            elif fail_count:
-                sms_error = (
-                    f"SMS individuales: {sent_count} enviados, {fail_count} fallidos."
-                )
-            elif sent_count:
-                sms_error = None
 
     return AdminNotificationSendResult(
         batch_id=batch_id,
         title=title_clean,
         content=content_clean,
         audience=audience,
+        audiences=stored_audiences,
         recipient_count=len(documents),
         created_at=now,
         target_store_name=target_store_name,
+        sms_sent=False,
+        sms_send_count=0,
+        events=events,
+    )
+
+
+def _sms_targets_from_sellers(sellers: list[dict[str, Any]]) -> list[tuple[str, str]]:
+    targets: list[tuple[str, str]] = []
+    seen_phones: set[str] = set()
+    for seller in sellers:
+        phone = _seller_phone_e164(seller)
+        if not phone or phone in seen_phones:
+            continue
+        seen_phones.add(phone)
+        store_name = (seller.get("store_name") or "Tienda").strip() or "Tienda"
+        targets.append((phone, store_name))
+    return targets
+
+
+async def _send_aviso_sms(
+    *,
+    title: str,
+    content: str,
+    sms_targets: list[tuple[str, str]],
+) -> tuple[bool, str | None, list[AdminNotificationSendEvent]]:
+    events: list[AdminNotificationSendEvent] = []
+    if not sms_targets:
+        sms_error = "No hay teléfonos para enviar el SMS del aviso."
+        events.append(AdminNotificationSendEvent(type="error", message=sms_error))
+        return False, sms_error, events
+
+    sms_body = title if not content else f"{title}\n{content}"
+    phones = [phone for phone, _store in sms_targets]
+    sms_sent = False
+    sms_error: str | None = None
+    campaign_failed = False
+    try:
+        await send_sms_campaign(
+            name=title,
+            message=sms_body,
+            recipients=phones,
+        )
+        sms_sent = True
+        events.append(
+            AdminNotificationSendEvent(
+                type="success",
+                message=f"SMS de campaña enviado a {len(phones)} número{'s' if len(phones) != 1 else ''}.",
+            )
+        )
+        return sms_sent, None, events
+    except HTTPException as exc:
+        campaign_failed = True
+        sms_error = _sms_error_message(exc.detail)
+        events.append(
+            AdminNotificationSendEvent(
+                type="error",
+                message=f"La campaña SMS falló: {sms_error}",
+            )
+        )
+    except Exception:
+        campaign_failed = True
+        sms_error = "No pudimos enviar el SMS del aviso."
+        events.append(AdminNotificationSendEvent(type="error", message=sms_error))
+
+    if not campaign_failed:
+        return sms_sent, sms_error, events
+
+    sent_count = 0
+    fail_count = 0
+    last_fail: str | None = None
+    for index, (phone, store_name) in enumerate(sms_targets):
+        if index:
+            await asyncio.sleep(0.7)
+        try:
+            await send_custom_sms(phone_e164=phone, message=sms_body)
+            sent_count += 1
+            sms_sent = True
+            events.append(
+                AdminNotificationSendEvent(
+                    type="success",
+                    message=f"SMS enviado a {store_name} ({phone}).",
+                )
+            )
+        except HTTPException as exc:
+            fail_count += 1
+            last_fail = _sms_error_message(exc.detail)
+            events.append(
+                AdminNotificationSendEvent(
+                    type="error",
+                    message=f"SMS a {store_name} ({phone}): {last_fail}",
+                )
+            )
+        except Exception:
+            fail_count += 1
+            last_fail = "No pudimos enviar el SMS del aviso."
+            events.append(
+                AdminNotificationSendEvent(
+                    type="error",
+                    message=f"SMS a {store_name} ({phone}): {last_fail}",
+                )
+            )
+    if fail_count and not sent_count:
+        sms_error = last_fail or sms_error
+    elif fail_count:
+        sms_error = f"SMS individuales: {sent_count} enviados, {fail_count} fallidos."
+    elif sent_count:
+        sms_error = None
+    return sms_sent, sms_error, events
+
+
+async def send_broadcast_sms(batch_id: str) -> AdminNotificationSendResult:
+    key = (batch_id or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Aviso no válido.",
+        )
+
+    collection = get_notifications_collection()
+    documents = await collection.find(
+        {
+            "batch_id": key,
+            "created_by_admin_id": {"$type": "objectId"},
+        }
+    ).to_list(length=None)
+    if not documents:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Aviso no encontrado.",
+        )
+
+    first = documents[0]
+    title_clean = str(first.get("title") or "").strip()
+    content_clean = str(first.get("content") or "").strip()
+    audience = first.get("audience") or "all"
+    stored_audiences = list(first.get("audiences") or [])
+    target_store_name = first.get("target_store_name")
+    created_at = first.get("created_at") or to_utc_naive(utc_now())
+    sms_send_count = int(first.get("sms_send_count") or 0)
+
+    seller_oids: list[ObjectId] = []
+    seen: set[str] = set()
+    for document in documents:
+        seller_id = document.get("seller_id")
+        key_id = str(seller_id or "")
+        if not key_id or key_id in seen:
+            continue
+        seen.add(key_id)
+        if isinstance(seller_id, ObjectId):
+            seller_oids.append(seller_id)
+        else:
+            try:
+                seller_oids.append(ObjectId(key_id))
+            except Exception:
+                continue
+
+    sellers = []
+    if seller_oids:
+        sellers = await get_registrations_collection().find(
+            {"_id": {"$in": seller_oids}},
+            {"_id": 1, "store_name": 1, "phone": 1},
+        ).to_list(length=None)
+
+    sms_sent, sms_error, events = await _send_aviso_sms(
+        title=title_clean,
+        content=content_clean,
+        sms_targets=_sms_targets_from_sellers(sellers),
+    )
+    if sms_sent:
+        sms_send_count += 1
+        await collection.update_many(
+            {"batch_id": key, "created_by_admin_id": {"$type": "objectId"}},
+            {"$set": {"sms_send_count": sms_send_count}},
+        )
+
+    return AdminNotificationSendResult(
+        batch_id=key,
+        title=title_clean,
+        content=content_clean,
+        audience=audience,
+        audiences=stored_audiences,
+        recipient_count=len(documents),
+        created_at=created_at,
+        target_store_name=target_store_name,
         sms_sent=sms_sent,
         sms_error=sms_error,
+        sms_send_count=sms_send_count,
         events=events,
     )
 
@@ -646,8 +812,10 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "title": {"$first": "$title"},
                 "content": {"$first": "$content"},
                 "audience": {"$first": "$audience"},
+                "audiences": {"$first": "$audiences"},
                 "target_store_name": {"$first": "$target_store_name"},
                 "created_at": {"$first": "$created_at"},
+                "sms_send_count": {"$max": "$sms_send_count"},
                 "recipient_count": {"$sum": 1},
             }
         },
@@ -661,9 +829,11 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             title=row["title"],
             content=row["content"],
             audience=row.get("audience") or "all",
+            audiences=list(row.get("audiences") or []),
             recipient_count=row["recipient_count"],
             created_at=row["created_at"],
             target_store_name=row.get("target_store_name"),
+            sms_send_count=int(row.get("sms_send_count") or 0),
         )
         for row in rows
     ]
