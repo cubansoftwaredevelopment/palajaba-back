@@ -21,7 +21,7 @@ from app.schemas.seller_stats import (
     SellerTopProducts,
 )
 from app.services.order_totals import compute_order_products_revenue
-from app.services.plans import seller_has_statistics
+from app.services.plans import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
 from app.services.product_popularity import refresh_popularity_window
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import (
@@ -687,7 +687,7 @@ async def get_seller_stats_summary(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
+            detail=STATISTICS_PLAN_REQUIRED_MESSAGE,
         )
 
     target_year, target_month = year, month
@@ -741,7 +741,7 @@ async def get_seller_revenue_chart(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
+            detail=STATISTICS_PLAN_REQUIRED_MESSAGE,
         )
 
     period, ranges, range_start, range_end, chart_year, chart_month = _resolve_chart_ranges(
@@ -797,7 +797,7 @@ async def get_seller_products_sold_chart(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
+            detail=STATISTICS_PLAN_REQUIRED_MESSAGE,
         )
 
     period, ranges, range_start, range_end, chart_year, chart_month = _resolve_chart_ranges(
@@ -870,7 +870,7 @@ async def get_seller_top_products(
     if not seller_has_statistics(seller_doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
+            detail=STATISTICS_PLAN_REQUIRED_MESSAGE,
         )
 
     products_col = get_catalog_products_collection()

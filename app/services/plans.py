@@ -33,10 +33,10 @@ _PLAN_RANK: dict[PlanTier, int] = {
 }
 
 STATISTICS_PLAN_REQUIRED_MESSAGE = (
-    "Las estadísticas están disponibles en los planes Pro y Premium."
+    "Las estadísticas están disponibles en la prueba gratuita y en los planes Pro y Premium."
 )
 STORE_BANNERS_PLAN_REQUIRED_MESSAGE = (
-    "Los banners de tienda están disponibles en los planes Pro y Premium."
+    "Los banners de tienda están disponibles en la prueba gratuita y en los planes Pro y Premium."
 )
 CATALOG_THEME_PLAN_REQUIRED_MESSAGE = (
     "La personalización del catálogo está disponible en el plan Premium."
@@ -53,6 +53,17 @@ def normalize_plan_tier(value: str | None) -> PlanTier:
 
 def effective_plan_tier(doc: dict) -> PlanTier:
     return normalize_plan_tier(doc.get("plan_tier"))
+
+
+def feature_plan_tier(doc: dict | None) -> PlanTier:
+    """Plan cuyas prestaciones aplican: la prueba gratuita equivale a Pro."""
+    payload = doc or {}
+    tier = effective_plan_tier(payload)
+    if tier in (PRO_PLAN_TIER, PREMIUM_PLAN_TIER):
+        return tier
+    if payload.get("is_trial"):
+        return PRO_PLAN_TIER
+    return STANDARD_PLAN_TIER
 
 
 def plan_rank(plan_tier: str | None) -> int:
@@ -76,6 +87,10 @@ def max_gestores_for_plan(plan_tier: str | None) -> int | None:
     if tier == PRO_PLAN_TIER:
         return PRO_GESTOR_LIMIT
     return STANDARD_GESTOR_LIMIT
+
+
+def max_gestores_for_seller(doc: dict | None) -> int | None:
+    return max_gestores_for_plan(feature_plan_tier(doc))
 
 
 def seller_can_add_gestor(plan_tier: str | None, current_count: int) -> bool:
@@ -109,7 +124,7 @@ async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
 
 
 def seller_has_statistics(doc: dict) -> bool:
-    return plan_rank(effective_plan_tier(doc)) >= 1
+    return plan_rank(feature_plan_tier(doc)) >= 1
 
 
 def seller_has_recommendation_boost(doc: dict) -> bool:
@@ -117,15 +132,15 @@ def seller_has_recommendation_boost(doc: dict) -> bool:
 
 
 def seller_has_store_banners(doc: dict) -> bool:
-    return plan_rank(effective_plan_tier(doc)) >= 1
+    return plan_rank(feature_plan_tier(doc)) >= 1
 
 
 def seller_has_full_store_customization(doc: dict) -> bool:
-    return effective_plan_tier(doc) == PREMIUM_PLAN_TIER
+    return feature_plan_tier(doc) == PREMIUM_PLAN_TIER
 
 
 def recommendation_multiplier(doc: dict) -> int:
-    tier = effective_plan_tier(doc)
+    tier = feature_plan_tier(doc)
     if tier == PREMIUM_PLAN_TIER:
         return PREMIUM_RECOMMENDATION_MULTIPLIER
     if tier == PRO_PLAN_TIER:

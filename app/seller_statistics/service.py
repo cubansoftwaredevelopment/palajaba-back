@@ -31,7 +31,7 @@ from app.seller_statistics.schemas import (
     ZoneView,
 )
 from app.services.cuba_locations import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
-from app.services.plans import seller_has_statistics
+from app.services.plans import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
 from app.services.seller_stats import Granularity
 from app.statistics_admin.utils import parse_inclusive_dates, ranges_between
 from app.utils.datetime import to_utc_naive, utc_now
@@ -53,7 +53,7 @@ async def _seller_doc(seller_id: str) -> dict[str, Any]:
     if not seller_has_statistics(doc):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Las estadísticas están disponibles en los planes Pro y Premium.",
+            detail=STATISTICS_PLAN_REQUIRED_MESSAGE,
         )
     return doc
 

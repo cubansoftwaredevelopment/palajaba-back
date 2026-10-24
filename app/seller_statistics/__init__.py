@@ -1,1 +1,1 @@
-"""Estadísticas de la tienda del vendedor (planes Pro y Premium)."""
+"""Estadísticas de la tienda del vendedor (prueba gratuita, Pro y Premium)."""
