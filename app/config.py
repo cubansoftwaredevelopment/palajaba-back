@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     otp_api_base: str = "https://otp.noxcreation.dev/api"
     otp_api_key: str = ""
     otp_token_secret: str = ""
+    qvapay_app_id: str = ""
+    qvapay_app_secret: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

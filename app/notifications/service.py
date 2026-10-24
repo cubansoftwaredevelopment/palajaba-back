@@ -9,7 +9,7 @@ from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
-from app.auth.utils import send_custom_sms, send_sms_campaign
+from app.notifications.otp_manager import send_custom_sms, send_sms_campaign
 from app.auth.registrations import phone_e164
 from app.notifications.schemas import (
     AdminNotificationBroadcastPublic,

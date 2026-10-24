@@ -99,9 +99,11 @@ from fastapi import HTTPException, status
 
 from app.database import get_registration_otp_challenges_collection
 from app.auth.utils import (
-    OTP_EXPIRES_IN_SECONDS,
     create_seller_token,
     hash_password,
+)
+from app.notifications.otp_manager import (
+    OTP_EXPIRES_IN_SECONDS,
     send_otp,
     verify_otp,
 )
@@ -135,7 +137,7 @@ async def ensure_registration_otp_indexes() -> None:
     await collection.create_index("expires_at", expireAfterSeconds=0)
     await collection.create_index("email")
     await collection.create_index("phone")
-    from app.auth.utils import ensure_sms_cooldown_indexes
+    from app.notifications.otp_manager import ensure_sms_cooldown_indexes
 
     await ensure_sms_cooldown_indexes()
 
@@ -289,7 +291,8 @@ from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.database import get_password_reset_challenges_collection, get_registrations_collection
-from app.auth.utils import OTP_EXPIRES_IN_SECONDS, hash_password, send_otp, verify_otp
+from app.auth.utils import hash_password
+from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
 from app.auth.schemas import (
     PasswordResetCompleteResponse,
     PasswordResetConfirmResponse,

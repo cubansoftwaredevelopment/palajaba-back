@@ -4,6 +4,38 @@ REJECTION_REASON_UNCONFIRMED_PAYMENT = (
     "No pudimos confirmar el pago de la transferencia."
 )
 
+DEFAULT_ADVERTISING_PRICES = {
+    "ads-10": 15.0,
+    "ads-20": 20.0,
+    "ads-30": 25.0,
+}
+
+ADVERTISING_PLAN_CATALOG = (
+    {
+        "id": "ads-10",
+        "name": "10 días",
+        "eyebrow": "Plan 1",
+        "recommended": False,
+        "features": ["Banner 10 días", "1 reel", "1 post", "2 historias"],
+    },
+    {
+        "id": "ads-20",
+        "name": "20 días",
+        "eyebrow": "Plan 2",
+        "recommended": True,
+        "features": ["Banner 20 días", "2 reels", "1 post", "3 historias"],
+    },
+    {
+        "id": "ads-30",
+        "name": "30 días",
+        "eyebrow": "Plan 3",
+        "recommended": False,
+        "features": ["Banner 30 días", "2 reels", "2 posts", "4 historias"],
+    },
+)
+
+QVAPAY_EXCHANGE_FEE_RATE = 0.005
+
 DEFAULT_PLAN_PRICES = {
     "standard": {
         "monthly": {"amount": 2, "currency": "USD"},

@@ -6,7 +6,12 @@ from app.schemas.discount_code import (
     ValidateDiscountCodeRequest,
 )
 from app.schemas.exchange_rates import ExchangeRatesPublic
-from app.schemas.platform_settings import PlatformPlanPricesPublic, PlatformRenewalContactPublic
+from app.advertising.service import list_public_advertising_plans
+from app.schemas.platform_settings import (
+    AdvertisingPlansPublic,
+    PlatformPlanPricesPublic,
+    PlatformRenewalContactPublic,
+)
 from app.services import discount_codes as discount_codes_service
 from app.services import exchange_rates as exchange_rates_service
 from app.services import platform_settings as platform_settings_service
@@ -31,6 +36,12 @@ async def get_renewal_contact():
 async def get_plan_prices():
     prices = await platform_settings_service.get_plan_prices()
     return PlatformPlanPricesPublic(plan_prices=prices)
+
+
+@router.get("/advertising-plans", response_model=AdvertisingPlansPublic)
+async def get_advertising_plans():
+    plans = await list_public_advertising_plans()
+    return AdvertisingPlansPublic(plans=plans)
 
 
 @router.get("/discount-codes/availability", response_model=DiscountCodesAvailabilityPublic)

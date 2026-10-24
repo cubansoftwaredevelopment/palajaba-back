@@ -7,7 +7,7 @@ from app.database import (
     get_registrations_collection,
     get_seller_contact_otp_challenges_collection,
 )
-from app.auth.utils import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
+from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
 from app.schemas.seller_profile import (
     SellerContactOtpStartResponse,
     SellerEmailUpdate,

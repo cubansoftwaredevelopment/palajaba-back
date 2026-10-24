@@ -8,7 +8,8 @@ from unittest.mock import patch
 from bson import ObjectId
 from fastapi import HTTPException, status
 
-from app.auth.utils import OtpSendResult, hash_password
+from app.auth.utils import hash_password
+from app.notifications.otp_manager import OtpSendResult
 from app.database import (
     get_password_reset_challenges_collection,
     get_registration_otp_challenges_collection,
