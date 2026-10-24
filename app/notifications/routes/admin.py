@@ -30,3 +30,8 @@ async def send_notification(
         audiences=payload.audiences,
         seller_ids=payload.seller_ids,
     )
+
+
+@router.post("/notifications/{batch_id}/sms", response_model=AdminNotificationSendResult)
+async def send_notification_sms(batch_id: str, _: dict = Depends(require_admin)):
+    return await service.send_broadcast_sms(batch_id)

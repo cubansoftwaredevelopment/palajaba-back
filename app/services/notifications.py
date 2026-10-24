@@ -12,6 +12,7 @@ from app.notifications.service import (
     mark_notification_read,
     mark_system_notifications_read,
     notify_seller_new_order,
+    send_broadcast_sms,
     send_notification_to_sellers,
 )
 
@@ -29,5 +30,6 @@ __all__ = [
     "mark_notification_read",
     "mark_system_notifications_read",
     "notify_seller_new_order",
+    "send_broadcast_sms",
     "send_notification_to_sellers",
 ]
