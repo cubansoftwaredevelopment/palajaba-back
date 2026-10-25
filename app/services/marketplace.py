@@ -37,6 +37,7 @@ from app.schemas.marketplace import (
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
+from app.products.sales_areas import product_covers_municipality, sales_area_match_clause
 from app.products.service import public_product_images
 from app.services.seller_profile import store_banners_from_document
 from app.services.admin_registration_insights import aggregate_product_counts_by_seller
@@ -307,6 +308,8 @@ def _product_to_public(
     pickup_municipality_name = None
     pickup_notice = None
     if buyer_province_id and buyer_municipality_id:
+        if not product_covers_municipality(product, buyer_province_id, buyer_municipality_id):
+            return None
         pickup_required, pickup_municipality_name = _product_pickup_info(
             product,
             seller,
@@ -362,7 +365,6 @@ async def _get_visible_sellers(
                 "business_area.municipality_id": municipality_id,
             },
             {
-                "offers_delivery": True,
                 "delivery_areas": {
                     "$elemMatch": {
                         "province_id": province_id,
@@ -548,11 +550,14 @@ def _currency_acceptance_clause(currency: str | list[str] | None) -> dict[str, A
     }
 
 
-def _and_currency(query: dict[str, Any], currency: str | None) -> dict[str, Any]:
-    clause = _currency_acceptance_clause(currency)
+def _and_match(query: dict[str, Any], clause: dict[str, Any] | None) -> dict[str, Any]:
     if not clause or query.get("_id") == {"$exists": False}:
         return query
     return {"$and": [query, clause]}
+
+
+def _and_currency(query: dict[str, Any], currency: str | None) -> dict[str, Any]:
+    return _and_match(query, _currency_acceptance_clause(currency))
 
 
 async def _seller_acceptance_counts(
@@ -593,17 +598,14 @@ def _marketplace_product_query(
     *,
     pickup_seller_ids: list[str] | None = None,
     extra: dict[str, Any] | None = None,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
 ) -> dict[str, Any]:
     visibility: list[dict[str, Any]] = []
     if local_seller_ids:
         visibility.append({"seller_id": {"$in": local_seller_ids}})
     if delivery_seller_ids:
-        visibility.append(
-            {
-                "seller_id": {"$in": delivery_seller_ids},
-                "offers_delivery": True,
-            }
-        )
+        visibility.append({"seller_id": {"$in": delivery_seller_ids}})
     if pickup_seller_ids:
         visibility.append({"seller_id": {"$in": pickup_seller_ids}})
     if not visibility:
@@ -616,6 +618,8 @@ def _marketplace_product_query(
     }
     if extra:
         query.update(extra)
+    if province_id and municipality_id:
+        query = _and_match(query, sales_area_match_clause(province_id, municipality_id))
     return query
 
 
@@ -629,10 +633,12 @@ def _seller_store_product_query(
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Catálogo público de una tienda: incluye agotados; el marketplace usa otra query."""
-    _ = seller, province_id, municipality_id
+    _ = seller
     query: dict[str, Any] = {"seller_id": seller_id}
     if extra:
         query.update(extra)
+    if province_id and municipality_id:
+        query = _and_match(query, sales_area_match_clause(province_id, municipality_id))
     return _and_currency(query, currency)
 
 
@@ -713,6 +719,8 @@ def _build_marketplace_products_query(
     global_category_id: str | None = None,
     search_text: str | None = None,
     currency: str | None = None,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
 ) -> dict[str, Any]:
     extra: dict[str, Any] = {}
     if global_category_id:
@@ -725,6 +733,8 @@ def _build_marketplace_products_query(
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids,
         extra=extra or None,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     if query.get("_id"):
         return query
@@ -749,12 +759,16 @@ async def _aggregate_category_stats(
     *,
     pickup_seller_ids: list[str] | None = None,
     currency: str | None = None,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
 ) -> dict[str, dict[str, int]]:
     match_query = _and_currency(
         _marketplace_product_query(
             local_seller_ids,
             delivery_seller_ids,
             pickup_seller_ids=pickup_seller_ids,
+            province_id=province_id,
+            municipality_id=municipality_id,
         ),
         currency,
     )
@@ -802,6 +816,8 @@ async def _list_category_product_docs(
     currency: str | None = None,
     limit: int,
     offset: int,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
     query = _build_marketplace_products_query(
@@ -810,6 +826,8 @@ async def _list_category_product_docs(
         pickup_seller_ids=pickup_seller_ids,
         global_category_id=global_category_id,
         currency=currency,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     if query.get("_id"):
         return []
@@ -872,6 +890,8 @@ async def list_availability_hints(
             local_ids,
             delivery_ids,
             pickup_seller_ids=pickup_ids or None,
+            province_id=province_id,
+            municipality_id=municipality_id,
         )
         if query.get("_id") == {"$exists": False}:
             continue
@@ -959,6 +979,8 @@ async def list_home_feed(
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids or None,
         currency=currency,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     category_ids = [
         category_id
@@ -987,6 +1009,8 @@ async def list_home_feed(
             currency=currency,
             limit=page_size,
             offset=0,
+            province_id=province_id,
+            municipality_id=municipality_id,
         )
         products = [
             item
@@ -1069,6 +1093,8 @@ async def list_category_products(
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids or None,
         currency=currency,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     total_in_category = stats_by_category.get(normalized_category_id, {}).get("count", 0)
 
@@ -1080,6 +1106,8 @@ async def list_category_products(
         currency=currency,
         limit=page_size,
         offset=safe_offset,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     products = [
         item
@@ -1123,12 +1151,16 @@ def _zone_visible_product_query(
     *,
     pickup_seller_ids: list[str] | None = None,
     extra: dict[str, Any] | None = None,
+    province_id: str | None = None,
+    municipality_id: str | None = None,
 ) -> dict[str, Any]:
     query = _marketplace_product_query(
         local_seller_ids,
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids,
         extra=extra,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     if query.get("_id") == {"$exists": False}:
         return query
@@ -1169,6 +1201,8 @@ async def _load_zone_product(
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids or None,
         extra={"_id": _product_object_id(product_id)},
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
     if query.get("_id") == {"$exists": False}:
         raise ValueError("Producto no encontrado.")
@@ -1406,6 +1440,8 @@ async def search_products(
         global_category_id=normalized_category_id,
         search_text=normalized_query,
         currency=currency,
+        province_id=province_id,
+        municipality_id=municipality_id,
     )
 
     products_col = get_catalog_products_collection()
@@ -2219,6 +2255,7 @@ JABA_REMOVAL_MESSAGES: dict[str, str] = {
     "view_only": "Es solo para consulta y no admite compra directa.",
     "store_unavailable": "La tienda ya no está disponible o no atiende en tu zona.",
     "no_delivery": "No tiene entrega a domicilio en tu municipio.",
+    "out_of_zone": "Este producto no se vende en tu municipio.",
 }
 
 
@@ -2252,16 +2289,8 @@ def _jaba_product_eligible(
         return "unavailable"
 
     if province_id and municipality_id and visible_seller_ids is not None:
-        is_local = _seller_is_local_to_municipality(seller, province_id, municipality_id)
-        delivers = product.get("offers_delivery") and _seller_delivers_to_municipality(
-            seller,
-            province_id,
-            municipality_id,
-        )
-        is_pickup = pickup_seller_ids is not None and seller_id in pickup_seller_ids
-
-        if not is_local and not delivers and not is_pickup:
-            return "no_delivery"
+        if not product_covers_municipality(product, province_id, municipality_id):
+            return "out_of_zone"
 
     return None
 

@@ -140,6 +140,7 @@ async def create_my_catalog_product(
     photos: list[UploadFile] | None = File(None),
     frontal_index: int = Form(0),
     discount_percent: str | None = Form(None),
+    sales_areas: str | None = Form(None),
 ):
     return await products_service.create_catalog_product(
         seller_payload["seller_id"],
@@ -157,6 +158,7 @@ async def create_my_catalog_product(
         photos=photos,
         frontal_index=frontal_index,
         discount_percent=discount_percent,
+        sales_areas_raw=sales_areas,
     )
 
 
@@ -180,6 +182,7 @@ async def update_my_catalog_product(
     frontal_image_id: str | None = Form(None),
     frontal_new_index: int | None = Form(None),
     discount_percent: str | None = Form(None),
+    sales_areas: str | None = Form(None),
 ):
     return await products_service.update_catalog_product(
         seller_payload["seller_id"],
@@ -200,6 +203,7 @@ async def update_my_catalog_product(
         frontal_image_id=frontal_image_id,
         frontal_new_index=frontal_new_index,
         discount_percent=discount_percent,
+        sales_areas_raw=sales_areas,
     )
 
 

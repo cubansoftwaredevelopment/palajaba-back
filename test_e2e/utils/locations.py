@@ -1,2 +1,3 @@
 PROVINCE_ID = "la-habana"
 SELLER_MUNICIPALITY_ID = "playa"
+EXTRA_MUNICIPALITY_ID = "marianao"

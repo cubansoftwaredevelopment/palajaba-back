@@ -92,6 +92,7 @@ class CatalogProductPublic(BaseModel):
     offers_delivery: bool
     view_only: bool = False
     is_available: bool = True
+    sales_areas: list[dict[str, str]] = Field(default_factory=list)
     popularity: int = 0
     sort_order: int = 0
     stock_quantity: int | None = None

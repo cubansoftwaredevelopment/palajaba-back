@@ -33,6 +33,7 @@ from app.products.schemas import (
     CatalogSummaryPublic,
     CurrencyPublic,
 )
+from app.products.sales_areas import parse_sales_areas, seller_service_areas
 from app.products.utils import (
     DEFAULT_PRODUCT_SORT_MODE,
     normalize_product_sort_mode,
@@ -179,6 +180,7 @@ def document_to_product(
         discount_percent=public_discount_percent(doc, seller_doc),
         accepted_currencies=list(doc.get("accepted_currencies") or []),
         offers_delivery=bool(doc.get("offers_delivery")),
+        sales_areas=list(doc.get("sales_areas") or []),
         view_only=bool(doc.get("view_only")),
         is_available=bool(doc.get("is_available", True)),
         popularity=int(doc.get("popularity") or 0),
@@ -835,6 +837,7 @@ async def create_catalog_product(
     photos: list[UploadFile] | None = None,
     frontal_index: int = 0,
     discount_percent: object = None,
+    sales_areas_raw: str | None = None,
 ) -> CatalogProductPublic:
     seller_doc = await _seller_doc(seller_id)
     normalized_discount = _discount_percent_for_write(discount_percent, seller_doc)
@@ -919,6 +922,11 @@ async def create_catalog_product(
         "discount_percent": normalized_discount,
         "accepted_currencies": accepted_currencies,
         "offers_delivery": bool(offers_delivery),
+        "sales_areas": parse_sales_areas(
+            sales_areas_raw,
+            seller_doc,
+            offers_delivery=bool(offers_delivery),
+        ),
         "view_only": bool(view_only),
         "is_available": bool(is_available),
         "sort_order": product_count,
@@ -1124,6 +1132,7 @@ async def update_catalog_product(
     frontal_image_id: str | None = None,
     frontal_new_index: int | None = None,
     discount_percent: object = None,
+    sales_areas_raw: str | None = None,
 ) -> CatalogProductPublic:
     doc = await _get_product_doc(seller_id, product_id)
     seller_doc = await _seller_doc(seller_id)
@@ -1161,6 +1170,12 @@ async def update_catalog_product(
         "category_id": local_category_oid,
         "global_category_id": normalized_global_category_id,
         "offers_delivery": bool(offers_delivery),
+        "sales_areas": parse_sales_areas(
+            sales_areas_raw,
+            seller_doc,
+            offers_delivery=bool(offers_delivery),
+            fallback=doc.get("sales_areas"),
+        ),
         "view_only": bool(view_only),
         "is_available": bool(is_available),
         "updated_at": now,
@@ -1223,17 +1238,19 @@ def _area_label(area: dict[str, Any]) -> str | None:
     return municipality or province or None
 
 
-def _locations(seller: dict[str, Any] | None, *, offers_delivery: bool) -> list[str]:
+def _locations(
+    seller: dict[str, Any] | None,
+    *,
+    offers_delivery: bool,
+    product: dict[str, Any] | None = None,
+) -> list[str]:
     if not seller:
         return []
-    areas: list[dict[str, Any]] = []
-    business = seller.get("business_area")
-    if isinstance(business, dict):
-        areas.append(business)
-    if offers_delivery:
-        for area in seller.get("delivery_areas") or []:
-            if isinstance(area, dict):
-                areas.append(area)
+    stored = product.get("sales_areas") if isinstance(product, dict) else None
+    if isinstance(stored, list) and stored:
+        areas = [area for area in stored if isinstance(area, dict)]
+    else:
+        areas = seller_service_areas(seller, offers_delivery=offers_delivery)
 
     labels: list[str] = []
     seen: set[tuple[str, str]] = set()
@@ -1282,6 +1299,7 @@ async def list_admin_products() -> AdminProductList:
             "base_price": 1,
             "base_currency": 1,
             "offers_delivery": 1,
+            "sales_areas": 1,
         },
     ).to_list(length=None)
 
@@ -1329,7 +1347,7 @@ async def list_admin_products() -> AdminProductList:
                 offers_delivery=offers_delivery,
                 subscription_active=bool(seller) and is_subscription_active(seller),
                 sales_count=sales_by_product.get(str(doc["_id"]), 0),
-                locations=_locations(seller, offers_delivery=offers_delivery),
+                locations=_locations(seller, offers_delivery=offers_delivery, product=doc),
             )
         )
 
