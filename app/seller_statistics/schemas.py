@@ -17,6 +17,7 @@ class SellerStatsKpis(BaseModel):
     product_views: int
     delivered_orders: int
     revenue: list[CurrencyTotal]
+    delivery: list[CurrencyTotal] = Field(default_factory=list)
     site_jabas: int
     site_conversion_rate: float
 
@@ -72,6 +73,7 @@ class RevenueSeries(BaseModel):
 
 class RevenueChart(BaseModel):
     series: list[RevenueSeries]
+    delivery_series: list[RevenueSeries] = Field(default_factory=list)
 
 
 class TopSoldItem(BaseModel):

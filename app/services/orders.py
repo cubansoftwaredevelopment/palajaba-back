@@ -291,6 +291,8 @@ async def create_order(payload: CreateOrderRequest) -> OrderPublic:
         item_count=item_count,
         delivery_requested=bool(doc["delivery_requested"]),
     )
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(str(seller["_id"]), "orders", "products")
 
     return _doc_to_public(doc)
 
@@ -330,13 +332,15 @@ async def create_seller_manual_order(
         raise
 
     doc["_id"] = result.inserted_id
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders", "products")
     return _doc_to_public(doc)
 
 
 async def list_seller_orders(seller_id: str) -> list[OrderPublic]:
     cursor = (
         get_orders_collection()
-        .find({"seller_id": seller_id})
+        .find({"seller_id": seller_id, "status": {"$ne": "cancelled"}})
         .sort([("created_at", -1)])
     )
     docs = await cursor.to_list(length=None)
@@ -349,6 +353,9 @@ async def update_seller_order(
     payload: UpdateOrderRequest,
 ) -> OrderPublic:
     doc = await _get_order_doc(seller_id, order_id)
+
+    if doc["status"] == "cancelled" or payload.status == "cancelled":
+        raise ValueError("Los pedidos cancelados no se pueden editar.")
 
     if doc["status"] == "completed" and payload.status == "pending_confirmation":
         raise ValueError("No puedes volver un pedido a pendiente.")
@@ -447,6 +454,8 @@ async def update_seller_order(
         await bump_products_on_order_completed(items_for_popularity)
 
     updated = await get_orders_collection().find_one({"_id": doc["_id"]})
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders", "products")
     return _doc_to_public(updated)
 
 
@@ -456,7 +465,21 @@ async def delete_seller_order(seller_id: str, order_id: str) -> None:
     if doc["status"] != "pending_confirmation":
         raise ValueError("Solo puedes cancelar pedidos pendientes de confirmar.")
 
-    await get_orders_collection().delete_one({"_id": doc["_id"]})
+    now = to_utc_naive(utc_now())
+    if doc.get("origin") == "manual":
+        adjustments = []
+        for item in doc.get("items") or []:
+            try:
+                adjustments.append((ObjectId(str(item["product_id"])), int(item["quantity"])))
+            except (KeyError, TypeError, ValueError, InvalidId):
+                continue
+        await _rollback_stock_decrements(adjustments)
+    await get_orders_collection().update_one(
+        {"_id": doc["_id"], "status": "pending_confirmation"},
+        {"$set": {"status": "cancelled", "cancelled_at": now, "updated_at": now}},
+    )
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders", "products")
 
 
 async def generate_order_invoice_pdf(

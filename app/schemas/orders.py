@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
-OrderStatus = Literal["pending_confirmation", "completed"]
+OrderStatus = Literal["pending_confirmation", "completed", "cancelled"]
 InvoiceType = Literal["store", "transporter"]
 OrderOrigin = Literal["platform", "manual"]
 PAYMENT_CURRENCIES = ("CUP", "USD", "EUR", "MLC")

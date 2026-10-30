@@ -35,6 +35,23 @@ class LiveHub:
 hub = LiveHub()
 
 
+async def publish_seller_data_update(seller_id: str, *resources: str) -> None:
+    """Notifica a todas las sesiones abiertas del vendedor que refresquen sus datos."""
+    try:
+        from app.database import get_orders_collection
+
+        pending_count = await get_orders_collection().count_documents(
+            {"seller_id": str(seller_id), "status": "pending_confirmation"}
+        )
+        await hub.send(str(seller_id), {
+            "type": "seller_data_update",
+            "resources": list(resources),
+            "pending_order_count": pending_count,
+        })
+    except Exception:
+        return
+
+
 async def publish_seller_notification(
     seller_id: str,
     notification: SellerNotificationPublic,

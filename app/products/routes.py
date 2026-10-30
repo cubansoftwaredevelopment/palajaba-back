@@ -142,7 +142,7 @@ async def create_my_catalog_product(
     discount_percent: str | None = Form(None),
     sales_areas: str | None = Form(None),
 ):
-    return await products_service.create_catalog_product(
+    product = await products_service.create_catalog_product(
         seller_payload["seller_id"],
         name=name,
         description=description,
@@ -160,6 +160,9 @@ async def create_my_catalog_product(
         discount_percent=discount_percent,
         sales_areas_raw=sales_areas,
     )
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_payload["seller_id"], "products")
+    return product
 
 
 @seller_router.patch("/me/catalog/products/{product_id}", response_model=CatalogProductPublic)
@@ -184,7 +187,7 @@ async def update_my_catalog_product(
     discount_percent: str | None = Form(None),
     sales_areas: str | None = Form(None),
 ):
-    return await products_service.update_catalog_product(
+    product = await products_service.update_catalog_product(
         seller_payload["seller_id"],
         product_id,
         name=name,
@@ -205,6 +208,9 @@ async def update_my_catalog_product(
         discount_percent=discount_percent,
         sales_areas_raw=sales_areas,
     )
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_payload["seller_id"], "products")
+    return product
 
 
 @seller_router.delete("/me/catalog/products/{product_id}", status_code=204)
@@ -216,6 +222,8 @@ async def delete_my_catalog_product(
         seller_payload["seller_id"],
         product_id,
     )
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_payload["seller_id"], "products")
 
 
 @admin_router.get("/products", response_model=AdminProductList)

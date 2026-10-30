@@ -17,6 +17,15 @@ async def seller_events(websocket: WebSocket, token: str = Query(default="")):
 
     await hub.connect(seller_id, websocket)
     try:
+        from app.database import get_orders_collection
+        pending_count = await get_orders_collection().count_documents(
+            {"seller_id": seller_id, "status": "pending_confirmation"}
+        )
+        await websocket.send_json({
+            "type": "seller_data_update",
+            "resources": [],
+            "pending_order_count": pending_count,
+        })
         while True:
             await websocket.receive_text()
     except WebSocketDisconnect:

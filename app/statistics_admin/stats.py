@@ -361,6 +361,21 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
             if currency and amount > 0:
                 unconfirmed_amounts[currency] = unconfirmed_amounts.get(currency, 0.0) + amount
 
+    cancelled_orders = await get_orders_collection().find(
+        {"status": "cancelled"},
+        projection={"items.currency": 1, "items.line_total": 1},
+    ).to_list(length=None)
+    cancelled_amounts: dict[str, float] = {}
+    for order in cancelled_orders:
+        for item in order.get("items") or []:
+            currency = str(item.get("currency") or "").strip().upper()
+            try:
+                amount = float(item.get("line_total") or 0)
+            except (TypeError, ValueError):
+                continue
+            if currency and amount > 0:
+                cancelled_amounts[currency] = cancelled_amounts.get(currency, 0.0) + amount
+
     return AdminStatsSummary(
         year=year,
         month=month,
@@ -374,6 +389,11 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
             for currency, amount in sorted(unconfirmed_amounts.items())
         ],
         unconfirmed_orders_count=len(pending_orders),
+        cancelled_orders_by_currency=[
+            {"currency": currency, "total": round(amount, 2)}
+            for currency, amount in sorted(cancelled_amounts.items())
+        ],
+        cancelled_orders_count=len(cancelled_orders),
         payments_count=payments_count,
         active_stores=active_stores,
         pending_registrations=pending_registrations,

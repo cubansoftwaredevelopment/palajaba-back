@@ -166,6 +166,9 @@ async def _completed_orders(seller_id: str, start: datetime, end: datetime) -> l
             "collected_total": 1,
             "payment_currency": 1,
             "items": 1,
+            "delivery_requested": 1,
+            "delivery_price": 1,
+            "delivery_currency": 1,
         },
     ).to_list(length=None)
 
@@ -216,11 +219,27 @@ async def get_kpis(
     )
     orders = await _completed_orders(seller_id, range_start, range_end)
     totals: dict[str, float] = {}
+    delivery_totals: dict[str, float] = {}
+    from app.services.order_totals import compute_order_grand_total
     for order in orders:
-        currency = str(order.get("payment_currency") or "").strip().upper()
-        amount = order.get("collected_total")
-        if not currency or amount is None:
+        if order.get("delivery_requested") and order.get("delivery_price") is not None:
+            delivery_currency = str(order.get("delivery_currency") or "CUP").strip().upper()
+            try:
+                delivery_amount = float(order["delivery_price"])
+            except (KeyError, TypeError, ValueError):
+                delivery_amount = 0.0
+            if delivery_currency and delivery_amount > 0:
+                delivery_totals[delivery_currency] = round(
+                    delivery_totals.get(delivery_currency, 0.0) + delivery_amount,
+                    2,
+                )
+        try:
+            total = compute_order_grand_total(order)
+        except (KeyError, TypeError, ValueError):
             continue
+        if total is None:
+            continue
+        currency, amount = total
         totals[currency] = round(totals.get(currency, 0.0) + float(amount), 2)
 
     return SellerStatsKpis(
@@ -228,6 +247,7 @@ async def get_kpis(
         product_views=product_views,
         delivered_orders=len(orders),
         revenue=[CurrencyTotal(currency=code, total=total) for code, total in sorted(totals.items())],
+        delivery=[CurrencyTotal(currency=code, total=total) for code, total in sorted(delivery_totals.items())],
         site_jabas=jabas,
         site_conversion_rate=_rate(jabas, visitors),
     )
@@ -461,6 +481,7 @@ async def get_revenue(
     orders = await _completed_orders(seller_id, range_start, range_end)
     ranges = ranges_between(range_start, range_end, granularity)
     by_currency: dict[str, list[tuple[datetime, float]]] = {}
+    delivery_by_currency: dict[str, list[tuple[datetime, float]]] = {}
     for order in orders:
         currency = str(order.get("payment_currency") or "").strip().upper()
         amount = order.get("collected_total")
@@ -468,6 +489,13 @@ async def get_revenue(
         if not currency or amount is None or moment is None:
             continue
         by_currency.setdefault(currency, []).append((moment, float(amount)))
+
+        delivery_currency = str(order.get("delivery_currency") or "CUP").strip().upper()
+        try:
+            delivery_amount = float(order.get("delivery_price") or 0) if order.get("delivery_requested") else 0.0
+        except (TypeError, ValueError):
+            delivery_amount = 0.0
+        delivery_by_currency.setdefault(delivery_currency, []).append((moment, delivery_amount))
 
     series = [
         RevenueSeries(
@@ -477,7 +505,17 @@ async def get_revenue(
         )
         for currency, rows in sorted(by_currency.items())
     ]
-    return RevenueChart(series=series)
+    daily_ranges = ranges_between(range_start, range_end, "daily")
+    delivery_series = [
+        RevenueSeries(
+            currency=currency,
+            total=round(sum(amount for _, amount in rows), 2),
+            points=_bucket_amounts(rows, daily_ranges),
+        )
+        for currency, rows in sorted(delivery_by_currency.items())
+        if sum(amount for _, amount in rows) > 0
+    ]
+    return RevenueChart(series=series, delivery_series=delivery_series)
 
 
 async def get_top_sold(

@@ -12,6 +12,8 @@ class AdminStatsSummary(BaseModel):
     platform_moved_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
     unconfirmed_orders_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
     unconfirmed_orders_count: int = 0
+    cancelled_orders_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
+    cancelled_orders_count: int = 0
     payments_count: int
     active_stores: int
     pending_registrations: int
