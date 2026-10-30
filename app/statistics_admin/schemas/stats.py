@@ -10,10 +10,14 @@ class AdminStatsSummary(BaseModel):
     month: int
     payments_total_cup: int
     platform_moved_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
+    unconfirmed_orders_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
+    unconfirmed_orders_count: int = 0
     payments_count: int
     active_stores: int
     pending_registrations: int
     published_products: int
+    products_existing: int = 0
+    products_visible: int = 0
     orders_total: int
     marketplace_visits: int = 0
 

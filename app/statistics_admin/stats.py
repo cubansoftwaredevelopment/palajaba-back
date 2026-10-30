@@ -331,9 +331,35 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     )
     pending_registrations = await registrations.count_documents({"status": "pending"})
 
-    published_products = await get_catalog_products_collection().count_documents({})
+    products = get_catalog_products_collection()
+    products_existing = await products.count_documents({})
+    active_sellers = await registrations.find(
+        {"status": "approved", "subscription_ends_at": {"$gt": now}},
+        {"_id": 1},
+    ).to_list(length=None)
+    active_seller_ids = [str(seller["_id"]) for seller in active_sellers]
+    products_visible = await products.count_documents({
+        "seller_id": {"$in": active_seller_ids},
+        "is_available": True,
+        "view_only": {"$ne": True},
+    }) if active_seller_ids else 0
     orders_total = await get_orders_collection().count_documents({})
     marketplace_visits = await count_visits_in_month(year, month)
+
+    pending_orders = await get_orders_collection().find(
+        {"status": "pending_confirmation"},
+        projection={"items.currency": 1, "items.line_total": 1},
+    ).to_list(length=None)
+    unconfirmed_amounts: dict[str, float] = {}
+    for order in pending_orders:
+        for item in order.get("items") or []:
+            currency = str(item.get("currency") or "").strip().upper()
+            try:
+                amount = float(item.get("line_total") or 0)
+            except (TypeError, ValueError):
+                continue
+            if currency and amount > 0:
+                unconfirmed_amounts[currency] = unconfirmed_amounts.get(currency, 0.0) + amount
 
     return AdminStatsSummary(
         year=year,
@@ -343,10 +369,17 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
             {"currency": currency, "total": round(amount, 2)}
             for currency, amount in sorted(platform_moved.items())
         ],
+        unconfirmed_orders_by_currency=[
+            {"currency": currency, "total": round(amount, 2)}
+            for currency, amount in sorted(unconfirmed_amounts.items())
+        ],
+        unconfirmed_orders_count=len(pending_orders),
         payments_count=payments_count,
         active_stores=active_stores,
         pending_registrations=pending_registrations,
-        published_products=published_products,
+        published_products=products_existing,
+        products_existing=products_existing,
+        products_visible=products_visible,
         orders_total=orders_total,
         marketplace_visits=marketplace_visits,
     )
