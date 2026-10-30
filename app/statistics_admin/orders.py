@@ -424,8 +424,34 @@ async def get_sales_chart(
         },
         projection={"completed_at": 1, "collected_total": 1, "payment_currency": 1},
     ).to_list(length=None)
-    events, counted = _order_events(orders, money=True)
-    points = _points_from_candles(build_cumulative_candles(events, ranges))
+    events_by_currency: dict[str, list[tuple[datetime, float]]] = {}
+    counts: dict[str, int] = {}
+    for order in orders:
+        completed_at = order.get("completed_at")
+        currency = str(order.get("payment_currency") or "").strip().upper()
+        amount = order.get("collected_total")
+        if not isinstance(completed_at, datetime) or amount is None or not currency:
+            continue
+        if currency != "CUP" and not get_cup_per_unit().get(currency):
+            continue
+        try:
+            value = float(amount)
+        except (TypeError, ValueError):
+            continue
+        events_by_currency.setdefault(currency, []).append((to_utc_naive(completed_at), value))
+        counts[currency] = counts.get(currency, 0) + 1
+    from app.statistics_admin.schemas.orders import AdminSalesCurrencySeries
+    currencies = []
+    for currency, events in sorted(events_by_currency.items()):
+        currency_points = _points_from_candles(build_cumulative_candles(events, ranges))
+        currencies.append(AdminSalesCurrencySeries(
+            currency=currency,
+            total=float(sum(point.count for point in currency_points)),
+            orders_counted=counts[currency],
+            points=currency_points,
+        ))
+    cup_events, counted = _order_events(orders, money=True)
+    points = _points_from_candles(build_cumulative_candles(cup_events, ranges))
     total_cup = float(sum(point.count for point in points))
     return AdminSalesChart(
         granularity=granularity,
@@ -435,6 +461,7 @@ async def get_sales_chart(
         total_cup=total_cup,
         orders_counted=counted,
         points=points,
+        currencies=currencies,
         comparison=None,
     )
 

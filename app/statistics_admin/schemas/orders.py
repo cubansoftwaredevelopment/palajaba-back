@@ -26,7 +26,15 @@ class AdminSalesChart(BaseModel):
     total_cup: float = 0
     orders_counted: int = 0
     points: list[TrafficDataPoint] = Field(default_factory=list)
+    currencies: list["AdminSalesCurrencySeries"] = Field(default_factory=list)
     comparison: PeriodComparison | None = None
+
+
+class AdminSalesCurrencySeries(BaseModel):
+    currency: str
+    total: float = 0
+    orders_counted: int = 0
+    points: list[TrafficDataPoint] = Field(default_factory=list)
 
 
 class AdminTopBusinessItem(BaseModel):
