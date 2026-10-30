@@ -186,3 +186,23 @@ async def aggregate_sales_cup_by_seller(seller_ids: list[str]) -> dict[str, floa
         totals[seller_id] = totals.get(seller_id, 0.0) + converted
 
     return {seller_id: round(amount, 2) for seller_id, amount in totals.items()}
+
+
+async def aggregate_unconfirmed_orders_by_seller(seller_ids: list[str]) -> dict[str, int]:
+    if not seller_ids:
+        return {}
+    rows = await get_orders_collection().aggregate([
+        {"$match": {"status": "pending_confirmation", "seller_id": {"$in": seller_ids}}},
+        {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+    ]).to_list(length=None)
+    return {str(row["_id"]): int(row.get("count") or 0) for row in rows if row.get("_id")}
+
+
+async def aggregate_completed_orders_by_seller(seller_ids: list[str]) -> dict[str, int]:
+    if not seller_ids:
+        return {}
+    rows = await get_orders_collection().aggregate([
+        {"$match": {"status": "completed", "seller_id": {"$in": seller_ids}}},
+        {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+    ]).to_list(length=None)
+    return {str(row["_id"]): int(row.get("count") or 0) for row in rows if row.get("_id")}

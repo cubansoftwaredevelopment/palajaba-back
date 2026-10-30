@@ -13,6 +13,8 @@ from app.auth.utils import hash_password
 from app.services.admin_registration_insights import (
     aggregate_product_counts_by_seller,
     aggregate_sales_cup_by_seller,
+    aggregate_unconfirmed_orders_by_seller,
+    aggregate_completed_orders_by_seller,
     build_marketplace_visibility_notes,
 )
 from app.subscriptions.service import normalize_billing_period, normalize_plan_tier
@@ -53,6 +55,8 @@ def document_to_public(
     product_counts: dict[str, int] | None = None,
     marketplace_visibility_notes: list[str] | None = None,
     sales_total_cup: float = 0,
+    unconfirmed_orders_count: int = 0,
+    completed_orders_count: int = 0,
 ) -> RegistrationPublic:
     counts = product_counts or {}
     notes = marketplace_visibility_notes
@@ -103,6 +107,8 @@ def document_to_public(
         unavailable_product_count=int(counts.get("unavailable") or 0),
         marketplace_visibility_notes=notes or [],
         sales_total_cup=sales_total_cup,
+        unconfirmed_orders_count=unconfirmed_orders_count,
+        completed_orders_count=completed_orders_count,
     )
 
 
@@ -110,6 +116,8 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
     seller_ids = [str(doc["_id"]) for doc in documents]
     counts_by_seller = await aggregate_product_counts_by_seller(seller_ids)
     sales_by_seller = await aggregate_sales_cup_by_seller(seller_ids)
+    unconfirmed_by_seller = await aggregate_unconfirmed_orders_by_seller(seller_ids)
+    completed_by_seller = await aggregate_completed_orders_by_seller(seller_ids)
     return [
         document_to_public(
             doc,
@@ -121,6 +129,8 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
             if doc.get("status") in ("approved", "expired")
             else [],
             sales_total_cup=sales_by_seller.get(str(doc["_id"]), 0),
+            unconfirmed_orders_count=unconfirmed_by_seller.get(str(doc["_id"]), 0),
+            completed_orders_count=completed_by_seller.get(str(doc["_id"]), 0),
         )
         for doc in documents
     ]
@@ -130,6 +140,8 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
     seller_id = str(doc["_id"])
     counts_by_seller = await aggregate_product_counts_by_seller([seller_id])
     sales_by_seller = await aggregate_sales_cup_by_seller([seller_id])
+    unconfirmed_by_seller = await aggregate_unconfirmed_orders_by_seller([seller_id])
+    completed_by_seller = await aggregate_completed_orders_by_seller([seller_id])
     counts = counts_by_seller.get(seller_id)
     return document_to_public(
         doc,
@@ -138,6 +150,8 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         if doc.get("status") in ("approved", "expired")
         else [],
         sales_total_cup=sales_by_seller.get(seller_id, 0),
+        unconfirmed_orders_count=unconfirmed_by_seller.get(seller_id, 0),
+        completed_orders_count=completed_by_seller.get(seller_id, 0),
     )
 
 

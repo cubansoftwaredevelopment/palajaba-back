@@ -325,6 +325,8 @@ class RegistrationPublic(BaseModel):
     unavailable_product_count: int = 0
     marketplace_visibility_notes: list[str] = Field(default_factory=list)
     sales_total_cup: float = 0
+    unconfirmed_orders_count: int = 0
+    completed_orders_count: int = 0
 
 
 class RegistrationDeleteResult(BaseModel):
