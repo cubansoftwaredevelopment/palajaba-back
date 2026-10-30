@@ -9,12 +9,18 @@ class AdminStatsSummary(BaseModel):
     year: int
     month: int
     payments_total_cup: int
+    platform_moved_by_currency: list["AdminPlatformMovedCurrency"] = Field(default_factory=list)
     payments_count: int
     active_stores: int
     pending_registrations: int
     published_products: int
     orders_total: int
     marketplace_visits: int = 0
+
+
+class AdminPlatformMovedCurrency(BaseModel):
+    currency: str
+    total: float = 0
 
 
 class AdminProvinceBusinessCount(BaseModel):

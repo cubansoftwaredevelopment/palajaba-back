@@ -55,6 +55,7 @@ class SellerRevenueChart(BaseModel):
     month: int | None = None
     months_available: int
     series: list[CurrencyRevenueSeries] = Field(default_factory=list)
+    delivery_series: list[CurrencyRevenueSeries] = Field(default_factory=list)
 
 
 class ProductsSoldDataPoint(BaseModel):

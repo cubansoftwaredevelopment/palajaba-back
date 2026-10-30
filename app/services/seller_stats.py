@@ -20,7 +20,7 @@ from app.schemas.seller_stats import (
     SellerTopProductItem,
     SellerTopProducts,
 )
-from app.services.order_totals import compute_order_products_revenue
+from app.services.order_totals import compute_order_products_revenue, compute_order_grand_total
 from app.subscriptions.service import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
 from app.services.product_popularity import refresh_popularity_window
 from app.utils.datetime import to_utc_naive, utc_now
@@ -621,6 +621,26 @@ def _bucket_completed_orders(
     return buckets
 
 
+def _bucket_revenue_metric(orders, ranges, metric):
+    buckets = {key: {} for key, _, _, _ in ranges}
+    for order in orders:
+        completed_at = order.get("completed_at")
+        products = compute_order_products_revenue(order)
+        grand = compute_order_grand_total(order)
+        if not isinstance(completed_at, datetime) or not products or not grand:
+            continue
+        currency, product_amount = products
+        _, grand_amount = grand
+        amount = product_amount if metric == "products" else grand_amount if metric == "global" else grand_amount - product_amount
+        if amount <= 0:
+            continue
+        for key, _, start, end in ranges:
+            if start <= completed_at < end:
+                buckets[key][currency] = buckets[key].get(currency, 0.0) + amount
+                break
+    return buckets
+
+
 def _series_from_buckets(
     buckets: dict[str, dict[str, float]],
     ordered_keys: list[tuple[str, str]],
@@ -762,6 +782,45 @@ async def get_seller_revenue_chart(
     ordered_keys = [(key, label) for key, label, _, _ in ranges]
     buckets = _bucket_completed_orders(orders, ranges)
     series = _series_from_buckets(buckets, ordered_keys)
+    delivery_buckets = {key: {} for key, _, _, _ in ranges}
+    delivery_currencies = {str(order.get("delivery_currency") or "CUP").upper() for order in orders}
+    for order in orders:
+        completed_at = order.get("completed_at")
+        if not isinstance(completed_at, datetime):
+            continue
+        currency = str(order.get("delivery_currency") or "CUP").upper()
+        amount = 0.0
+        if order.get("delivery_requested") and order.get("delivery_price") is not None:
+            try:
+                amount = float(order["delivery_price"])
+            except (TypeError, ValueError):
+                pass
+        for key, _, start, end in ranges:
+            if start <= completed_at < end:
+                delivery_buckets[key][currency] = delivery_buckets[key].get(currency, 0.0) + amount
+                break
+    delivery_series = _series_from_buckets(delivery_buckets, ordered_keys)
+    daily_ranges = []
+    cursor = range_start
+    while cursor < range_end:
+        next_day = min(cursor + timedelta(days=1), range_end)
+        daily_ranges.append((cursor.strftime("%Y-%m-%d"), f"{int(cursor.strftime('%d'))} {cursor.strftime('%b')}", cursor, next_day))
+        cursor = next_day
+    daily_delivery_buckets = {key: {} for key, _, _, _ in daily_ranges}
+    for order in orders:
+        completed_at = order.get("completed_at")
+        if not isinstance(completed_at, datetime):
+            continue
+        currency = str(order.get("delivery_currency") or "CUP").upper()
+        try:
+            amount = float(order.get("delivery_price") or 0) if order.get("delivery_requested") else 0.0
+        except (TypeError, ValueError):
+            amount = 0.0
+        for key, _, start, end in daily_ranges:
+            if start <= completed_at < end:
+                daily_delivery_buckets[key][currency] = daily_delivery_buckets[key].get(currency, 0.0) + amount
+                break
+    delivery_series = _series_from_buckets(daily_delivery_buckets, [(key, label) for key, label, _, _ in daily_ranges])
 
     window = resolve_comparison_window(granularity)
     available = comparison_available_for_seller(window, seller_doc)
@@ -783,6 +842,7 @@ async def get_seller_revenue_chart(
         month=chart_month,
         months_available=period.months_available,
         series=series,
+        delivery_series=delivery_series,
     )
 
 

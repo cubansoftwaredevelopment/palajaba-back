@@ -27,6 +27,7 @@ class AdminSalesChart(BaseModel):
     orders_counted: int = 0
     points: list[TrafficDataPoint] = Field(default_factory=list)
     currencies: list["AdminSalesCurrencySeries"] = Field(default_factory=list)
+    delivery_currencies: list["AdminSalesCurrencySeries"] = Field(default_factory=list)
     comparison: PeriodComparison | None = None
 
 

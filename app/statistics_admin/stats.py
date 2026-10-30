@@ -306,6 +306,22 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     payments_total = int(payments_result[0]["total"]) if payments_result else 0
     payments_count = int(payments_result[0]["count"]) if payments_result else 0
 
+    from app.services.order_totals import compute_order_grand_total
+    completed_orders = await get_orders_collection().find(
+        {"status": "completed", "completed_at": {"$gte": start, "$lt": end}},
+        projection={"items": 1, "payment_currency": 1, "delivery_requested": 1,
+                    "delivery_price": 1, "delivery_currency": 1, "status": 1},
+    ).to_list(length=None)
+    platform_moved: dict[str, float] = {}
+    for order in completed_orders:
+        try:
+            total = compute_order_grand_total(order)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if total:
+            currency, amount = total
+            platform_moved[currency] = platform_moved.get(currency, 0.0) + amount
+
     registrations = get_registrations_collection()
     active_stores = await registrations.count_documents(
         {
@@ -323,6 +339,10 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
         year=year,
         month=month,
         payments_total_cup=payments_total,
+        platform_moved_by_currency=[
+            {"currency": currency, "total": round(amount, 2)}
+            for currency, amount in sorted(platform_moved.items())
+        ],
         payments_count=payments_count,
         active_stores=active_stores,
         pending_registrations=pending_registrations,

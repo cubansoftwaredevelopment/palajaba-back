@@ -422,9 +422,14 @@ async def get_sales_chart(
             "status": "completed",
             "completed_at": {"$gte": range_start, "$lt": range_end},
         },
-        projection={"completed_at": 1, "collected_total": 1, "payment_currency": 1},
+        projection={"completed_at": 1, "collected_total": 1, "payment_currency": 1,
+                    "items": 1, "delivery_requested": 1, "delivery_price": 1,
+                    "delivery_currency": 1},
     ).to_list(length=None)
+    from app.services.order_totals import compute_order_products_revenue, compute_order_grand_total
+    delivery_ranges = ranges_between(range_start, range_end, "daily")
     events_by_currency: dict[str, list[tuple[datetime, float]]] = {}
+    delivery_by_currency: dict[str, list[tuple[datetime, float]]] = {}
     counts: dict[str, int] = {}
     for order in orders:
         completed_at = order.get("completed_at")
@@ -440,6 +445,14 @@ async def get_sales_chart(
             continue
         events_by_currency.setdefault(currency, []).append((to_utc_naive(completed_at), value))
         counts[currency] = counts.get(currency, 0) + 1
+        delivery_currency = str(order.get("delivery_currency") or "CUP").strip().upper()
+        delivery_value = 0.0
+        if order.get("delivery_requested") and order.get("delivery_price") is not None:
+            try:
+                delivery_value = float(order["delivery_price"])
+            except (TypeError, ValueError):
+                delivery_value = 0.0
+        delivery_by_currency.setdefault(delivery_currency, []).append((to_utc_naive(completed_at), delivery_value))
     from app.statistics_admin.schemas.orders import AdminSalesCurrencySeries
     currencies = []
     for currency, events in sorted(events_by_currency.items()):
@@ -462,6 +475,16 @@ async def get_sales_chart(
         orders_counted=counted,
         points=points,
         currencies=currencies,
+        delivery_currencies=[
+            AdminSalesCurrencySeries(
+                currency=currency,
+                total=float(sum(point.count for point in daily_points)),
+                points=daily_points,
+            )
+            for currency, events in sorted(delivery_by_currency.items())
+            for daily_points in [_points_from_candles(build_cumulative_candles(events, delivery_ranges))]
+            if sum(point.count for point in daily_points) > 0
+        ],
         comparison=None,
     )
 
