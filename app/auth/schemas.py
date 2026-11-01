@@ -256,8 +256,6 @@ class RegisterRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_transfer_for_paid(self) -> "RegisterRequest":
-        if self.kind == "paid" and not (self.transfer_id or "").strip():
-            raise ValueError("El ID de la transferencia es obligatorio.")
         if self.kind == "account":
             if "plan_tier" not in self.model_fields_set:
                 raise ValueError("Selecciona un plan para crear la tienda.")
@@ -296,6 +294,18 @@ class RegisterOtpConfirmResponse(BaseModel):
     kind: RegisterKind
     message: str
     access_token: str | None = None
+
+
+class RegisterPaymentCompleteRequest(BaseModel):
+    challenge_id: str = Field(..., min_length=1, max_length=40)
+    payment_method: Literal["cup", "qvapay"]
+    transfer_id: str | None = Field(default=None, max_length=64)
+    qvapay_purchase_id: str | None = Field(default=None, max_length=40)
+
+    @field_validator("transfer_id")
+    @classmethod
+    def strip_transfer_id(cls, value: str | None) -> str | None:
+        return value.strip() or None if value else None
 
 
 class RegisterResponse(BaseModel):

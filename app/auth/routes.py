@@ -14,6 +14,7 @@ from app.auth.schemas import (
     PasswordResetResendRequest,
     PasswordResetStartRequest,
     PasswordResetStartResponse,
+    RegisterPaymentCompleteRequest,
     RegisterOtpConfirmRequest,
     RegisterOtpConfirmResponse,
     RegisterOtpResendRequest,
@@ -183,6 +184,11 @@ async def confirm_otp(payload: RegisterOtpConfirmRequest):
         email_code=payload.email_code,
         phone_code=payload.phone_code,
     )
+
+
+@register_router.post("/payment/complete", response_model=RegisterOtpConfirmResponse)
+async def complete_registration_payment(payload: RegisterPaymentCompleteRequest):
+    return await auth_service.complete_registration_payment(payload)
 
 
 router.include_router(auth_router)

@@ -108,6 +108,7 @@ from app.notifications.otp_manager import (
     verify_otp,
 )
 from app.auth.schemas import (
+    RegisterPaymentCompleteRequest,
     RegisterOtpConfirmResponse,
     RegisterOtpStartResponse,
     RegisterRequest,
@@ -263,6 +264,18 @@ async def confirm_registration_otp(
         await verify_otp(otp_hash=doc.get("phone_hash") or "", code=phone_code)
         await collection.update_one({"_id": doc["_id"]}, {"$set": {"phone_verified": True}})
 
+    if doc.get("kind") == "paid":
+        await collection.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {"payment_pending": True, "expires_at": to_utc_naive(utc_now()) + timedelta(days=7)}},
+        )
+        return RegisterOtpConfirmResponse(
+            id=challenge_id,
+            status="pending",
+            kind="paid",
+            message="Tus datos están verificados. Ahora completa el pago del plan.",
+        )
+
     is_trial = doc.get("kind") == "trial"
     is_account = doc.get("kind") == "account"
     registration = await create_registration(
@@ -306,6 +319,60 @@ async def confirm_registration_otp(
         kind="trial" if is_trial else "account" if is_account else "paid",
         message=message,
         access_token=access_token,
+    )
+
+
+async def complete_registration_payment(
+    payload: RegisterPaymentCompleteRequest,
+) -> RegisterOtpConfirmResponse:
+    challenge_id = payload.challenge_id
+    collection = get_registration_otp_challenges_collection()
+    doc = await _get_challenge(challenge_id)
+    if doc.get("kind") != "paid" or not doc.get("payment_pending"):
+        raise HTTPException(status_code=409, detail="Verifica tus datos antes de completar el pago.")
+
+    is_qvapay = payload.payment_method == "qvapay"
+    if is_qvapay:
+        if not payload.qvapay_purchase_id:
+            raise HTTPException(status_code=400, detail="No encontramos la factura QvaPay.")
+        await subscription_service.validate_initial_subscription_checkout(
+            purchase_id=payload.qvapay_purchase_id,
+            plan_tier=doc["plan_tier"],
+            billing_period=doc["billing_period"],
+        )
+    elif not payload.transfer_id:
+        raise HTTPException(status_code=400, detail="El ID de la transferencia es obligatorio.")
+
+    registration = await create_registration(
+        transfer_id=payload.transfer_id,
+        store_name=doc["store_name"],
+        phone=doc["phone"],
+        email=doc["email"],
+        password_hash=doc["password_hash"],
+        billing_period=doc["billing_period"],
+        plan_tier=doc["plan_tier"],
+        discount_code=doc.get("discount_code"),
+        is_account=is_qvapay,
+    )
+    if is_qvapay:
+        await subscription_service.attach_paid_subscription_checkout(
+            seller_id=registration.id,
+            purchase_id=payload.qvapay_purchase_id,
+            store_name=registration.store_name,
+        )
+    await collection.delete_one({"_id": doc["_id"]})
+    token = create_seller_token(seller_id=registration.id, store_name=registration.store_name)
+    message = (
+        "Tu plan se pagó correctamente y tu tienda está activa."
+        if is_qvapay
+        else "Recibimos tu pago CUP y está en verificación. Puedes entrar y completar tu tienda."
+    )
+    return RegisterOtpConfirmResponse(
+        id=registration.id,
+        status=registration.status,
+        kind="account" if is_qvapay else "paid",
+        message=message,
+        access_token=token,
     )
 
 
