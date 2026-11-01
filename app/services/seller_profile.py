@@ -234,6 +234,8 @@ def _store_banner_documents(doc: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
+    from app.payments.qvapay import qvapay_escrow_configured
+
     location = doc.get("business_location")
     business_location = None
     if isinstance(location, dict) and location.get("lat") is not None:
@@ -262,6 +264,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         has_store_banners=seller_has_store_banners(doc),
         has_full_store_customization=seller_has_full_store_customization(doc),
         has_product_discounts=seller_has_product_discounts(doc),
+        qvapay_enabled=bool(doc.get("qvapay_username")) and qvapay_escrow_configured(),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
         business_location=business_location,

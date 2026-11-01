@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 
 from app.utils.datetime import to_utc_naive, utc_now
-from test_e2e.statistics.fixtures.constants import (
+from test_e2e.statistics.utils.data.constants import (
     CUP_COLLECTED,
     DELIVERY_ADDRESS,
     DELIVERY_LAT,

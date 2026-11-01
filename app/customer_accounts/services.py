@@ -451,9 +451,27 @@ async def list_customer_orders(customer_id: str):
             "delivery_requested": bool(doc.get("delivery_requested")), "delivery_price": doc.get("delivery_price"),
             "delivery_currency": doc.get("delivery_currency"), "created_at": doc["created_at"],
             "updated_at": doc["updated_at"], "completed_at": doc.get("completed_at"),
+            "payment_method": doc.get("payment_method") or "contact",
+            "qvapay": _customer_order_qvapay_public(doc.get("qvapay")),
         }
         for doc in docs
     ]
+
+
+def _customer_order_qvapay_public(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        "request_status": value.get("request_status"),
+        "payment_status": value.get("payment_status"),
+        "invoice_url": value.get("invoice_url"),
+        "invoice_amount_usd": value.get("invoice_amount_usd"),
+        "products_amount_usd": value.get("products_amount_usd"),
+        "delivery_amount_usd": value.get("delivery_amount_usd"),
+        "fee_usd": value.get("fee_usd"),
+        "evidence": value.get("evidence"),
+        "release_status": value.get("release_status"),
+    }
 
 
 async def list_store_customers(

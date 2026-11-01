@@ -15,9 +15,11 @@ from app.database import (
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.utils.api import seller_auth_headers
 from test_e2e.utils.database import run_db
+from test_e2e.utils.api import api_client
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 
 MARKER = "product_search_e2e_v1"
+SEARCH_PATH = "/api/auth/me/catalog/products/search"
 
 
 def store_name(seller_id: str) -> str:
@@ -226,3 +228,16 @@ def seed_search_catalog() -> dict[str, str]:
 
 def headers_for(seller_id: str) -> dict[str, str]:
     return seller_auth_headers(seller_id=seller_id, store_name=store_name(seller_id))
+
+
+def search_products(seller_id: str, query: str = "") -> dict:
+    params = {"q": query} if query else None
+    with api_client() as client:
+        response = client.get(
+            SEARCH_PATH,
+            params=params,
+            headers=headers_for(seller_id),
+        )
+    if response.status_code != 200:
+        raise AssertionError(f"{response.status_code}: {response.text}")
+    return response.json()

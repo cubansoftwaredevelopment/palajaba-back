@@ -1,7 +1,7 @@
 from bson import ObjectId
 from pymongo import ASCENDING
 
-from app.database import get_seller_devices_collection
+from app.database import get_customer_devices_collection, get_seller_devices_collection
 from app.live.schemas.device import SellerDevicePublic, SellerDeviceRegister
 from app.utils.datetime import to_utc_naive, utc_now
 
@@ -40,4 +40,29 @@ async def list_seller_device_tokens(seller_id: str) -> list[str]:
     collection = get_seller_devices_collection()
     cursor = collection.find({"seller_id": ObjectId(seller_id)}, {"token": 1})
     docs = await cursor.to_list(length=50)
+    return [str(doc["token"]) for doc in docs if doc.get("token")]
+
+
+async def register_customer_device(customer_id: str, payload) -> None:
+    collection = get_customer_devices_collection()
+    await collection.create_index("token", unique=True)
+    await collection.create_index("customer_id")
+    await collection.update_one(
+        {"token": payload.token},
+        {"$set": {"customer_id": ObjectId(customer_id), "token": payload.token,
+                  "platform": payload.platform, "updated_at": to_utc_naive(utc_now())}},
+        upsert=True,
+    )
+
+
+async def delete_customer_device(customer_id: str, token: str) -> None:
+    await get_customer_devices_collection().delete_one(
+        {"customer_id": ObjectId(customer_id), "token": token}
+    )
+
+
+async def list_customer_device_tokens(customer_id: str) -> list[str]:
+    docs = await get_customer_devices_collection().find(
+        {"customer_id": ObjectId(customer_id)}, {"token": 1}
+    ).to_list(length=50)
     return [str(doc["token"]) for doc in docs if doc.get("token")]

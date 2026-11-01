@@ -6,8 +6,11 @@ import unittest
 
 from bson import ObjectId
 
-from test_e2e.statistics.fixtures.constants import (
+from test_e2e.statistics.utils.fixtures import (
     CUP_COLLECTED,
+    DELIVERY_ADDRESS,
+    DELIVERY_LAT,
+    DELIVERY_LNG,
     ISOLATED_DAY,
     LIVE_LAT,
     LIVE_LNG,
@@ -18,31 +21,23 @@ from test_e2e.statistics.fixtures.constants import (
     SOLD_SECOND_NAME,
     WEB_LAT,
     WEB_LNG,
-    DELIVERY_ADDRESS,
-    DELIVERY_LAT,
-    DELIVERY_LNG,
-)
-from test_e2e.statistics.fixtures.history import store_name
-from test_e2e.statistics.fixtures.presence import (
     anonymous_presence,
     logged_out_presence,
     seller_presence,
     tracked_id,
     visit_payload,
     web_buyer_presence,
-)
-from test_e2e.statistics.utils import (
     cleanup,
     count_for,
     day_params,
     device_day,
     same_point,
-    seed_history,
     seed_past_device_day,
+    setup_statistics_e2e,
     summary_params,
     today,
 )
-from test_e2e.utils.api import admin_auth_headers, api_client, seller_auth_headers
+from test_e2e.utils.api import api_client, seller_auth_headers
 from test_e2e.utils.database import mongo_configured
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 
@@ -51,20 +46,8 @@ from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 class StatisticsE2ETests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cleanup()
-        cls.seller_id = ObjectId()
-        cls.store_name = store_name(cls.seller_id)
-        cls.headers = admin_auth_headers()
-        day = day_params(ISOLATED_DAY)
-        with api_client() as client:
-            cls.orders_before = client.get("/api/admin/stats/orders", params=day, headers=cls.headers).json()
-            cls.sales_before = client.get("/api/admin/stats/orders/sales", params=day, headers=cls.headers).json()
-            cls.revenue_before = client.get("/api/admin/stats/revenue", params=day, headers=cls.headers).json()
-            cls.summary_before = client.get("/api/admin/stats/summary", params=summary_params(), headers=cls.headers).json()
-            cls.locations_before = client.get("/api/admin/stats/orders/locations", params=day, headers=cls.headers).json()
-            cls.delivery_before = client.get("/api/admin/stats/orders/delivery-map", params=day, headers=cls.headers).json()
-            cls.provinces_before = client.get("/api/admin/stats/businesses-by-province", headers=cls.headers).json()
-        seed_history(cls.seller_id, cls.store_name)
+        for name, value in setup_statistics_e2e().items():
+            setattr(cls, name, value)
 
     @classmethod
     def tearDownClass(cls) -> None:

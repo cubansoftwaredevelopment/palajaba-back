@@ -11,13 +11,9 @@ from test_e2e.product_popularity.utils.fixtures import (
     PRODUCT_NAME,
     cleanup_db,
     count_events,
-    headers_for,
-    load_product_and_events,
-    order_payload,
-    seed_seller_and_product,
+    run_buyer_popularity_flow,
 )
 from test_e2e.utils.api import api_client
-from test_e2e.utils.buyer_flow import complete_marketplace_order
 from test_e2e.utils.database import mongo_configured
 
 
@@ -31,18 +27,8 @@ class ProductPopularityE2ETests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cleanup_db()
 
-    def _run_buyer_flow(self, plan_tier: str) -> tuple[dict, list[dict]]:
-        seller_id, product_id = seed_seller_and_product(plan_tier)
-        complete_marketplace_order(
-            self,
-            product_id=product_id,
-            order_body=order_payload(seller_id=seller_id, product_id=product_id),
-            seller_headers=headers_for(seller_id, plan_tier),
-        )
-        return load_product_and_events(product_id)
-
     def test_standard_plan_sums_only_the_last_three_weeks(self) -> None:
-        product, events = self._run_buyer_flow("standard")
+        product, events = run_buyer_popularity_flow(self, "standard")
         recent = [event for event in events if event["points"] != STALE_EVENT_POINTS]
 
         self.assertEqual([event["event"] for event in recent], ["view", "jaba", "purchase"])
@@ -51,7 +37,7 @@ class ProductPopularityE2ETests(unittest.TestCase):
         self.assertEqual(product["popularity"], 6)
 
     def test_pro_plan_doubles_the_three_week_sum(self) -> None:
-        product, events = self._run_buyer_flow("pro")
+        product, events = run_buyer_popularity_flow(self, "pro")
         recent_points = sum(
             event["points"] for event in events if event["points"] != STALE_EVENT_POINTS
         )
@@ -60,7 +46,7 @@ class ProductPopularityE2ETests(unittest.TestCase):
         self.assertEqual(product["popularity"], 12)
 
     def test_premium_plan_quadruples_the_three_week_sum(self) -> None:
-        product, events = self._run_buyer_flow("premium")
+        product, events = run_buyer_popularity_flow(self, "premium")
         recent_points = sum(
             event["points"] for event in events if event["points"] != STALE_EVENT_POINTS
         )

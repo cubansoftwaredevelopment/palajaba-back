@@ -84,6 +84,9 @@ async def connect_to_mongo():
     await ensure_product_category_seed()
     await seed_default_admin()
     await ensure_subscription_expiring_notifications()
+    await get_customer_devices_collection().create_index("token", unique=True)
+    await get_customer_devices_collection().create_index("customer_id")
+    await get_customer_notifications_collection().create_index([("customer_id", 1), ("created_at", -1)])
     await ensure_exchange_rates_ready()
     ensure_uploads_dir()
 
@@ -242,6 +245,18 @@ def get_seller_devices_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["seller_devices"]
+
+
+def get_customer_devices_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customer_devices"]
+
+
+def get_customer_notifications_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customer_notifications"]
 
 
 def get_marketplace_visits_collection() -> AsyncIOMotorCollection:

@@ -62,6 +62,7 @@ class SellerPublic(BaseModel):
     has_store_banners: bool = False
     has_full_store_customization: bool = False
     has_product_discounts: bool = False
+    qvapay_enabled: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
     business_location: BusinessLocation | None = None

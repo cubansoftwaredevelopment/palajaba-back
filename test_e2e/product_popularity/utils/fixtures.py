@@ -14,6 +14,7 @@ from app.database import (
 )
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.utils.api import seller_auth_headers
+from test_e2e.utils.buyer_flow import complete_marketplace_order
 from test_e2e.utils.database import run_db
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 
@@ -183,3 +184,14 @@ def headers_for(seller_id: str, plan_tier: str) -> dict[str, str]:
         seller_id=seller_id,
         store_name=store_name(plan_tier, seller_id),
     )
+
+
+def run_buyer_popularity_flow(test_case, plan_tier: str) -> tuple[dict, list[dict]]:
+    seller_id, product_id = seed_seller_and_product(plan_tier)
+    complete_marketplace_order(
+        test_case,
+        product_id=product_id,
+        order_body=order_payload(seller_id=seller_id, product_id=product_id),
+        seller_headers=headers_for(seller_id, plan_tier),
+    )
+    return load_product_and_events(product_id)

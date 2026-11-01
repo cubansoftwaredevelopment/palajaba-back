@@ -6,29 +6,17 @@ import json
 import unittest
 
 from test_e2e.products.utils.fixtures import (
+    MARIANAO_AREA,
     cleanup_db,
     headers_for,
     photo_upload,
     product_form,
+    public_product_ids,
     seed_seller,
 )
 from test_e2e.utils.api import api_client
 from test_e2e.utils.database import mongo_configured
 from test_e2e.utils.locations import EXTRA_MUNICIPALITY_ID, PROVINCE_ID, SELLER_MUNICIPALITY_ID
-
-MARIANAO_AREA = {
-    "province_id": PROVINCE_ID,
-    "municipality_id": EXTRA_MUNICIPALITY_ID,
-}
-
-
-def _public_product_ids(payload: dict) -> set[str]:
-    return {
-        product["id"]
-        for section in payload.get("sections") or []
-        for product in section.get("products") or []
-    }
-
 
 @unittest.skipUnless(mongo_configured(), "MONGODB_URL no configurada")
 class ProductSalesAreasE2ETests(unittest.TestCase):
@@ -99,7 +87,7 @@ class ProductSalesAreasE2ETests(unittest.TestCase):
                 },
             )
             self.assertEqual(visible.status_code, 200, visible.text)
-            self.assertIn(product["id"], _public_product_ids(visible.json()))
+            self.assertIn(product["id"], public_product_ids(visible.json()))
 
             hidden = client.get(
                 f"/api/marketplace/stores/{seller['store_slug']}/catalog",
@@ -109,4 +97,4 @@ class ProductSalesAreasE2ETests(unittest.TestCase):
                 },
             )
             self.assertEqual(hidden.status_code, 200, hidden.text)
-            self.assertNotIn(product["id"], _public_product_ids(hidden.json()))
+            self.assertNotIn(product["id"], public_product_ids(hidden.json()))

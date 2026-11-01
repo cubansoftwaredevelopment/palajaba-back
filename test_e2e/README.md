@@ -2,6 +2,10 @@
 
 Desde `palajaba-back`, con MongoDB en marcha (`mongodb://localhost:27017` o la URL de `MONGODB_URL`).
 
+## Estructura
+
+Cada feature contiene módulos `test_*.py` con los escenarios y sus aserciones, y un directorio `utils/` con `fixtures.py` para preparación, limpieza, datos y helpers compartidos. Los archivos de prueba no definen helpers propios. Si un feature necesita separar datos grandes, pueden vivir en módulos dentro de `utils/` e importarse desde `utils/fixtures.py`.
+
 ## Todos
 
 ```powershell

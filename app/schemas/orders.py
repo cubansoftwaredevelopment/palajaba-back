@@ -7,6 +7,7 @@ from pydantic_core import PydanticCustomError
 OrderStatus = Literal["pending_confirmation", "completed", "cancelled"]
 InvoiceType = Literal["store", "transporter"]
 OrderOrigin = Literal["platform", "manual"]
+OrderPaymentMethod = Literal["contact", "qvapay"]
 PAYMENT_CURRENCIES = ("CUP", "USD", "EUR", "MLC")
 
 
@@ -121,6 +122,7 @@ class CreateOrderRequest(BaseModel):
     payment_currency: str | None = Field(default=None, min_length=3, max_length=8)
     gestor_id: str | None = Field(default=None, min_length=1, max_length=64)
     gestor_username: str | None = Field(default=None, min_length=2, max_length=32)
+    payment_method: OrderPaymentMethod = "contact"
 
     @field_validator("payment_currency")
     @classmethod
@@ -203,6 +205,8 @@ class OrderPublic(BaseModel):
     created_at: UtcDateTime
     updated_at: UtcDateTime
     completed_at: UtcDateTime | None = None
+    payment_method: OrderPaymentMethod = "contact"
+    qvapay: dict | None = None
 
 
 class UpdateOrderRequest(BaseModel):

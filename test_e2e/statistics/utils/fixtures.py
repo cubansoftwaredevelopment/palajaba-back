@@ -15,16 +15,41 @@ from app.database import (
     get_subscription_payments_collection,
 )
 from app.utils.datetime import to_utc_naive, utc_now
-from test_e2e.statistics.fixtures.constants import ID_PREFIX, ISOLATED_DAY, MARKER
-from test_e2e.statistics.fixtures.history import (
+from test_e2e.statistics.utils.data.constants import ID_PREFIX, ISOLATED_DAY, MARKER
+from test_e2e.statistics.utils.data.history import (
     completed_orders,
     payment_document,
     popularity_events,
     product_documents,
     seller_document,
 )
-from test_e2e.statistics.fixtures.presence import past_device_day
+from test_e2e.statistics.utils.data.presence import past_device_day
 from test_e2e.utils.database import run_db
+
+from test_e2e.statistics.utils.data.constants import (
+    CUP_COLLECTED,
+    DELIVERY_ADDRESS,
+    DELIVERY_LAT,
+    DELIVERY_LNG,
+    LIVE_LAT,
+    LIVE_LNG,
+    PAST_LAT,
+    PAST_LNG,
+    PAYMENT_CUP,
+    SOLD_LEAD_NAME,
+    SOLD_SECOND_NAME,
+    WEB_LAT,
+    WEB_LNG,
+)
+from test_e2e.statistics.utils.data.history import store_name
+from test_e2e.statistics.utils.data.presence import (
+    anonymous_presence,
+    logged_out_presence,
+    seller_presence,
+    tracked_id,
+    visit_payload,
+    web_buyer_presence,
+)
 
 
 def today() -> date:
@@ -97,3 +122,31 @@ def device_day(device_id: str, day: str) -> dict | None:
 
 def summary_params() -> dict[str, int]:
     return {"year": ISOLATED_DAY.year, "month": ISOLATED_DAY.month}
+
+
+def setup_statistics_e2e() -> dict:
+    """Limpia, recoge métricas de referencia y siembra el día aislado."""
+    from test_e2e.utils.api import admin_auth_headers, api_client
+
+    cleanup()
+    seller_id = ObjectId()
+    name = store_name(seller_id)
+    headers = admin_auth_headers()
+    day = day_params(ISOLATED_DAY)
+    with api_client() as client:
+        baseline = {
+            "orders_before": client.get("/api/admin/stats/orders", params=day, headers=headers).json(),
+            "sales_before": client.get("/api/admin/stats/orders/sales", params=day, headers=headers).json(),
+            "revenue_before": client.get("/api/admin/stats/revenue", params=day, headers=headers).json(),
+            "summary_before": client.get("/api/admin/stats/summary", params=summary_params(), headers=headers).json(),
+            "locations_before": client.get("/api/admin/stats/orders/locations", params=day, headers=headers).json(),
+            "delivery_before": client.get("/api/admin/stats/orders/delivery-map", params=day, headers=headers).json(),
+            "provinces_before": client.get("/api/admin/stats/businesses-by-province", headers=headers).json(),
+        }
+    seed_history(seller_id, name)
+    return {
+        "seller_id": seller_id,
+        "store_name": name,
+        "headers": headers,
+        **baseline,
+    }

@@ -173,3 +173,47 @@ def product_form(
 
 def photo_upload() -> tuple[str, BytesIO, str]:
     return ("photo.png", BytesIO(TINY_PNG), "image/png")
+
+
+MARIANAO_AREA = {
+    "province_id": PROVINCE_ID,
+    "municipality_id": EXTRA_MUNICIPALITY_ID,
+}
+
+
+def public_product_ids(payload: dict) -> set[str]:
+    return {
+        product["id"]
+        for section in payload.get("sections") or []
+        for product in section.get("products") or []
+    }
+
+
+def assert_catalog_discount(test_case, client, headers, product_id: str, expected: int | None) -> None:
+    catalog = client.get("/api/auth/me/catalog", headers=headers)
+    test_case.assertEqual(catalog.status_code, 200, catalog.text)
+    products = [
+        product
+        for category in catalog.json()["categories"]
+        for product in category.get("products") or []
+        if product["id"] == product_id
+    ]
+    test_case.assertEqual(len(products), 1, catalog.text)
+    test_case.assertEqual(products[0].get("discount_percent"), expected)
+
+
+def assert_public_catalog_discount(
+    test_case, client, store_slug: str, expected: int | None
+) -> None:
+    public = client.get(
+        f"/api/marketplace/stores/{store_slug}/catalog",
+        params={"province_id": PROVINCE_ID, "municipality_id": SELLER_MUNICIPALITY_ID},
+    )
+    test_case.assertEqual(public.status_code, 200, public.text)
+    products = [
+        product
+        for section in public.json().get("sections") or []
+        for product in section.get("products") or []
+    ]
+    test_case.assertEqual(len(products), 1, public.text)
+    test_case.assertEqual(products[0].get("discount_percent"), expected)

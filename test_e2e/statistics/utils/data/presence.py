@@ -4,7 +4,7 @@ from datetime import datetime
 
 from bson import ObjectId
 
-from test_e2e.statistics.fixtures.constants import (
+from test_e2e.statistics.utils.data.constants import (
     ID_PREFIX,
     ISOLATED_DAY,
     LIVE_LAT,

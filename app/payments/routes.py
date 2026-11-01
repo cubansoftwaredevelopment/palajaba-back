@@ -2,14 +2,25 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 
 from app.advertising.service import mark_advertising_paid
 from app.payments.qvapay import verify_webhook_signature
+from app.payments import service
+from app.payments.schema import (
+    CustomerDeviceDelete,
+    CustomerDeviceRequest,
+    EvidenceSubmitRequest,
+    QvaPayAccountRequest,
+    SellerAcceptPaymentRequest,
+)
+from app.auth.utils import require_customer, require_seller
+from app.live.devices import delete_customer_device, register_customer_device
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/payments", tags=["payments"])
+account_router = APIRouter(tags=["payment workflows"])
 
 
 @router.post("/qvapay/webhook")
@@ -34,11 +45,93 @@ async def qvapay_webhook(request: Request):
             detail="El webhook de QvaPay no es JSON válido.",
         )
 
-    handled = await mark_advertising_paid(
-        remote_id=str(payload.get("remote_id") or "") or None,
-        transaction_uuid=str(payload.get("transaction_uuid") or payload.get("uuid") or "") or None,
-        status_value=str(payload.get("status") or ""),
+    remote_id = str(payload.get("remote_id") or "") or None
+    transaction_uuid = str(payload.get("transaction_uuid") or payload.get("uuid") or "") or None
+    status_value = str(payload.get("status") or "")
+    handled = await service.mark_qvapay_invoice_paid(
+        remote_id=remote_id,
+        transaction_uuid=transaction_uuid,
+        status_value=status_value,
     )
+    if not handled:
+        handled = await mark_advertising_paid(
+            remote_id=remote_id,
+            transaction_uuid=transaction_uuid,
+            status_value=status_value,
+        )
     if not handled:
         logger.info("Webhook QvaPay ignorado: %s", payload.get("status"))
     return {"ok": True}
+
+
+@account_router.get("/api/auth/me/payment-methods/qvapay")
+async def get_seller_qvapay_account(seller: dict = Depends(require_seller)):
+    return await service.get_qvapay_account(seller["seller_id"])
+
+
+@account_router.put("/api/auth/me/payment-methods/qvapay")
+async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict = Depends(require_seller)):
+    return await service.save_qvapay_account(seller["seller_id"], payload.username)
+
+
+@account_router.delete("/api/auth/me/payment-methods/qvapay", status_code=204)
+async def delete_seller_qvapay_account(seller: dict = Depends(require_seller)):
+    await service.delete_qvapay_account(seller["seller_id"])
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/qvapay/accept")
+async def accept_seller_qvapay_order(order_id: str, payload: SellerAcceptPaymentRequest, seller: dict = Depends(require_seller)):
+    try:
+        return await service.accept_payment_request(
+            seller["seller_id"], order_id,
+            delivery_price=payload.delivery_price,
+            delivery_currency=payload.delivery_currency,
+        )
+    except HTTPException:
+        raise
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/qvapay/reject", status_code=204)
+async def reject_seller_qvapay_order(order_id: str, seller: dict = Depends(require_seller)):
+    await service.reject_payment_request(seller["seller_id"], order_id)
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/evidence/images")
+async def upload_seller_order_evidence_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+    return await service.upload_evidence_image(seller["seller_id"], order_id, photo)
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/evidence")
+async def submit_seller_order_evidence(order_id: str, payload: EvidenceSubmitRequest, seller: dict = Depends(require_seller)):
+    return await service.submit_evidence(seller["seller_id"], order_id, payload.content)
+
+
+@account_router.post("/api/customers/me/orders/{order_id}/qvapay/evidence/accept")
+async def accept_customer_order_evidence(order_id: str, customer: dict = Depends(require_customer)):
+    return await service.customer_evidence_decision(customer["customer_id"], order_id, accept=True)
+
+
+@account_router.post("/api/customers/me/orders/{order_id}/qvapay/evidence/reject")
+async def reject_customer_order_evidence(order_id: str, customer: dict = Depends(require_customer)):
+    return await service.customer_evidence_decision(customer["customer_id"], order_id, accept=False)
+
+
+@account_router.get("/api/customers/me/notifications")
+async def list_customer_order_notifications(customer: dict = Depends(require_customer)):
+    return await service.list_customer_notifications(customer["customer_id"])
+
+
+@account_router.patch("/api/customers/me/notifications/{notification_id}/read")
+async def read_customer_order_notification(notification_id: str, customer: dict = Depends(require_customer)):
+    return await service.mark_customer_notification_read(customer["customer_id"], notification_id)
+
+
+@account_router.post("/api/live/customer-devices", status_code=201)
+async def register_customer_push_device(payload: CustomerDeviceRequest, customer: dict = Depends(require_customer)):
+    await register_customer_device(customer["customer_id"], payload)
+    return {"registered": True}
+
+
+@account_router.delete("/api/live/customer-devices", status_code=204)
+async def unregister_customer_push_device(payload: CustomerDeviceDelete, customer: dict = Depends(require_customer)):
+    await delete_customer_device(customer["customer_id"], payload.token)

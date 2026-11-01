@@ -2,13 +2,54 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+
 from app.database import (
     get_advertising_purchases_collection,
     get_finance_ledger_collection,
     get_platform_settings_collection,
 )
+from app.payments.qvapay import QvaPayInvoice
 from test_e2e.products.utils.fixtures import seed_seller as seed_product_seller
 from test_e2e.utils.database import run_db
+
+SECRET = "qvapay-e2e-secret"
+
+
+def sign_webhook(body: bytes) -> str:
+    digest = hmac.new(SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    return f"sha256={digest}"
+
+
+async def fake_invoice(
+    *,
+    amount: float,
+    description: str,
+    remote_id: str,
+    products=None,
+) -> QvaPayInvoice:
+    fake_invoice.last_products = list(products or [])
+    fake_invoice.last_description = description
+    return QvaPayInvoice(
+        url=f"https://qvapay.com/pay/{remote_id}",
+        transaction_uuid=f"tx-{remote_id}",
+        amount=amount,
+        remote_id=remote_id,
+        raw={},
+    )
+
+
+async def load_purchase_ledger(purchase_id: str) -> list[dict]:
+    from app.database import get_finance_ledger_collection
+
+    return await get_finance_ledger_collection().find(
+        {"source": "advertising", "source_id": purchase_id}
+    ).to_list(length=10)
+
+
+def purchase_ledger(purchase_id: str) -> list[dict]:
+    return run_db(lambda: load_purchase_ledger(purchase_id))
 
 
 async def cleanup() -> None:

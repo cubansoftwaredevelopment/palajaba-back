@@ -6,6 +6,8 @@ import unittest
 
 from app.products.utils import PRODUCT_DISCOUNT_PLAN_REQUIRED_MESSAGE
 from test_e2e.products.utils.fixtures import (
+    assert_catalog_discount,
+    assert_public_catalog_discount,
     cleanup_db,
     headers_for,
     photo_upload,
@@ -14,7 +16,6 @@ from test_e2e.products.utils.fixtures import (
 )
 from test_e2e.utils.api import admin_auth_headers, api_client
 from test_e2e.utils.database import mongo_configured
-from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID
 
 
 @unittest.skipUnless(mongo_configured(), "MONGODB_URL no configurada")
@@ -196,8 +197,8 @@ class ProductsE2ETests(unittest.TestCase):
             me = client.get("/api/auth/me", headers=headers)
             self.assertEqual(me.status_code, 200, me.text)
             self.assertTrue(me.json()["has_product_discounts"])
-            self._assert_catalog_discount(client, headers, product_id, 10)
-            self._assert_public_catalog_discount(client, seller["store_slug"], 10)
+            assert_catalog_discount(self, client, headers, product_id, 10)
+            assert_public_catalog_discount(self, client, seller["store_slug"], 10)
 
             basic = client.patch(
                 f"/api/admin/registrations/{seller['seller_id']}/subscription",
@@ -213,8 +214,8 @@ class ProductsE2ETests(unittest.TestCase):
             me = client.get("/api/auth/me", headers=headers)
             self.assertEqual(me.status_code, 200, me.text)
             self.assertFalse(me.json()["has_product_discounts"])
-            self._assert_catalog_discount(client, headers, product_id, None)
-            self._assert_public_catalog_discount(client, seller["store_slug"], None)
+            assert_catalog_discount(self, client, headers, product_id, None)
+            assert_public_catalog_discount(self, client, seller["store_slug"], None)
 
             pro = client.patch(
                 f"/api/admin/registrations/{seller['seller_id']}/subscription",
@@ -230,34 +231,5 @@ class ProductsE2ETests(unittest.TestCase):
             me = client.get("/api/auth/me", headers=headers)
             self.assertEqual(me.status_code, 200, me.text)
             self.assertTrue(me.json()["has_product_discounts"])
-            self._assert_catalog_discount(client, headers, product_id, 10)
-            self._assert_public_catalog_discount(client, seller["store_slug"], 10)
-
-    def _assert_catalog_discount(self, client, headers, product_id: str, expected: int | None) -> None:
-        catalog = client.get("/api/auth/me/catalog", headers=headers)
-        self.assertEqual(catalog.status_code, 200, catalog.text)
-        products = [
-            product
-            for category in catalog.json()["categories"]
-            for product in category.get("products") or []
-            if product["id"] == product_id
-        ]
-        self.assertEqual(len(products), 1, catalog.text)
-        self.assertEqual(products[0].get("discount_percent"), expected)
-
-    def _assert_public_catalog_discount(self, client, store_slug: str, expected: int | None) -> None:
-        public = client.get(
-            f"/api/marketplace/stores/{store_slug}/catalog",
-            params={
-                "province_id": PROVINCE_ID,
-                "municipality_id": SELLER_MUNICIPALITY_ID,
-            },
-        )
-        self.assertEqual(public.status_code, 200, public.text)
-        products = [
-            product
-            for section in public.json().get("sections") or []
-            for product in section.get("products") or []
-        ]
-        self.assertEqual(len(products), 1, public.text)
-        self.assertEqual(products[0].get("discount_percent"), expected)
+            assert_catalog_discount(self, client, headers, product_id, 10)
+            assert_public_catalog_discount(self, client, seller["store_slug"], 10)

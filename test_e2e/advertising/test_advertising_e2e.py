@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -12,37 +10,19 @@ from app.advertising.service import invoice_amounts
 from app.config import settings
 from app.notifications.otp_manager import can_send_sms, send_otp
 from app.notifications.otp_manager.nox_provider import OtpSendResult
-from app.payments.qvapay import QvaPayInvoice
-from test_e2e.advertising.utils.fixtures import cleanup_db, seed_admin_contact_db, seed_seller
+from test_e2e.advertising.utils.fixtures import (
+    SECRET,
+    cleanup_db,
+    fake_invoice,
+    purchase_ledger,
+    seed_admin_contact_db,
+    seed_seller,
+    sign_webhook,
+)
 from test_e2e.products.utils.fixtures import cleanup_db as cleanup_product_sellers
 from test_e2e.products.utils.fixtures import headers_for
 from test_e2e.utils.api import api_client
-from test_e2e.utils.database import mongo_configured, run_db
-
-SECRET = "qvapay-e2e-secret"
-
-
-def _sign(body: bytes) -> str:
-    digest = hmac.new(SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return f"sha256={digest}"
-
-
-async def _fake_invoice(
-    *,
-    amount: float,
-    description: str,
-    remote_id: str,
-    products=None,
-) -> QvaPayInvoice:
-    _fake_invoice.last_products = list(products or [])
-    _fake_invoice.last_description = description
-    return QvaPayInvoice(
-        url=f"https://qvapay.com/pay/{remote_id}",
-        transaction_uuid=f"tx-{remote_id}",
-        amount=amount,
-        remote_id=remote_id,
-        raw={},
-    )
+from test_e2e.utils.database import mongo_configured
 
 
 class OtpManagerTests(unittest.IsolatedAsyncioTestCase):
@@ -102,7 +82,7 @@ class AdvertisingE2ETests(unittest.TestCase):
         with (
             patch.object(settings, "qvapay_app_id", "app-e2e"),
             patch.object(settings, "qvapay_app_secret", SECRET),
-            patch("app.advertising.service.create_invoice", side_effect=_fake_invoice),
+            patch("app.advertising.service.create_invoice", side_effect=fake_invoice),
             patch("app.advertising.service.send_custom_sms", sms),
             api_client() as client,
         ):
@@ -121,9 +101,9 @@ class AdvertisingE2ETests(unittest.TestCase):
             self.assertEqual(body["invoice_amount_usd"], 15.08)
             self.assertEqual(body["exchange_fee_usd"], 0.08)
             self.assertTrue(body["payment_url"].startswith("https://qvapay.com/pay/"))
-            self.assertIn("Plan 1 10 días", _fake_invoice.last_description)
+            self.assertIn("Plan 1 10 días", fake_invoice.last_description)
             self.assertEqual(
-                _fake_invoice.last_products,
+                fake_invoice.last_products,
                 [
                     {
                         "name": "Publicidad Plan 1 10 días",
@@ -149,14 +129,14 @@ class AdvertisingE2ETests(unittest.TestCase):
             paid = client.post(
                 "/api/payments/qvapay/webhook",
                 content=raw,
-                headers={"content-type": "application/json", "x-qvapay-signature": _sign(raw)},
+                headers={"content-type": "application/json", "x-qvapay-signature": sign_webhook(raw)},
             )
             self.assertEqual(paid.status_code, 200, paid.text)
 
             again = client.post(
                 "/api/payments/qvapay/webhook",
                 content=raw,
-                headers={"content-type": "application/json", "x-qvapay-signature": _sign(raw)},
+                headers={"content-type": "application/json", "x-qvapay-signature": sign_webhook(raw)},
             )
             self.assertEqual(again.status_code, 200, again.text)
 
@@ -164,18 +144,7 @@ class AdvertisingE2ETests(unittest.TestCase):
         phones = {call.kwargs["phone_e164"] for call in sms.await_args_list}
         self.assertEqual(phones, {"+5355511122", "+5355511133"})
 
-        def _assert_ledger() -> None:
-            async def work():
-                from app.database import get_finance_ledger_collection
-
-                docs = await get_finance_ledger_collection().find(
-                    {"source": "advertising", "source_id": purchase_id}
-                ).to_list(length=10)
-                return docs
-
-            return run_db(work)
-
-        docs = _assert_ledger()
+        docs = purchase_ledger(purchase_id)
         self.assertEqual(len(docs), 1)
         self.assertEqual(docs[0]["kind"], "income")
         self.assertEqual(docs[0]["currency"], "USD")

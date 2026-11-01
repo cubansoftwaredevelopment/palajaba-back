@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     otp_token_secret: str = ""
     qvapay_app_id: str = ""
     qvapay_app_secret: str = ""
+    qvapay_user_bearer_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

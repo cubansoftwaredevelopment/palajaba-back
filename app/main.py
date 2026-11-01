@@ -18,7 +18,9 @@ from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
 from app.statistics_admin.routes import router as statistics_router
 from app.advertising.routes import router as advertising_router
+from app.payments.routes import account_router as payment_workflow_router
 from app.payments.routes import router as payments_router
+from app.payments.service import start_expiry_task, stop_expiry_task
 from app.routers import admin, auth, categories, marketplace, platform, product_categories, seo, gestores
 from app.notifications.service import (
     start_subscription_reminder_task,
@@ -37,8 +39,10 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     start_exchange_rates_refresh_task()
     start_subscription_reminder_task()
+    start_expiry_task()
     yield
     await stop_subscription_reminder_task()
+    await stop_expiry_task()
     await stop_exchange_rates_refresh_task()
     await close_mongo_connection()
 
@@ -65,6 +69,7 @@ app.include_router(marketplace.router)
 app.include_router(platform.router)
 app.include_router(advertising_router)
 app.include_router(payments_router)
+app.include_router(payment_workflow_router)
 app.include_router(seo.router)
 app.include_router(admin.router)
 app.include_router(statistics_router)

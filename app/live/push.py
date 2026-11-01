@@ -6,7 +6,7 @@ import httpx
 from jose import jwt
 
 from app.config import settings
-from app.live.devices import list_seller_device_tokens
+from app.live.devices import list_customer_device_tokens, list_seller_device_tokens
 
 _FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -63,12 +63,10 @@ async def _access_token(account: dict) -> str | None:
     return token
 
 
-async def notify_seller_devices(seller_id: str, title: str, body: str) -> None:
+async def notify_device_tokens(tokens: list[str], title: str, body: str, data: dict | None = None) -> None:
     account = _account()
     if account is None or not account.get("project_id"):
         return
-
-    tokens = await list_seller_device_tokens(seller_id)
     if not tokens:
         return
 
@@ -94,8 +92,20 @@ async def notify_seller_devices(seller_id: str, title: str, body: str) -> None:
                                 "title": title,
                                 "body": body.replace("\n", " "),
                             },
+                            **({"data": {str(key): str(value) for key, value in data.items()}} if data else {}),
                         }
                     },
                 )
     except Exception:
         return
+
+
+async def notify_seller_devices(seller_id: str, title: str, body: str) -> None:
+    await notify_device_tokens(await list_seller_device_tokens(seller_id), title, body)
+
+
+async def notify_customer_devices(customer_id: str, title: str, body: str, *, order_id: str | None = None) -> None:
+    data = {"order_id": order_id} if order_id else None
+    await notify_device_tokens(
+        await list_customer_device_tokens(customer_id), title, body, data=data
+    )

@@ -27,6 +27,7 @@ class MarketplaceStorePublic(BaseModel):
     store_name: str
     store_slug: str
     phone: str
+    qvapay_enabled: bool = False
     profile_photo_url: str | None = None
     business_area: BusinessArea | None = None
     checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)

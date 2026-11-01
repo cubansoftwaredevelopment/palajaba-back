@@ -83,7 +83,25 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         completed_at=doc.get("completed_at"),
+        payment_method=doc.get("payment_method") or "contact",
+        qvapay=_public_qvapay(doc.get("qvapay")),
     )
+
+
+def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        "request_status": value.get("request_status"),
+        "payment_status": value.get("payment_status"),
+        "invoice_url": value.get("invoice_url"),
+        "invoice_amount_usd": value.get("invoice_amount_usd"),
+        "products_amount_usd": value.get("products_amount_usd"),
+        "delivery_amount_usd": value.get("delivery_amount_usd"),
+        "fee_usd": value.get("fee_usd"),
+        "evidence": value.get("evidence"),
+        "release_status": value.get("release_status"),
+    }
 
 
 async def ensure_order_indexes() -> None:
@@ -303,6 +321,20 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
         gestor_username=payload.gestor_username,
         buyer=customer,
     )
+    doc["payment_method"] = payload.payment_method
+    if payload.payment_method == "qvapay":
+        if not seller.get("qvapay_username"):
+            raise ValueError("Esta tienda no tiene QvaPay configurado.")
+        from app.payments.qvapay import qvapay_escrow_configured
+
+        if not qvapay_escrow_configured():
+            raise ValueError("El pago con QvaPay no está disponible ahora.")
+        doc["qvapay"] = {
+            "request_status": "pending_seller",
+            "payment_status": "not_invoiced",
+            "release_status": "held",
+            "evidence": None,
+        }
 
     result = await get_orders_collection().insert_one(doc)
     doc["_id"] = result.inserted_id

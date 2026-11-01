@@ -10,21 +10,12 @@ from app.notifications.service import (
     _filter_sellers_by_audiences,
     _stored_audience,
 )
-from app.subscriptions.service import PREMIUM_PLAN_TIER, PRO_PLAN_TIER, STANDARD_PLAN_TIER
-
-
-def _seller(seller_id: str, tier: str, billing: str) -> dict:
-    return {"_id": seller_id, "plan_tier": tier, "billing_period": billing}
+from test_e2e.notifications.utils.fixtures import audience_sellers
 
 
 class AudienceFilterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.sellers = [
-            _seller("p-m", PREMIUM_PLAN_TIER, "monthly"),
-            _seller("p-y", PREMIUM_PLAN_TIER, "yearly"),
-            _seller("pro-m", PRO_PLAN_TIER, "monthly"),
-            _seller("std-m", STANDARD_PLAN_TIER, "monthly"),
-        ]
+        self.sellers = audience_sellers()
 
     def test_multiple_groups_do_not_include_everyone(self) -> None:
         matched = _filter_sellers_by_audiences(
