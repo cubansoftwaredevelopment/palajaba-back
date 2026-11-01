@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     eltoque_request_timeout_seconds: float = 20.0
     exchange_rates_refresh_seconds: int = 1200
     catalog_repair_store_slugs: str = ""
-    public_site_url: str = "https://palajaba.com"
+    public_site_url: str = Field(
+        default="https://palajaba.com",
+        validation_alias=AliasChoices("PUBLIC_SITE_URL", "public_site_url"),
+    )
     otp_api_base: str = "https://otp.noxcreation.dev/api"
     otp_api_key: str = ""
     otp_token_secret: str = ""
@@ -53,6 +56,13 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_app_env(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
+
+    @field_validator("public_site_url", mode="before")
+    @classmethod
+    def normalize_public_site_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().rstrip("/")
+        return value
 
     @property
     def otp_verification_bypassed(self) -> bool:
