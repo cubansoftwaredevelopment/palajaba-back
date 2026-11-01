@@ -28,7 +28,7 @@ async def connect_to_mongo():
         ensure_password_reset_indexes,
         ensure_registration_otp_indexes,
     )
-    from app.customer_accounts.routes import ensure_customer_indexes
+    from app.customer_accounts.services import ensure_customer_indexes
     from app.auth.contact_changes import ensure_seller_contact_otp_indexes
     from app.auth.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary

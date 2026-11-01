@@ -360,14 +360,28 @@ async def create_seller_manual_order(
     return _doc_to_public(doc)
 
 
-async def list_seller_orders(seller_id: str) -> list[OrderPublic]:
-    cursor = (
-        get_orders_collection()
-        .find({"seller_id": seller_id, "status": {"$ne": "cancelled"}})
-        .sort([("created_at", -1)])
+async def list_seller_orders(seller_id: str, *, offset: int = 0, limit: int = 25) -> dict[str, Any]:
+    collection = get_orders_collection()
+    base_query = {"seller_id": seller_id, "status": {"$ne": "cancelled"}}
+    docs = await (
+        collection.find(base_query)
+        .sort([("created_at", -1), ("_id", -1)])
+        .skip(offset)
+        .limit(limit)
+        .to_list(length=limit)
     )
-    docs = await cursor.to_list(length=None)
-    return [_doc_to_public(doc) for doc in docs]
+    total = await collection.count_documents(base_query)
+    pending_count = await collection.count_documents({**base_query, "status": "pending_confirmation"})
+    completed_count = await collection.count_documents({**base_query, "status": "completed"})
+    return {
+        "items": [_doc_to_public(doc) for doc in docs],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + len(docs) < total,
+        "pending_count": pending_count,
+        "completed_count": completed_count,
+    }
 
 
 async def update_seller_order(

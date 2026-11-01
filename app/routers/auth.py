@@ -167,9 +167,15 @@ async def delete_my_gestor(
     )
 
 
-@router.get("/me/orders", response_model=list[OrderPublic])
-async def list_my_orders(seller_payload: dict = Depends(require_seller)):
-    return await orders_service.list_seller_orders(seller_payload["seller_id"])
+@router.get("/me/orders")
+async def list_my_orders(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await orders_service.list_seller_orders(
+        seller_payload["seller_id"], offset=offset, limit=limit
+    )
 
 
 @router.post("/me/orders", response_model=OrderPublic, status_code=201)
