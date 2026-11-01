@@ -8,11 +8,17 @@ from datetime import timedelta
 
 from bson import ObjectId
 
-from app.database import get_customers_collection, get_orders_collection, get_registrations_collection
+from app.database import (
+    get_customers_collection,
+    get_orders_collection,
+    get_registrations_collection,
+    get_subscription_qvapay_purchases_collection,
+)
 from app.utils.datetime import to_utc_naive, utc_now
 
 MARKER = "qvapay_escrow_e2e_v1"
 SECRET = "qvapay-escrow-e2e-secret"
+PLAN_MARKER = "qvapay_plan_e2e_v1"
 
 
 async def seed_order(seller_id: str, *, deadline=None) -> dict[str, str]:
@@ -94,6 +100,46 @@ async def cleanup() -> None:
     await get_orders_collection().delete_many({MARKER: True})
     await get_customers_collection().delete_many({MARKER: True})
     await get_registrations_collection().delete_many({"qvapay_e2e_marker": MARKER})
+
+
+async def cleanup_plan_purchases() -> None:
+    registrations = get_registrations_collection()
+    purchases = get_subscription_qvapay_purchases_collection()
+    test_transaction_ids = ["plan-tx-e2e", "signup-tx-e2e"]
+    seller_ids = [str(doc["_id"]) async for doc in registrations.find({PLAN_MARKER: True}, {"_id": 1})]
+    async for doc in purchases.find({PLAN_MARKER: True, "seller_id": {"$ne": None}}, {"seller_id": 1}):
+        seller_ids.append(str(doc["seller_id"]))
+    async for doc in purchases.find({"transaction_uuid": {"$in": test_transaction_ids}, "seller_id": {"$ne": None}}, {"seller_id": 1}):
+        seller_ids.append(str(doc["seller_id"]))
+    if seller_ids:
+        await purchases.delete_many({"seller_id": {"$in": seller_ids}})
+    await purchases.delete_many({"transaction_uuid": {"$in": test_transaction_ids}})
+    await registrations.delete_many({PLAN_MARKER: True})
+    await purchases.delete_many({PLAN_MARKER: True})
+
+
+async def seed_inactive_plan_seller() -> dict[str, str]:
+    seller_id = ObjectId()
+    now = to_utc_naive(utc_now())
+    doc = {
+        "_id": seller_id,
+        "status": "approved",
+        "store_name": f"TEST QvaPay plan {seller_id}",
+        "store_slug": f"test-qvapay-plan-{seller_id}",
+        "transfer_id": f"TEST-QVAPAY-PLAN-{seller_id}",
+        "phone": f"{(int(str(seller_id), 16) % 90000000) + 10000000:08d}",
+        "email": f"seller-{seller_id}@qvapay-plan-e2e.test",
+        "billing_period": "monthly",
+        "plan_tier": "standard",
+        "is_trial": False,
+        "subscription_starts_at": None,
+        "subscription_ends_at": None,
+        "created_at": now,
+        "updated_at": now,
+        PLAN_MARKER: True,
+    }
+    await get_registrations_collection().insert_one(doc)
+    return {"seller_id": str(seller_id), "store_name": doc["store_name"]}
 
 
 def sign_webhook(body: bytes) -> str:

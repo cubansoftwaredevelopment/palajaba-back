@@ -33,16 +33,19 @@ def qvapay_escrow_configured() -> bool:
 
 
 async def verify_qvapay_username(username: str) -> str:
-    """Confirma el username exacto usando el token de lectura de la plataforma."""
-    token = settings.qvapay_user_bearer_token.strip()
+    """Verifica el username en QvaPay, salvo en entorno de desarrollo."""
     normalized = username.strip().lstrip("@").lower()
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Escribe tu usuario QvaPay.")
+    if settings.app_env == "development":
+        return normalized
+
+    token = settings.qvapay_user_bearer_token.strip()
     if not token:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="La verificación de cuentas QvaPay no está configurada.",
         )
-    if not normalized:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Escribe tu usuario QvaPay.")
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             response = await client.post(
@@ -141,7 +144,7 @@ def _invoice_products(products: list[dict[str, Any]] | None) -> list[dict[str, A
             quantity = 1
         if not name or price is None or quantity < 1:
             continue
-        items.append({"name": name[:80], "price": price})
+        items.append({"name": name[:80], "price": price, "quantity": quantity})
     return items
 
 
@@ -163,9 +166,11 @@ async def create_invoice(
         "remote_id": remote_id,
         "webhook": webhook_url(),
     }
+    
     invoice_products = _invoice_products(products)
     if invoice_products:
         body["products"] = invoice_products
+
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
@@ -184,7 +189,9 @@ async def create_invoice(
         payload = response.json() if response.content else {}
     except ValueError:
         payload = {}
-
+    
+    print("Qvpay request body:", body)  # Debugging line
+    print("QvaPay Response:", response.status_code, payload)  # Debugging line
     if response.status_code >= 400 or not isinstance(payload, dict):
         message = ""
         if isinstance(payload, dict):

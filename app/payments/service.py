@@ -209,7 +209,7 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
             invoice_products.append({"name": "Cargo de protección Pa' La Jaba", "price": quote["fee_usd"]})
         invoice = await create_invoice(
             amount=quote["invoice_amount_usd"],
-            description=f"Pedido {str(doc['_id'])[-6:].upper()} · {doc['store_name']}",
+            description=f"Pedido {str(doc['_id'])[-6:].upper()}, {doc['store_name']}",
             remote_id=f"store-order-{doc['_id']}",
             products=invoice_products,
         )

@@ -250,6 +250,8 @@ async def create_registration(
         "plan_tier": normalize_plan_tier(plan_tier),
         "is_trial": bool(is_trial),
         "status": "approved" if is_preapproved else "pending",
+        # OTP-verified owners can manage their inactive store while CUP payment is reviewed.
+        "owner_portal_enabled": True,
         "subscription_starts_at": now if is_trial else None,
         "subscription_ends_at": ends_at,
         **expiry_notice_reset(),

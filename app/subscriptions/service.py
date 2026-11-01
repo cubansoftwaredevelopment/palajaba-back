@@ -448,6 +448,7 @@ async def ensure_subscription_payment_indexes() -> None:
     collection = get_subscription_payments_collection()
     await collection.create_index([("recorded_at", -1)])
     await collection.create_index([("registration_id", 1), ("recorded_at", -1)])
+    await collection.create_index("external_payment_id", unique=True, sparse=True)
     await backfill_subscription_payments_from_registrations()
     await backfill_finance_ledger_from_payments()
 
@@ -460,6 +461,7 @@ async def record_subscription_payment(
     recorded_at=None,
     plan_tier: str | None = None,
     billing_period: str | None = None,
+    external_payment_id: str | None = None,
 ) -> None:
     if amount_cup <= 0:
         return
@@ -477,16 +479,28 @@ async def record_subscription_payment(
         "created_at": now,
         "rates": rates,
     }
-    result = await get_subscription_payments_collection().insert_one(document)
+    collection = get_subscription_payments_collection()
+    if external_payment_id:
+        document["external_payment_id"] = external_payment_id
+        await collection.update_one(
+            {"external_payment_id": external_payment_id},
+            {"$setOnInsert": document},
+            upsert=True,
+        )
+        payment = await collection.find_one({"external_payment_id": external_payment_id})
+        payment_id = payment["_id"]
+    else:
+        result = await collection.insert_one(document)
+        payment_id = result.inserted_id
     ledger_id = await _sync_ledger_income(
-        payment_id=result.inserted_id,
+        payment_id=payment_id,
         amount_cup=amount_cup,
         kind=kind,
         at=when,
         rates=rates,
     )
-    await get_subscription_payments_collection().update_one(
-        {"_id": result.inserted_id},
+    await collection.update_one(
+        {"_id": payment_id},
         {"$set": {"ledger_id": ledger_id}},
     )
 

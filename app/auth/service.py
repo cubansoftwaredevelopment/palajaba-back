@@ -9,6 +9,7 @@ from app.auth.utils import verify_password
 from app.services.platform_settings import get_renewal_contact_phone
 from app.auth.registrations import mark_registration_expired_if_needed
 from app.subscriptions.service import is_subscription_active, subscription_expired_detail
+from app.payments import subscription_service
 
 
 
@@ -41,6 +42,8 @@ async def login_seller(
         )
 
     if doc["status"] == "pending":
+        if doc.get("owner_portal_enabled"):
+            return doc
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -158,6 +161,14 @@ async def _get_challenge(challenge_id: str) -> dict:
 
 
 async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartResponse:
+    if payload.kind == "account":
+        if not payload.qvapay_purchase_id:
+            raise HTTPException(status_code=400, detail="Debes pagar el plan QvaPay antes de crear la tienda.")
+        await subscription_service.validate_initial_subscription_checkout(
+            purchase_id=payload.qvapay_purchase_id,
+            plan_tier=payload.plan_tier,
+            billing_period=payload.billing_period,
+        )
     await assert_contact_available(
         phone=payload.phone,
         email=payload.email,
@@ -177,6 +188,7 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
         "billing_period": payload.billing_period,
         "plan_tier": payload.plan_tier,
         "discount_code": payload.discount_code,
+        "qvapay_purchase_id": payload.qvapay_purchase_id,
         "email_hash": email_result.hash,
         "phone_hash": phone_result.hash,
         "email_verified": False,
@@ -265,19 +277,26 @@ async def confirm_registration_otp(
         is_trial=is_trial,
         is_account=is_account,
     )
+    if is_account:
+        await subscription_service.attach_paid_subscription_checkout(
+            seller_id=registration.id,
+            purchase_id=doc["qvapay_purchase_id"],
+            store_name=registration.store_name,
+        )
     await collection.delete_one({"_id": doc["_id"]})
 
     access_token = None
-    if is_trial or is_account:
+    if is_trial or is_account or registration.status == "pending":
         access_token = create_seller_token(
             seller_id=registration.id,
             store_name=registration.store_name,
         )
-        message = (
-            "Tu prueba de 15 días ya está activa. Puedes entrar a tu tienda."
-            if is_trial
-            else "Tu perfil de tienda está creado. Puedes completarlo y elegir un plan desde tu cuenta."
-        )
+        if is_trial:
+            message = "Tu prueba de 15 días ya está activa. Puedes entrar a tu tienda."
+        elif is_account:
+            message = "Tu perfil de tienda está creado. Puedes completarlo y elegir un plan desde tu cuenta."
+        else:
+            message = "Recibimos tu pago CUP y está en verificación. Puedes entrar y completar tu tienda; el catálogo se activará cuando se apruebe el pago."
     else:
         message = "Solicitud recibida. Te notificaremos cuando verifiquemos tu pago."
 

@@ -7,12 +7,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from app.advertising.service import mark_advertising_paid
 from app.payments.qvapay import verify_webhook_signature
 from app.payments import service
+from app.payments import subscription_service
 from app.payments.schema import (
     CustomerDeviceDelete,
     CustomerDeviceRequest,
     EvidenceSubmitRequest,
     QvaPayAccountRequest,
     SellerAcceptPaymentRequest,
+    SubscriptionPlanCheckoutRequest,
 )
 from app.auth.utils import require_customer, require_seller
 from app.live.devices import delete_customer_device, register_customer_device
@@ -54,6 +56,12 @@ async def qvapay_webhook(request: Request):
         status_value=status_value,
     )
     if not handled:
+        handled = await subscription_service.mark_subscription_plan_invoice_paid(
+            remote_id=remote_id,
+            transaction_uuid=transaction_uuid,
+            status_value=status_value,
+        )
+    if not handled:
         handled = await mark_advertising_paid(
             remote_id=remote_id,
             transaction_uuid=transaction_uuid,
@@ -62,6 +70,41 @@ async def qvapay_webhook(request: Request):
     if not handled:
         logger.info("Webhook QvaPay ignorado: %s", payload.get("status"))
     return {"ok": True}
+
+
+@account_router.post("/api/auth/me/subscriptions/qvapay")
+async def create_subscription_plan_qvapay_checkout(
+    payload: SubscriptionPlanCheckoutRequest,
+    seller: dict = Depends(require_seller),
+):
+    return await subscription_service.create_subscription_plan_checkout(
+        seller_id=seller["seller_id"],
+        plan_tier=payload.plan_tier,
+        billing_period=payload.billing_period,
+    )
+
+
+@account_router.post("/api/register/qvapay")
+async def create_initial_subscription_qvapay_checkout(payload: SubscriptionPlanCheckoutRequest):
+    return await subscription_service.create_initial_subscription_checkout(
+        plan_tier=payload.plan_tier,
+        billing_period=payload.billing_period,
+    )
+
+
+@account_router.get("/api/register/qvapay/{purchase_id}")
+async def get_initial_subscription_qvapay_checkout(purchase_id: str):
+    return await subscription_service.get_public_initial_subscription_checkout(purchase_id=purchase_id)
+
+
+@account_router.get("/api/auth/me/subscriptions/qvapay/{purchase_id}")
+async def get_subscription_plan_qvapay_checkout(
+    purchase_id: str,
+    seller: dict = Depends(require_seller),
+):
+    return await subscription_service.get_subscription_plan_checkout(
+        seller_id=seller["seller_id"], purchase_id=purchase_id
+    )
 
 
 @account_router.get("/api/auth/me/payment-methods/qvapay")

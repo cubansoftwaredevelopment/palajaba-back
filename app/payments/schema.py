@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.subscriptions.schemas import BillingPeriod, PlanTier
+
 
 class QvaPayAccountRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=64)
@@ -16,6 +18,30 @@ class QvaPayAccountRequest(BaseModel):
 class QvaPayAccountPublic(BaseModel):
     username: str | None = None
     verified: bool = False
+
+
+class SubscriptionPlanCheckoutRequest(BaseModel):
+    plan_tier: PlanTier
+    billing_period: BillingPeriod
+
+
+class SubscriptionPlanCheckoutPublic(BaseModel):
+    purchase_id: str
+    plan_tier: PlanTier
+    billing_period: BillingPeriod
+    plan_amount_usd: float
+    invoice_amount_usd: float
+    payment_url: str
+    status: str
+
+
+class SubscriptionPlanCheckoutStatus(BaseModel):
+    purchase_id: str
+    plan_tier: PlanTier
+    billing_period: BillingPeriod
+    invoice_amount_usd: float
+    payment_url: str
+    status: str
 
 
 class SellerAcceptPaymentRequest(BaseModel):

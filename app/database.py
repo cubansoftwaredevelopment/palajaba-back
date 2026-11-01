@@ -37,6 +37,7 @@ async def connect_to_mongo():
     from app.statistics_admin.traffic import ensure_marketplace_visit_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.advertising.service import ensure_advertising_indexes
+    from app.payments.subscription_service import ensure_subscription_qvapay_indexes
     from app.services.platform_settings import ensure_platform_settings_indexes
     from app.services.banners import ensure_banner_indexes
     from app.services.seller_profile import ensure_uploads_dir
@@ -52,6 +53,7 @@ async def connect_to_mongo():
     await ensure_admin_indexes()
     await ensure_platform_settings_indexes()
     await ensure_advertising_indexes()
+    await ensure_subscription_qvapay_indexes()
     await ensure_banner_indexes()
     await ensure_exchange_rates_indexes()
     await ensure_notification_indexes()
@@ -239,6 +241,12 @@ def get_subscription_payments_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["subscription_payments"]
+
+
+def get_subscription_qvapay_purchases_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["subscription_qvapay_purchases"]
 
 
 def get_seller_devices_collection() -> AsyncIOMotorCollection:
