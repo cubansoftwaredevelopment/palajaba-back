@@ -56,13 +56,15 @@ async def ensure_subscription_qvapay_indexes() -> None:
     await collection.create_index([("seller_id", 1), ("status", 1), ("created_at", -1)])
 
 
-def _checkout_public(doc: dict[str, Any], *, include_plan_amount: bool = False) -> dict[str, Any]:
+def _checkout_public(
+    doc: dict[str, Any], *, include_plan_amount: bool = False, payment_url: str = ""
+) -> dict[str, Any]:
     result = {
         "purchase_id": str(doc["_id"]),
         "plan_tier": doc["plan_tier"],
         "billing_period": doc["billing_period"],
         "invoice_amount_usd": float(doc["invoice_amount_usd"]),
-        "payment_url": str(doc.get("payment_url") or ""),
+        "payment_url": payment_url,
         "status": str(doc["status"]),
     }
     if include_plan_amount:
@@ -84,14 +86,6 @@ async def create_subscription_plan_checkout(
     tier = normalize_plan_tier(plan_tier)
     period = normalize_billing_period(billing_period)
     purchases = get_subscription_qvapay_purchases_collection()
-    existing = await purchases.find_one({"seller_id": str(seller_oid), "status": "pending"})
-    if existing:
-        if existing.get("plan_tier") == tier and existing.get("billing_period") == period:
-            return _checkout_public(existing, include_plan_amount=True)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Ya tienes una factura QvaPay pendiente. Págala antes de solicitar otra.",
-        )
 
     rates = snapshot_cup_per_unit()
     configured_price = (await get_plan_prices()).get_price(tier, period)
@@ -110,7 +104,6 @@ async def create_subscription_plan_checkout(
         "invoice_amount_usd": plan_amount_usd,
         "currency": "USD",
         "exchange_rates_cup_per_unit": rates,
-        "payment_url": None,
         "status": "creating_invoice",
         "created_at": now,
         "updated_at": now,
@@ -135,7 +128,6 @@ async def create_subscription_plan_checkout(
         {
             "$set": {
                 "transaction_uuid": invoice.transaction_uuid,
-                "payment_url": invoice.url,
                 "status": "pending",
                 "updated_at": to_utc_naive(utc_now()),
             }
@@ -144,11 +136,10 @@ async def create_subscription_plan_checkout(
     document.update(
         {
             "transaction_uuid": invoice.transaction_uuid,
-            "payment_url": invoice.url,
             "status": "pending",
         }
     )
-    return _checkout_public(document, include_plan_amount=True)
+    return _checkout_public(document, include_plan_amount=True, payment_url=invoice.url)
 
 
 async def create_initial_subscription_checkout(*, plan_tier: str, billing_period: str) -> dict[str, Any]:
@@ -173,7 +164,6 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
         "invoice_amount_usd": amount_usd,
         "currency": "USD",
         "exchange_rates_cup_per_unit": rates,
-        "payment_url": None,
         "status": "creating_invoice",
         "created_at": now,
         "updated_at": now,
@@ -192,12 +182,12 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
             {"$set": {"status": "failed", "updated_at": to_utc_naive(utc_now())}},
         )
         raise
-    document.update({"transaction_uuid": invoice.transaction_uuid, "payment_url": invoice.url, "status": "pending"})
+    document.update({"transaction_uuid": invoice.transaction_uuid, "status": "pending"})
     await purchases.update_one(
         {"_id": purchase_id, "status": "creating_invoice"},
-        {"$set": {"transaction_uuid": invoice.transaction_uuid, "payment_url": invoice.url, "status": "pending", "updated_at": to_utc_naive(utc_now())}},
+        {"$set": {"transaction_uuid": invoice.transaction_uuid, "status": "pending", "updated_at": to_utc_naive(utc_now())}},
     )
-    return _checkout_public(document, include_plan_amount=True)
+    return _checkout_public(document, include_plan_amount=True, payment_url=invoice.url)
 
 
 async def get_public_initial_subscription_checkout(*, purchase_id: str) -> dict[str, Any]:
