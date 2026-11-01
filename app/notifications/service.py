@@ -6,6 +6,7 @@ from typing import Any
 from bson import ObjectId
 from fastapi import HTTPException, status
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
 from app.live.hub import publish_seller_notification
@@ -37,7 +38,6 @@ from app.subscriptions.service import (
     expiry_notice_title,
     is_subscription_active,
     is_within_contact_reminder_window,
-    is_within_warning_window,
     subscription_days_remaining,
     warning_notification_content,
 )
@@ -140,7 +140,12 @@ async def _ensure_expiry_in_app_notice(
         "created_at": now,
         "created_by_admin_id": None,
     }
-    await get_notifications_collection().insert_one(document)
+    try:
+        await get_notifications_collection().insert_one(document)
+    except DuplicateKeyError:
+        # Another worker created this reminder after our lookup. The unique
+        # index keeps one record; do not publish a second live notification.
+        return None
     await publish_seller_notification(str(seller["_id"]), _document_to_public(document))
     return document
 
@@ -216,9 +221,8 @@ async def ensure_subscription_expiring_notifications() -> int:
     )
 
     async for doc in cursor:
-        in_warning = is_within_warning_window(doc, now=now)
         in_contact = is_within_contact_reminder_window(doc, now=now)
-        if not in_warning and not in_contact:
+        if not in_contact:
             continue
 
         ends_at = doc["subscription_ends_at"]
@@ -233,21 +237,22 @@ async def ensure_subscription_expiring_notifications() -> int:
                 "subscription_ends_at": ends_at,
             },
         )
-        if existing is None and (in_warning or in_contact):
+        if existing is None and in_contact:
+            # send app notification
             existing = await _ensure_expiry_in_app_notice(
                 doc,
                 ends_at=ends_at,
                 days_remaining=days_remaining,
                 existing=None,
             )
-            created += 1
-
-        if in_contact:
+            # send sms
             await _send_subscription_contact_reminder(
                 doc,
                 days_remaining=days_remaining,
                 ends_at=ends_at,
             )
+            if existing is not None:
+                created += 1
 
     return created
 

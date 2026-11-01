@@ -168,7 +168,7 @@ from fastapi import HTTPException, status
 from app.database import get_registrations_collection
 from app.utils.datetime import to_utc_naive, utc_now
 
-SUBSCRIPTION_WARNING_DAYS = 3
+
 SUBSCRIPTION_CONTACT_REMINDER_DAYS = 2
 SUBSCRIPTION_URGENT_BANNER_HOURS = 24
 NOTIFICATION_KIND_EXPIRING = "subscription_expiring"
@@ -345,11 +345,6 @@ async def assert_seller_subscription_active(seller_id: str) -> dict[str, Any]:
         )
 
     return doc
-
-
-def is_within_warning_window(doc: dict[str, Any], *, now: datetime | None = None) -> bool:
-    days = subscription_days_remaining(doc, now=now)
-    return days is not None and 0 < days <= SUBSCRIPTION_WARNING_DAYS
 
 
 def is_within_contact_reminder_window(doc: dict[str, Any], *, now: datetime | None = None) -> bool:

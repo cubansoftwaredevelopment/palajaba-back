@@ -36,7 +36,6 @@ from app.subscriptions.service import (
     seller_has_store_banners,
 )
 from app.subscriptions.service import (
-    is_publicly_visible,
     is_subscription_active,
     subscription_days_remaining,
     subscription_hours_remaining,
@@ -302,8 +301,11 @@ async def _get_seller_doc(seller_id: str) -> dict[str, Any]:
             detail="Tienda no encontrada.",
         ) from exc
 
+    # This helper serves authenticated owner operations, including profile
+    # setup before a subscription exists. Public marketplace visibility is
+    # enforced by the public catalog routes instead.
     doc = await collection.find_one({"_id": object_id})
-    if doc is None or not is_publicly_visible(doc):
+    if doc is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tienda no encontrada.",

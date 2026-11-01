@@ -211,8 +211,6 @@ async def create_registration(
         discount_code = None
     elif is_account:
         normalized_transfer_id = f"ACCOUNT-{uuid.uuid4()}"
-        billing_period = "monthly"
-        plan_tier = "standard"
         discount_code = None
     else:
         if not transfer_id or not str(transfer_id).strip():

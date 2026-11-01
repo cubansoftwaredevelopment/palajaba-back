@@ -256,7 +256,12 @@ class RegisterRequest(BaseModel):
     def require_transfer_for_paid(self) -> "RegisterRequest":
         if self.kind == "paid" and not (self.transfer_id or "").strip():
             raise ValueError("El ID de la transferencia es obligatorio.")
-        if self.kind in ("account", "trial"):
+        if self.kind == "account":
+            if "plan_tier" not in self.model_fields_set:
+                raise ValueError("Selecciona un plan para crear la tienda.")
+            self.transfer_id = None
+            self.discount_code = None
+        elif self.kind == "trial":
             self.transfer_id = None
             self.plan_tier = "standard"
             self.billing_period = "monthly"
