@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         default="https://palajaba.com",
         validation_alias=AliasChoices("PUBLIC_SITE_URL", "public_site_url"),
     )
+    public_api_url: str = Field(
+        default="https://palajaba-back.onrender.com",
+        validation_alias=AliasChoices("PUBLIC_API_URL", "public_api_url"),
+    )
     otp_api_base: str = "https://otp.noxcreation.dev/api"
     otp_api_key: str = ""
     otp_token_secret: str = ""
@@ -60,6 +64,13 @@ class Settings(BaseSettings):
     @field_validator("public_site_url", mode="before")
     @classmethod
     def normalize_public_site_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().rstrip("/")
+        return value
+
+    @field_validator("public_api_url", mode="before")
+    @classmethod
+    def normalize_public_api_url(cls, value: object) -> object:
         if isinstance(value, str):
             return value.strip().rstrip("/")
         return value

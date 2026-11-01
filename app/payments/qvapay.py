@@ -108,7 +108,7 @@ def _headers() -> dict[str, str]:
 
 
 def webhook_url() -> str:
-    return f"{settings.public_site_url.rstrip('/')}/api/payments/qvapay/webhook"
+    return f"{settings.public_api_url.rstrip('/')}/api/payments/qvapay/webhook"
 
 
 def verify_webhook_signature(*, body: bytes, signature: str | None) -> bool:
