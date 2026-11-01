@@ -277,7 +277,7 @@ def is_subscription_active(
 
     ends_at = normalize_subscription_end(doc.get("subscription_ends_at"))
     if ends_at is None:
-        return True
+        return False
 
     reference = now or utc_now()
     if reference.tzinfo is None:

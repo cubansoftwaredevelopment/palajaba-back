@@ -10,6 +10,7 @@ from app.database import close_mongo_connection, connect_to_mongo
 from app.live.routes import router as live_router
 from app.notifications.routes import router as notifications_router
 from app.auth.routes import router as account_router
+from app.customer_accounts.routes import router as customer_accounts_router
 from app.products.routes import router as products_router
 from app.subscriptions.routes import router as subscriptions_router
 from app.finance_admin.routes import router as finance_router
@@ -53,6 +54,7 @@ app.add_middleware(
 )
 
 app.include_router(account_router)
+app.include_router(customer_accounts_router)
 app.include_router(auth.router)
 app.include_router(products_router)
 app.include_router(subscriptions_router)

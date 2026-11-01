@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.config import settings
 from app.notifications.otp_manager import nox_provider
 from app.notifications.otp_manager.nox_provider import OtpSendResult
 from app.notifications.otp_manager.sms_cooldown import (
@@ -15,6 +17,14 @@ OTP_EXPIRES_IN_SECONDS = nox_provider.OTP_EXPIRES_IN_SECONDS
 
 
 async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -> OtpSendResult:
+    if settings.otp_verification_bypassed:
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=OTP_EXPIRES_IN_SECONDS)
+        return OtpSendResult(
+            hash="development-otp-bypass",
+            expires_at=expires_at.isoformat(),
+            message="Modo desarrollo: verificación OTP omitida.",
+        )
+
     email_value = str(email).strip() if email else None
     phone_value = to_e164(phone_e164) if phone_e164 else ""
     sms_phone = phone_value if phone_value and can_send_sms(phone_value) else None
@@ -27,6 +37,8 @@ async def send_otp(*, email: str | None = None, phone_e164: str | None = None) -
 
 
 async def verify_otp(*, otp_hash: str, code: str) -> None:
+    if settings.otp_verification_bypassed:
+        return
     await nox_provider.verify_otp(otp_hash=otp_hash, code=code)
 
 

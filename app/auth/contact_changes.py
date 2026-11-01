@@ -3,6 +3,7 @@ from datetime import timedelta
 from bson import ObjectId
 from fastapi import HTTPException, status
 
+from app.config import settings
 from app.database import (
     get_registrations_collection,
     get_seller_contact_otp_challenges_collection,
@@ -80,10 +81,15 @@ async def _save_challenge(*, seller_id: str, kind: str, target: dict, sent) -> S
         challenge_id=str(result.inserted_id),
         expires_at=sent.expires_at,
         message=(
-            "Te enviamos un código por SMS al nuevo número."
-            if kind == KIND_PHONE
-            else "Te enviamos un código a tu nuevo correo."
+            "Modo desarrollo: verificación OTP omitida."
+            if settings.otp_verification_bypassed
+            else (
+                "Te enviamos un código por SMS al nuevo número."
+                if kind == KIND_PHONE
+                else "Te enviamos un código a tu nuevo correo."
+            )
         ),
+        otp_bypassed=settings.otp_verification_bypassed,
     )
 
 
@@ -167,6 +173,7 @@ async def resend_contact_change(*, seller_id: str, challenge_id: str) -> SellerC
         challenge_id=challenge_id,
         expires_at=sent.expires_at,
         message="Código reenviado.",
+        otp_bypassed=settings.otp_verification_bypassed,
     )
 
 

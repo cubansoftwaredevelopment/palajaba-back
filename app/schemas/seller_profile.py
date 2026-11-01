@@ -146,6 +146,7 @@ class SellerContactOtpStartResponse(BaseModel):
     challenge_id: str
     expires_at: str | None = None
     message: str
+    otp_bypassed: bool = False
 
 
 class SellerContactOtpResendRequest(BaseModel):

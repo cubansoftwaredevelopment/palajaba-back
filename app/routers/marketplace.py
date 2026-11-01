@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.schemas.banners import BannerPublic
 from app.schemas.marketplace import (
@@ -24,6 +24,7 @@ from app.services import marketplace as marketplace_service
 from app.services import orders as orders_service
 from app.services import product_popularity as popularity_service
 from app.services import seller_stats as seller_stats_service
+from app.auth.utils import require_customer
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
 
@@ -380,9 +381,12 @@ async def record_product_popularity(product_id: str, payload: ProductPopularityE
 
 
 @router.post("/orders", response_model=OrderPublic, status_code=201)
-async def create_marketplace_order(payload: CreateOrderRequest):
+async def create_marketplace_order(
+    payload: CreateOrderRequest,
+    customer_payload: dict = Depends(require_customer),
+):
     try:
-        return await orders_service.create_order(payload)
+        return await orders_service.create_order(payload, customer_id=customer_payload["customer_id"])
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +18,7 @@ def _parse_positive_int_env(value: object, *, field_name: str) -> object:
 
 
 class Settings(BaseSettings):
+    app_env: Literal["development", "production"] = "production"
     mongodb_url: str = "mongodb://localhost:27017"
     database_name: str = "ecommerce"
     secret_key: str = "dev-secret-change-in-production"
@@ -44,6 +47,15 @@ class Settings(BaseSettings):
     qvapay_app_secret: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("app_env", mode="before")
+    @classmethod
+    def normalize_app_env(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
+
+    @property
+    def otp_verification_bypassed(self) -> bool:
+        return self.app_env == "development"
 
     @field_validator("access_token_expire_minutes", mode="before")
     @classmethod

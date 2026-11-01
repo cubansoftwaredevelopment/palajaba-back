@@ -50,9 +50,6 @@ async def seller_login(payload: SellerLoginRequest):
         phone=payload.phone,
         store_name=payload.store_name,
     )
-    if isinstance(result, SubscriptionExpiredPublic):
-        return SellerLoginResponse(subscription_expired=result)
-
     seller = profile_service.document_to_seller(result)
     return SellerLoginResponse(
         access_token=create_seller_token(

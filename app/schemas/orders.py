@@ -196,6 +196,10 @@ class OrderPublic(BaseModel):
     origin: OrderOrigin = "platform"
     gestor_id: str | None = None
     gestor_username: str | None = None
+    buyer_id: str | None = None
+    buyer_name: str | None = None
+    buyer_email: str | None = None
+    buyer_phone: str | None = None
     created_at: UtcDateTime
     updated_at: UtcDateTime
     completed_at: UtcDateTime | None = None

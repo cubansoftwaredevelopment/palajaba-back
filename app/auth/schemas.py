@@ -151,6 +151,7 @@ class PasswordResetStartResponse(BaseModel):
     email_expires_at: str | None = None
     phone_expires_at: str | None = None
     message: str
+    otp_bypassed: bool = False
 
 
 class PasswordResetResendRequest(BaseModel):
@@ -185,7 +186,7 @@ class PasswordResetCompleteResponse(BaseModel):
     message: str
 
 
-RegisterKind = Literal["trial", "paid"]
+RegisterKind = Literal["account", "trial", "paid"]
 OtpChannel = Literal["email", "phone"]
 
 
@@ -255,7 +256,7 @@ class RegisterRequest(BaseModel):
     def require_transfer_for_paid(self) -> "RegisterRequest":
         if self.kind == "paid" and not (self.transfer_id or "").strip():
             raise ValueError("El ID de la transferencia es obligatorio.")
-        if self.kind == "trial":
+        if self.kind in ("account", "trial"):
             self.transfer_id = None
             self.plan_tier = "standard"
             self.billing_period = "monthly"
@@ -268,6 +269,7 @@ class RegisterOtpStartResponse(BaseModel):
     email_expires_at: str | None = None
     phone_expires_at: str | None = None
     message: str
+    otp_bypassed: bool = False
 
 
 class RegisterOtpResendRequest(BaseModel):

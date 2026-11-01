@@ -61,6 +61,16 @@ def create_seller_token(*, seller_id: str, store_name: str) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
 
 
+def create_customer_token(*, customer_id: str, full_name: str) -> str:
+    payload = {
+        "sub": full_name,
+        "customer_id": customer_id,
+        "role": "customer",
+        "exp": _token_expiration_timestamp(),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
 def decode_seller_token(token: str) -> dict | None:
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
@@ -70,6 +80,16 @@ def decode_seller_token(token: str) -> dict | None:
     if payload.get("role") != "seller":
         return None
 
+    return payload
+
+
+def decode_customer_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("role") != "customer":
+        return None
     return payload
 
 
@@ -169,10 +189,35 @@ async def require_seller(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    from app.subscriptions.service import assert_seller_subscription_active
+    return payload
 
-    await assert_seller_subscription_active(payload["seller_id"])
 
+async def require_customer(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    payload = decode_customer_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    from bson import ObjectId
+    from app.database import get_customers_collection
+
+    try:
+        customer_id = ObjectId(payload["customer_id"])
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido o expirado") from exc
+    customer = await get_customers_collection().find_one({"_id": customer_id}, {"_id": 1})
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Cuenta de cliente no encontrada.")
     return payload
 
 
@@ -194,10 +239,8 @@ async def require_gestor(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    from app.subscriptions.service import assert_seller_subscription_active
     from app.services.gestores import assert_gestor_account_active
 
-    await assert_seller_subscription_active(payload["seller_id"])
     await assert_gestor_account_active(payload["gestor_id"], payload["seller_id"])
 
     return payload

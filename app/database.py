@@ -28,6 +28,7 @@ async def connect_to_mongo():
         ensure_password_reset_indexes,
         ensure_registration_otp_indexes,
     )
+    from app.customer_accounts.routes import ensure_customer_indexes
     from app.auth.contact_changes import ensure_seller_contact_otp_indexes
     from app.auth.registrations import ensure_registration_indexes
     from app.services.media_storage import init_cloudinary
@@ -44,6 +45,7 @@ async def connect_to_mongo():
 
     await ensure_registration_indexes()
     await ensure_registration_otp_indexes()
+    await ensure_customer_indexes()
     await ensure_seller_contact_otp_indexes()
     await ensure_password_reset_indexes()
     await ensure_order_indexes()
@@ -102,6 +104,30 @@ def get_registration_otp_sms_cooldowns_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["registration_otp_sms_cooldowns"]
+
+
+def get_customers_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customers"]
+
+
+def get_customer_otp_challenges_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customer_otp_challenges"]
+
+
+def get_customer_contact_otp_challenges_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customer_contact_otp_challenges"]
+
+
+def get_customer_password_reset_challenges_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["customer_password_reset_challenges"]
 
 
 def get_seller_contact_otp_challenges_collection() -> AsyncIOMotorCollection:

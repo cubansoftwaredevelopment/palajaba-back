@@ -4,7 +4,7 @@ from typing import Any, Literal
 from bson import ObjectId
 from bson.errors import InvalidId
 
-from app.database import get_catalog_products_collection, get_orders_collection, get_registrations_collection
+from app.database import get_catalog_products_collection, get_customers_collection, get_orders_collection, get_registrations_collection
 from app.schemas.orders import (
     CreateOrderRequest,
     CreateSellerManualOrderRequest,
@@ -76,6 +76,10 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         origin=doc.get("origin") or "platform",
         gestor_id=doc.get("gestor_id"),
         gestor_username=doc.get("gestor_username"),
+        buyer_id=doc.get("buyer_id"),
+        buyer_name=doc.get("buyer_name"),
+        buyer_email=doc.get("buyer_email"),
+        buyer_phone=doc.get("buyer_phone"),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
         completed_at=doc.get("completed_at"),
@@ -151,8 +155,9 @@ def _build_order_document(
     now,
     gestor_id: str | None = None,
     gestor_username: str | None = None,
+    buyer: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    document = {
         "seller_id": str(seller["_id"]),
         "store_name": seller["store_name"],
         "status": "pending_confirmation",
@@ -171,6 +176,16 @@ def _build_order_document(
         "updated_at": now,
         "completed_at": None,
     }
+    if buyer:
+        document.update(
+            {
+                "buyer_id": str(buyer["_id"]),
+                "buyer_name": buyer["full_name"],
+                "buyer_email": buyer["email"],
+                "buyer_phone": f"+53{buyer['phone']}",
+            }
+        )
+    return document
 
 
 async def _rollback_stock_decrements(
@@ -263,8 +278,15 @@ async def _decrement_product_stock(
     return applied
 
 
-async def create_order(payload: CreateOrderRequest) -> OrderPublic:
+async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> OrderPublic:
     seller = await _get_seller_doc(payload.store_id)
+    try:
+        customer_oid = ObjectId(customer_id)
+    except Exception as exc:
+        raise ValueError("Cuenta de cliente no válida.") from exc
+    customer = await get_customers_collection().find_one({"_id": customer_oid})
+    if customer is None:
+        raise ValueError("Cuenta de cliente no encontrada.")
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
     now = to_utc_naive(utc_now())
@@ -279,6 +301,7 @@ async def create_order(payload: CreateOrderRequest) -> OrderPublic:
         now=now,
         gestor_id=payload.gestor_id,
         gestor_username=payload.gestor_username,
+        buyer=customer,
     )
 
     result = await get_orders_collection().insert_one(doc)
@@ -307,7 +330,7 @@ async def create_seller_manual_order(
         raise ValueError("Tienda no válida.") from exc
 
     seller = await get_registrations_collection().find_one({"_id": seller_oid})
-    if seller is None or not is_subscription_active(seller):
+    if seller is None:
         raise ValueError("Tienda no encontrada o no disponible.")
 
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))

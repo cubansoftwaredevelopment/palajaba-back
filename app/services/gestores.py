@@ -45,7 +45,6 @@ from app.subscriptions.utils import (
     checkout_after_deactivate,
     resolve_gestor_keep_on_plan_change,
 )
-from app.subscriptions.service import is_subscription_active
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
 from app.utils.store_slug import store_name_to_slug
@@ -284,7 +283,7 @@ async def _find_seller_by_store_name(store_name: str) -> dict[str, Any]:
         doc = await collection.find_one(
             {"store_name": {"$regex": f"^{re.escape(stripped)}$", "$options": "i"}}
         )
-    if doc is None or doc.get("status") != "approved" or not is_subscription_active(doc):
+    if doc is None or doc.get("status") not in {"approved", "expired"}:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales incorrectas.",

@@ -2,6 +2,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from app.config import settings
 from app.database import get_registrations_collection
 from app.auth.schemas import SubscriptionExpiredPublic
 from app.auth.utils import verify_password
@@ -56,7 +57,7 @@ async def login_seller(
         )
 
     if doc["status"] == "expired":
-        return await _subscription_expired_public(doc)
+        return doc
 
     if doc["status"] != "approved":
         raise HTTPException(
@@ -66,7 +67,8 @@ async def login_seller(
 
     if not is_subscription_active(doc):
         await mark_registration_expired_if_needed(doc)
-        return await _subscription_expired_public(doc)
+        refreshed = await collection.find_one({"_id": doc["_id"]})
+        return refreshed or doc
 
     return doc
 
@@ -84,11 +86,6 @@ async def authenticate_seller(
         phone=phone,
         store_name=store_name,
     )
-    if isinstance(result, SubscriptionExpiredPublic):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail=result.model_dump(),
-        )
     return result
 
 
@@ -194,7 +191,8 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
         challenge_id=str(result.inserted_id),
         email_expires_at=email_result.expires_at,
         phone_expires_at=phone_result.expires_at,
-        message="Te enviamos un código al correo y otro por SMS.",
+        message="Modo desarrollo: verificación OTP omitida." if settings.otp_verification_bypassed else "Te enviamos un código al correo y otro por SMS.",
+        otp_bypassed=settings.otp_verification_bypassed,
     )
 
 
@@ -233,6 +231,7 @@ async def resend_registration_otp(*, challenge_id: str, channel: str) -> Registe
         email_expires_at=email_expires_at,
         phone_expires_at=phone_expires_at,
         message="Código reenviado.",
+        otp_bypassed=settings.otp_verification_bypassed,
     )
 
 
@@ -253,6 +252,7 @@ async def confirm_registration_otp(
         await collection.update_one({"_id": doc["_id"]}, {"$set": {"phone_verified": True}})
 
     is_trial = doc.get("kind") == "trial"
+    is_account = doc.get("kind") == "account"
     registration = await create_registration(
         transfer_id=doc.get("transfer_id"),
         store_name=doc["store_name"],
@@ -263,23 +263,28 @@ async def confirm_registration_otp(
         plan_tier=doc.get("plan_tier") or "standard",
         discount_code=doc.get("discount_code"),
         is_trial=is_trial,
+        is_account=is_account,
     )
     await collection.delete_one({"_id": doc["_id"]})
 
     access_token = None
-    if is_trial:
+    if is_trial or is_account:
         access_token = create_seller_token(
             seller_id=registration.id,
             store_name=registration.store_name,
         )
-        message = "Tu prueba de 15 días ya está activa. Puedes entrar a tu tienda."
+        message = (
+            "Tu prueba de 15 días ya está activa. Puedes entrar a tu tienda."
+            if is_trial
+            else "Tu perfil de tienda está creado. Puedes completarlo y elegir un plan desde tu cuenta."
+        )
     else:
         message = "Solicitud recibida. Te notificaremos cuando verifiquemos tu pago."
 
     return RegisterOtpConfirmResponse(
         id=registration.id,
         status=registration.status,
-        kind="trial" if is_trial else "paid",
+        kind="trial" if is_trial else "account" if is_account else "paid",
         message=message,
         access_token=access_token,
     )
@@ -366,6 +371,7 @@ def _start_response(doc: dict, *, message: str) -> PasswordResetStartResponse:
         email_expires_at=doc.get("email_expires_at"),
         phone_expires_at=doc.get("phone_expires_at"),
         message=message,
+        otp_bypassed=settings.otp_verification_bypassed,
     )
 
 

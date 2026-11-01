@@ -19,6 +19,7 @@ from app.payments.qvapay import create_invoice
 from app.schemas.platform_settings import AdvertisingPlanPublic
 from app.services.exchange_rates import snapshot_cup_per_unit
 from app.services.platform_settings import get_advertising_prices, get_platform_settings
+from app.subscriptions.service import is_subscription_active
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import can_send_sms, to_e164
 
@@ -87,6 +88,11 @@ async def checkout_advertising_plan(*, seller_id: str, plan_id: str) -> Advertis
     plan_amount, fee, total = invoice_amounts(prices.get_amount(plan_id))
     now = to_utc_naive(utc_now())
     seller = await get_registrations_collection().find_one({"_id": _oid(seller_id)})
+    if seller is None or not is_subscription_active(seller):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La tienda debe tener una suscripción activa para comprar planes de marketing.",
+        )
     store_name = str((seller or {}).get("store_name") or "tienda")
 
     document = {

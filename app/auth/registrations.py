@@ -198,6 +198,7 @@ async def create_registration(
     plan_tier: str = "standard",
     discount_code: str | None = None,
     is_trial: bool = False,
+    is_account: bool = False,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     now = to_utc_naive(utc_now())
@@ -205,6 +206,11 @@ async def create_registration(
 
     if is_trial:
         normalized_transfer_id = f"TRIAL-{uuid.uuid4()}"
+        billing_period = "monthly"
+        plan_tier = "standard"
+        discount_code = None
+    elif is_account:
+        normalized_transfer_id = f"ACCOUNT-{uuid.uuid4()}"
         billing_period = "monthly"
         plan_tier = "standard"
         discount_code = None
@@ -233,6 +239,7 @@ async def create_registration(
         )
     hashed = password_hash or hash_password(password)
 
+    is_preapproved = is_trial or is_account
     ends_at = now + timedelta(days=TRIAL_DAYS) if is_trial else None
     document = {
         "transfer_id": normalized_transfer_id,
@@ -244,14 +251,14 @@ async def create_registration(
         "billing_period": billing_period,
         "plan_tier": normalize_plan_tier(plan_tier),
         "is_trial": bool(is_trial),
-        "status": "approved" if is_trial else "pending",
+        "status": "approved" if is_preapproved else "pending",
         "subscription_starts_at": now if is_trial else None,
         "subscription_ends_at": ends_at,
         **expiry_notice_reset(),
         "rejection_reason": None,
         "created_at": now,
         "updated_at": now,
-        "approved_at": now if is_trial else None,
+        "approved_at": now if is_preapproved else None,
         "payment_amount_cup": 0 if is_trial else None,
         "discount_code": None,
         "discount_percent": None,
