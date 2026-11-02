@@ -8,6 +8,7 @@ from app.subscriptions.schemas import BillingPeriod, PlanTier
 
 class QvaPayAccountRequest(BaseModel):
     username: str = Field(..., min_length=2, max_length=64)
+    skip_verification: bool = False
 
     @field_validator("username")
     @classmethod

@@ -114,7 +114,11 @@ async def get_seller_qvapay_account(seller: dict = Depends(require_seller)):
 
 @account_router.put("/api/auth/me/payment-methods/qvapay")
 async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict = Depends(require_seller)):
-    return await service.save_qvapay_account(seller["seller_id"], payload.username)
+    return await service.save_qvapay_account(
+        seller["seller_id"],
+        payload.username,
+        skip_verification_on_service_error=payload.skip_verification,
+    )
 
 
 @account_router.delete("/api/auth/me/payment-methods/qvapay", status_code=204)

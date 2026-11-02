@@ -46,20 +46,47 @@ def _oid(value: str, message: str) -> ObjectId:
 
 async def get_qvapay_account(seller_id: str) -> dict[str, Any]:
     seller = await get_registrations_collection().find_one(
-        {"_id": _oid(seller_id, "Tienda no encontrada.")}, {"qvapay_username": 1}
+        {"_id": _oid(seller_id, "Tienda no encontrada.")},
+        {"qvapay_username": 1, "qvapay_verified_at": 1},
     )
     if seller is None:
         raise HTTPException(status_code=404, detail="Tienda no encontrada.")
-    return {"username": seller.get("qvapay_username"), "verified": bool(seller.get("qvapay_username"))}
+    return {
+        "username": seller.get("qvapay_username"),
+        "verified": bool(seller.get("qvapay_username") and seller.get("qvapay_verified_at")),
+    }
 
 
-async def save_qvapay_account(seller_id: str, username: str) -> dict[str, Any]:
-    normalized = await verify_qvapay_username(username)
-    await get_registrations_collection().update_one(
+async def save_qvapay_account(
+    seller_id: str,
+    username: str,
+    *,
+    skip_verification_on_service_error: bool = False,
+) -> dict[str, Any]:
+    normalized = username.strip().lstrip("@").lower()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Escribe tu usuario QvaPay.")
+    verified = True
+    try:
+        normalized = await verify_qvapay_username(normalized)
+    except HTTPException as exc:
+        if not skip_verification_on_service_error or exc.status_code != 503:
+            raise
+        verified = False
+
+    collection = get_registrations_collection()
+    update = {"$set": {"qvapay_username": normalized}}
+    if verified:
+        update["$set"]["qvapay_verified_at"] = to_utc_naive(utc_now())
+    else:
+        update["$unset"] = {"qvapay_verified_at": ""}
+    result = await collection.update_one(
         {"_id": _oid(seller_id, "Tienda no encontrada.")},
-        {"$set": {"qvapay_username": normalized, "qvapay_verified_at": to_utc_naive(utc_now())}},
+        update,
     )
-    return {"username": normalized, "verified": True}
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+    return {"username": normalized, "verified": verified}
 
 
 async def delete_qvapay_account(seller_id: str) -> None:
@@ -90,7 +117,12 @@ def payment_quote(order: dict[str, Any], delivery_price: float | None, delivery_
         raise HTTPException(status_code=400, detail="Indica el costo del domicilio antes de crear la factura.")
     delivery_usd = _usd(float(delivery_price), delivery_currency or "CUP", rates) if delivery_price is not None else 0.0
     base = Decimal(str(products_usd + delivery_usd))
-    fee = float(base.sqrt().quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    fee_decimal = (
+        Decimal("0.01")
+        if base < Decimal("1")
+        else base.sqrt().quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    )
+    fee = float(fee_decimal)
     total = round(products_usd + delivery_usd + fee, 2)
     return {
         "products_amount_usd": products_usd,
