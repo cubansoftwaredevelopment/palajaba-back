@@ -1,6 +1,7 @@
 from fastapi import WebSocket
+from fastapi.encoders import jsonable_encoder
 
-from app.live.push import notify_seller_devices
+from app.live.push import notify_customer_devices, notify_seller_devices
 from app.live.schemas.event import LiveNotificationEvent
 from app.notifications.schemas import SellerNotificationPublic
 
@@ -33,6 +34,7 @@ class LiveHub:
 
 
 hub = LiveHub()
+customer_hub = LiveHub()
 
 
 async def publish_seller_data_update(seller_id: str, *resources: str) -> None:
@@ -60,5 +62,22 @@ async def publish_seller_notification(
         event = LiveNotificationEvent(notification=notification)
         await hub.send(str(seller_id), event.model_dump(mode="json"))
         await notify_seller_devices(str(seller_id), notification.title, notification.content)
+    except Exception:
+        return
+
+
+async def publish_customer_notification(customer_id: str, notification: dict) -> None:
+    """Entrega avisos del comprador por WebSocket y Google Firebase Push."""
+    try:
+        await customer_hub.send(str(customer_id), {
+            "type": "customer_notification",
+            "notification": jsonable_encoder(notification),
+        })
+        await notify_customer_devices(
+            str(customer_id),
+            str(notification.get("title") or "Actualización de tu pedido"),
+            str(notification.get("content") or "Tienes una novedad en Pa' La Jaba."),
+            order_id=str(notification["order_id"]) if notification.get("order_id") else None,
+        )
     except Exception:
         return

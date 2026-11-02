@@ -525,6 +525,18 @@ async def update_seller_order(
     updated = await get_orders_collection().find_one({"_id": doc["_id"]})
     from app.live.hub import publish_seller_data_update
     await publish_seller_data_update(seller_id, "orders", "products")
+    if doc.get("buyer_id") and doc.get("payment_method") != "qvapay":
+        from app.payments.service import _notify_customer
+        order_code = str(doc["_id"])[-6:].upper()
+        if updated.get("status") == "completed" and doc.get("status") != "completed":
+            await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido completado",
+                                   f"La tienda marcó como completado el pedido #{order_code}.", "order_completed")
+        elif updated.get("status") == "cancelled" and doc.get("status") != "cancelled":
+            await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido cancelado",
+                                   f"La tienda canceló el pedido #{order_code}.", "order_cancelled")
+        elif any(updated.get(field) != doc.get(field) for field in updates if field != "updated_at"):
+            await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido actualizado",
+                                   f"La tienda actualizó los detalles del pedido #{order_code}. Revisa los cambios en tu cuenta.", "order_updated")
     return _doc_to_public(updated)
 
 
@@ -549,6 +561,10 @@ async def delete_seller_order(seller_id: str, order_id: str) -> None:
     )
     from app.live.hub import publish_seller_data_update
     await publish_seller_data_update(seller_id, "orders", "products")
+    if doc.get("buyer_id") and doc.get("payment_method") != "qvapay":
+        from app.payments.service import _notify_customer
+        await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido cancelado",
+                               f"La tienda canceló el pedido #{str(doc['_id'])[-6:].upper()}.", "order_cancelled")
 
 
 async def generate_order_invoice_pdf(

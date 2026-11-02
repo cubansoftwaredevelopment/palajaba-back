@@ -21,7 +21,6 @@ from app.database import (
     get_registrations_collection,
 )
 from app.live.hub import publish_seller_notification
-from app.live.push import notify_customer_devices
 from app.notifications.otp_manager import send_custom_sms
 from app.notifications.schemas import SellerNotificationPublic
 from app.payments.qvapay import create_invoice, qvapay_escrow_configured, transfer_to_user, verify_qvapay_username
@@ -155,11 +154,17 @@ async def _notify_seller(seller_id: str, order_id: str, title: str, content: str
 
 async def _notify_customer(customer_id: str, order_id: str, title: str, content: str, kind: str) -> None:
     customer_oid = _oid(customer_id, "Cliente no encontrado.")
+    created_at = to_utc_naive(utc_now())
     document = {
-        "customer_id": customer_oid, "order_id": str(order_id), "title": title,
-        "content": content, "kind": kind, "created_at": to_utc_naive(utc_now()), "read_at": None,
+        "_id": ObjectId(), "customer_id": customer_oid, "order_id": str(order_id), "title": title,
+        "content": content, "kind": kind, "created_at": created_at, "read_at": None,
     }
     await get_customer_notifications_collection().insert_one(document)
+    from app.live.hub import publish_customer_notification
+    await publish_customer_notification(str(customer_oid), {
+        "id": str(document["_id"]), "order_id": str(order_id), "title": title,
+        "content": content, "kind": kind, "created_at": created_at, "read_at": None,
+    })
     customer = await get_customers_collection().find_one({"_id": customer_oid}, {"phone": 1})
     phone = "".join(ch for ch in str((customer or {}).get("phone") or "") if ch.isdigit())
     if phone.startswith("53") and len(phone) == 10:
@@ -169,7 +174,6 @@ async def _notify_customer(customer_id: str, order_id: str, title: str, content:
             await send_custom_sms(phone_e164=phone_e164(phone), message=f"Pa' La Jaba: {content}")
         except Exception:
             logger.exception("No se pudo enviar SMS de pago QvaPay al cliente")
-    await notify_customer_devices(customer_id, title, content, order_id=str(order_id))
 
 
 async def accept_payment_request(seller_id: str, order_id: str, *, delivery_price: float | None, delivery_currency: str | None) -> dict[str, Any]:
@@ -233,6 +237,8 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
     )
     await _notify_customer(doc["buyer_id"], str(doc["_id"]), "La tienda aceptó tu pago",
                            f"La tienda aceptó el pedido. Paga la factura QvaPay: {invoice.url}", "qvapay_invoice")
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders")
     return {"order_id": str(doc["_id"]), "invoice_url": invoice.url, "invoice_amount_usd": quote["invoice_amount_usd"]}
 
 
@@ -246,6 +252,8 @@ async def reject_payment_request(seller_id: str, order_id: str) -> None:
     if result.modified_count != 1:
         raise HTTPException(status_code=409, detail="La solicitud ya fue respondida.")
     await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido no aceptado", "La tienda rechazó la solicitud de pago QvaPay.", "qvapay_rejected")
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders")
 
 
 async def mark_qvapay_invoice_paid(*, remote_id: str | None, transaction_uuid: str | None, status_value: str) -> bool:
@@ -267,6 +275,15 @@ async def mark_qvapay_invoice_paid(*, remote_id: str | None, transaction_uuid: s
             {"_id": order_oid, "qvapay.payment_status": "awaiting_payment"},
             {"$set": {"qvapay.payment_status": "cancelled", "updated_at": to_utc_naive(utc_now())}},
         )
+        if result.modified_count:
+            latest = await get_orders_collection().find_one({"_id": order_oid})
+            order_code = str(order_oid)[-6:].upper()
+            await _notify_seller(latest["seller_id"], str(order_oid), "Factura QvaPay cancelada",
+                                 f"La factura del pedido #{order_code} venció o fue cancelada.", "qvapay_invoice_cancelled")
+            await _notify_customer(latest["buyer_id"], str(order_oid), "Factura QvaPay cancelada",
+                                   f"La factura del pedido #{order_code} venció o fue cancelada.", "qvapay_invoice_cancelled")
+            from app.live.hub import publish_seller_data_update
+            await publish_seller_data_update(latest["seller_id"], "orders")
         return result.modified_count > 0
     if state != "paid":
         return False
@@ -281,6 +298,8 @@ async def mark_qvapay_invoice_paid(*, remote_id: str | None, transaction_uuid: s
                              f"El pedido #{str(order_oid)[-6:].upper()} fue pagado. Prepara y envía la evidencia de entrega.", "qvapay_paid")
         await _notify_customer(doc["buyer_id"], str(order_oid), "Pago recibido",
                                "QvaPay confirmó tu pago. La tienda preparará la entrega.", "qvapay_paid")
+        from app.live.hub import publish_seller_data_update
+        await publish_seller_data_update(doc["seller_id"], "orders")
     return True
 
 
@@ -335,6 +354,8 @@ async def submit_evidence(seller_id: str, order_id: str, content: dict[str, Any]
     warning = EVIDENCE_WARNING
     await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Evidencia de entrega disponible",
                            f"La tienda envió evidencia. Tienes 48 horas para responder. {warning}", "qvapay_evidence")
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(seller_id, "orders")
     return {"evidence": evidence, "warning": warning}
 
 
@@ -420,10 +441,21 @@ async def customer_evidence_decision(customer_id: str, order_id: str, *, accept:
     if result.modified_count != 1:
         raise HTTPException(status_code=409, detail="La evidencia ya fue respondida.")
     if accept:
+        order_code = str(doc["_id"])[-6:].upper()
+        await _notify_seller(doc["seller_id"], str(doc["_id"]), "Evidencia aceptada",
+                             f"El cliente aceptó la evidencia del pedido #{order_code}. Se está procesando la liberación del pago.", "qvapay_evidence_accepted")
+        await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Evidencia aceptada",
+                               f"Registramos tu aceptación del pedido #{order_code}. Se está procesando la liberación del pago a la tienda.", "qvapay_evidence_accepted")
+        from app.live.hub import publish_seller_data_update
+        await publish_seller_data_update(doc["seller_id"], "orders")
         await _release_funds(doc["_id"])
     else:
         await _notify_seller(doc["seller_id"], str(doc["_id"]), "El cliente rechazó la evidencia",
                              f"El cliente rechazó la evidencia del pedido #{str(doc['_id'])[-6:].upper()}. Revisa el pedido antes de enviar otra.", "qvapay_evidence_rejected")
+        await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Evidencia rechazada",
+                               f"Tu rechazo de la evidencia del pedido #{str(doc['_id'])[-6:].upper()} fue registrado. El pago sigue retenido mientras contactas a soporte o la tienda prepara otra evidencia.", "qvapay_evidence_rejected")
+        from app.live.hub import publish_seller_data_update
+        await publish_seller_data_update(doc["seller_id"], "orders")
     return {"accepted": accept, "support_url": "https://palajaba.com/soporte"}
 
 

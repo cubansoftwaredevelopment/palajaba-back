@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
-from app.live.hub import hub
-from app.live.utils import seller_id_from_access_token
+from app.live.hub import customer_hub, hub
+from app.live.utils import customer_id_from_access_token, seller_id_from_access_token
 
 router = APIRouter()
 
@@ -32,3 +32,23 @@ async def seller_events(websocket: WebSocket, token: str = Query(default="")):
         pass
     finally:
         hub.disconnect(seller_id, websocket)
+
+
+@router.websocket("/customer-events")
+async def customer_events(websocket: WebSocket, token: str = Query(default="")):
+    try:
+        customer_id = await customer_id_from_access_token(token)
+    except Exception:
+        await websocket.accept()
+        await websocket.close(code=4401)
+        return
+
+    await customer_hub.connect(customer_id, websocket)
+    try:
+        await websocket.send_json({"type": "customer_data_update", "resources": ["orders"]})
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        customer_hub.disconnect(customer_id, websocket)
