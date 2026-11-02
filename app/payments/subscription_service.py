@@ -18,6 +18,7 @@ from app.services.exchange_rates import snapshot_cup_per_unit
 from app.services.platform_settings import get_plan_prices
 from app.subscriptions.service import (
     expiry_notice_reset,
+    is_subscription_active,
     normalize_billing_period,
     normalize_plan_tier,
     record_subscription_payment,
@@ -82,6 +83,11 @@ async def create_subscription_plan_checkout(
     seller = await get_registrations_collection().find_one({"_id": seller_oid})
     if not seller or seller.get("status") not in {"approved", "expired"}:
         raise HTTPException(status_code=403, detail="La tienda no puede pagar un plan ahora.")
+    if not seller.get("is_trial") and is_subscription_active(seller):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Tu plan actual sigue activo. Podrás pagar otro plan cuando venza.",
+        )
 
     tier = normalize_plan_tier(plan_tier)
     period = normalize_billing_period(billing_period)
