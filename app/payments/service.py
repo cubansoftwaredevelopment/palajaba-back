@@ -200,7 +200,11 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
         raise HTTPException(status_code=409, detail="La solicitud ya está siendo procesada.")
     try:
         invoice_products = [
-            {"name": item["name"], "price": round(_usd(float(item["line_total"]), item["currency"], quote["exchange_rates_cup_per_unit"]), 2)}
+            {
+                "name": item["name"],
+                "quantity": item.get("quantity", 1),
+                "price": round(_usd(float(item["line_total"]), item["currency"], quote["exchange_rates_cup_per_unit"]), 2),
+            }
             for item in doc.get("items", [])
         ]
         if quote["delivery_amount_usd"] > 0:

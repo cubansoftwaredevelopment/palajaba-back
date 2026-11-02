@@ -133,10 +133,14 @@ def _money(value: Any) -> float | None:
     return amount
 
 
-def _invoice_products(products: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
+def _invoice_products(
+    products: list[dict[str, Any]] | None, *, invoice_amount: float
+) -> list[dict[str, Any]]:
+    details: list[str] = []
     for raw in products or []:
-        name = " ".join(str(raw.get("name") or "").split())
+        name = " ".join(
+            "".join(char if char.isprintable() else " " for char in str(raw.get("name") or "")).split()
+        )
         price = _money(raw.get("price"))
         try:
             quantity = int(raw.get("quantity") or 1)
@@ -144,8 +148,11 @@ def _invoice_products(products: list[dict[str, Any]] | None) -> list[dict[str, A
             quantity = 1
         if not name or price is None or quantity < 1:
             continue
-        items.append({"name": name[:80], "price": price, "quantity": quantity})
-    return items
+        details.append(f"{name} x{quantity} -> {price:.2f}")
+    total = _money(invoice_amount)
+    if not details or total is None:
+        return []
+    return [{"name": ", ".join(details), "price": total}]
 
 
 async def create_invoice(
@@ -167,7 +174,7 @@ async def create_invoice(
         "webhook": webhook_url(),
     }
     
-    invoice_products = _invoice_products(products)
+    invoice_products = _invoice_products(products, invoice_amount=amount)
     if invoice_products:
         body["products"] = invoice_products
 
@@ -190,8 +197,6 @@ async def create_invoice(
     except ValueError:
         payload = {}
     
-    print("Qvpay request body:", body)  # Debugging line
-    print("QvaPay Response:", response.status_code, payload)  # Debugging line
     if response.status_code >= 400 or not isinstance(payload, dict):
         message = ""
         if isinstance(payload, dict):
