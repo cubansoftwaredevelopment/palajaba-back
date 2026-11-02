@@ -178,6 +178,7 @@ async def create_invoice(
     if invoice_products:
         body["products"] = invoice_products
 
+    print("QvaPay request body:", body)
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.post(
