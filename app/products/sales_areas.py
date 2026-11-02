@@ -63,17 +63,25 @@ def product_covers_municipality(
     return any(area_key(item) == wanted for item in areas if isinstance(item, dict))
 
 
-def sales_area_match_clause(province_id: str, municipality_id: str) -> dict[str, Any]:
+def sales_area_match_clause(
+    province_id: str,
+    municipality_id: str | list[str],
+) -> dict[str, Any]:
+    municipality_ids = municipality_id if isinstance(municipality_id, list) else [municipality_id]
+    selected_areas = [
+        {
+            "sales_areas": {
+                "$elemMatch": {
+                    "province_id": province_id,
+                    "municipality_id": selected_id,
+                }
+            }
+        }
+        for selected_id in dict.fromkeys(str(value).strip() for value in municipality_ids if str(value).strip())
+    ]
     return {
         "$or": [
-            {
-                "sales_areas": {
-                    "$elemMatch": {
-                        "province_id": province_id,
-                        "municipality_id": municipality_id,
-                    }
-                }
-            },
+            *selected_areas,
             {"sales_areas": {"$exists": False}},
         ]
     }

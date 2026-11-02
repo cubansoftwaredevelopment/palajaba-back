@@ -142,6 +142,19 @@ def _normalize_additional_municipalities(
     return result
 
 
+def _selected_sales_area_municipality_ids(
+    province_id: str,
+    municipality_id: str,
+    municipios_adicionales: list[str] | None,
+) -> list[str]:
+    additional = _normalize_additional_municipalities(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
+    return list(dict.fromkeys([municipality_id, *additional]))
+
+
 def _normalize_page_size(limit: int) -> int:
     return max(1, min(limit, MAX_PAGE_SIZE))
 
@@ -301,6 +314,7 @@ def _product_to_public(
     *,
     buyer_province_id: str | None = None,
     buyer_municipality_id: str | None = None,
+    buyer_municipality_ids: list[str] | None = None,
 ) -> MarketplaceProductPublic | None:
     seller_id = product.get("seller_id")
     seller = seller_by_id.get(seller_id)
@@ -311,13 +325,24 @@ def _product_to_public(
     pickup_municipality_name = None
     pickup_notice = None
     if buyer_province_id and buyer_municipality_id:
-        if not product_covers_municipality(product, buyer_province_id, buyer_municipality_id):
+        selected_municipalities = list(dict.fromkeys(
+            [buyer_municipality_id, *(buyer_municipality_ids or [])]
+        ))
+        available_municipality_id = next(
+            (
+                municipality_id
+                for municipality_id in selected_municipalities
+                if product_covers_municipality(product, buyer_province_id, municipality_id)
+            ),
+            None,
+        )
+        if available_municipality_id is None:
             return None
         pickup_required, pickup_municipality_name = _product_pickup_info(
             product,
             seller,
             buyer_province_id,
-            buyer_municipality_id,
+            available_municipality_id,
         )
         if pickup_required:
             if pickup_municipality_name:
@@ -603,6 +628,7 @@ def _marketplace_product_query(
     extra: dict[str, Any] | None = None,
     province_id: str | None = None,
     municipality_id: str | None = None,
+    sales_area_municipality_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     visibility: list[dict[str, Any]] = []
     if local_seller_ids:
@@ -622,7 +648,10 @@ def _marketplace_product_query(
     if extra:
         query.update(extra)
     if province_id and municipality_id:
-        query = _and_match(query, sales_area_match_clause(province_id, municipality_id))
+        selected_municipalities = list(dict.fromkeys(
+            [municipality_id, *(sales_area_municipality_ids or [])]
+        ))
+        query = _and_match(query, sales_area_match_clause(province_id, selected_municipalities))
     return query
 
 
@@ -724,6 +753,7 @@ def _build_marketplace_products_query(
     currency: str | None = None,
     province_id: str | None = None,
     municipality_id: str | None = None,
+    sales_area_municipality_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     extra: dict[str, Any] = {}
     if global_category_id:
@@ -738,6 +768,7 @@ def _build_marketplace_products_query(
         extra=extra or None,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
     if query.get("_id"):
         return query
@@ -764,6 +795,7 @@ async def _aggregate_category_stats(
     currency: str | None = None,
     province_id: str | None = None,
     municipality_id: str | None = None,
+    sales_area_municipality_ids: list[str] | None = None,
 ) -> dict[str, dict[str, int]]:
     match_query = _and_currency(
         _marketplace_product_query(
@@ -772,6 +804,7 @@ async def _aggregate_category_stats(
             pickup_seller_ids=pickup_seller_ids,
             province_id=province_id,
             municipality_id=municipality_id,
+            sales_area_municipality_ids=sales_area_municipality_ids,
         ),
         currency,
     )
@@ -821,6 +854,7 @@ async def _list_category_product_docs(
     offset: int,
     province_id: str | None = None,
     municipality_id: str | None = None,
+    sales_area_municipality_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
     query = _build_marketplace_products_query(
@@ -831,6 +865,7 @@ async def _list_category_product_docs(
         currency=currency,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
     if query.get("_id"):
         return []
@@ -952,6 +987,9 @@ async def list_home_feed(
 ) -> MarketplaceHomeFeedPublic:
     currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
+    sales_area_municipality_ids = _selected_sales_area_municipality_ids(
+        province_id, municipality_id, municipios_adicionales
+    )
     page_size = _normalize_page_size(limit_per_category)
     safe_offset = max(0, section_offset)
     await refresh_popularity_window()
@@ -984,6 +1022,7 @@ async def list_home_feed(
         currency=currency,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
     category_ids = [
         category_id
@@ -1014,6 +1053,7 @@ async def list_home_feed(
             offset=0,
             province_id=province_id,
             municipality_id=municipality_id,
+            sales_area_municipality_ids=sales_area_municipality_ids,
         )
         products = [
             item
@@ -1023,6 +1063,7 @@ async def list_home_feed(
                 seller_by_id,
                 buyer_province_id=province_id,
                 buyer_municipality_id=municipality_id,
+                buyer_municipality_ids=sales_area_municipality_ids,
             )) is not None
         ]
         if not products:
@@ -1064,6 +1105,9 @@ async def list_category_products(
 ) -> MarketplaceCategoryProductsPublic:
     currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
+    sales_area_municipality_ids = _selected_sales_area_municipality_ids(
+        province_id, municipality_id, municipios_adicionales
+    )
     _ = province_name, municipality_name
 
     normalized_category_id = _normalize_marketplace_category_id(global_category_id)
@@ -1098,6 +1142,7 @@ async def list_category_products(
         currency=currency,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
     total_in_category = stats_by_category.get(normalized_category_id, {}).get("count", 0)
 
@@ -1111,6 +1156,7 @@ async def list_category_products(
         offset=safe_offset,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
     products = [
         item
@@ -1120,6 +1166,7 @@ async def list_category_products(
             seller_by_id,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=sales_area_municipality_ids,
         )) is not None    ]
 
     loaded = safe_offset + len(products)
@@ -1401,6 +1448,9 @@ async def search_products(
 ) -> MarketplaceSearchPublic:
     currency = _normalize_display_currencies(currency)
     province_name, municipality_name = _validate_location_ids(province_id, municipality_id)
+    sales_area_municipality_ids = _selected_sales_area_municipality_ids(
+        province_id, municipality_id, municipios_adicionales
+    )
     _ = province_name, municipality_name
 
     normalized_query = query.strip()
@@ -1445,6 +1495,7 @@ async def search_products(
         currency=currency,
         province_id=province_id,
         municipality_id=municipality_id,
+        sales_area_municipality_ids=sales_area_municipality_ids,
     )
 
     products_col = get_catalog_products_collection()
@@ -1469,6 +1520,7 @@ async def search_products(
             seller_by_id,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=sales_area_municipality_ids,
         )) is not None    ]
     loaded = safe_offset + len(products)
 
