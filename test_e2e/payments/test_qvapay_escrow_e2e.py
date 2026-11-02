@@ -58,7 +58,7 @@ class QvaPayEscrowE2ETests(unittest.TestCase):
             create_invoice.assert_awaited_once()
             invoice_products = create_invoice.await_args.kwargs["products"]
             self.assertEqual([(item["name"], item["price"]) for item in invoice_products], [
-                ("Arroz", 1.0), ("Domicilio", 1.0), ("Cargo de protección Pa' La Jaba", 1.41),
+                ("Arroz", 1.0), ("Domicilio", 1.0), ("fee", 1.41),
             ])
             seller_orders = client.get("/api/auth/me/orders?limit=100", headers=seller_headers)
             self.assertEqual(seller_orders.status_code, 200)

@@ -210,7 +210,7 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
         if quote["delivery_amount_usd"] > 0:
             invoice_products.append({"name": "Domicilio", "price": quote["delivery_amount_usd"]})
         if quote["fee_usd"] > 0:
-            invoice_products.append({"name": "Cargo de protección Pa' La Jaba", "price": quote["fee_usd"]})
+            invoice_products.append({"name": "fee", "price": quote["fee_usd"]})
         invoice = await create_invoice(
             amount=quote["invoice_amount_usd"],
             description=f"Pedido {str(doc['_id'])[-6:].upper()}, {doc['store_name']}",
