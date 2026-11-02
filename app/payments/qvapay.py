@@ -137,6 +137,7 @@ def _invoice_products(
     products: list[dict[str, Any]] | None, *, invoice_amount: float
 ) -> list[dict[str, Any]]:
     details: list[str] = []
+    fee_total = 0.0
     for raw in products or []:
         name = " ".join(
             "".join(char if char.isprintable() else " " for char in str(raw.get("name") or "")).split()
@@ -148,7 +149,12 @@ def _invoice_products(
             quantity = 1
         if not name or price is None or quantity < 1:
             continue
-        details.append(f"{name} x{quantity} -> {price:.2f}")
+        if raw.get("is_fee") is True or name.strip().lower() == "fee":
+            fee_total += price
+        else:
+            details.append(f"{name} x{quantity}: {price:.2f}")
+    if fee_total > 0:
+        details.append(f"fee: {fee_total:.2f}")
     total = _money(invoice_amount)
     if not details or total is None:
         return []
