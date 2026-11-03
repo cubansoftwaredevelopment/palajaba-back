@@ -158,14 +158,40 @@ def _order_summary(doc: dict[str, Any], disputed_id: ObjectId) -> dict[str, Any]
     total = ""
     if subtotals and isinstance(subtotals[0], dict):
         total = f"{subtotals[0].get('amount')} {subtotals[0].get('currency') or ''}".strip()
+    qvapay = doc.get("qvapay") if isinstance(doc.get("qvapay"), dict) else {}
+    evidence = qvapay.get("evidence") if isinstance(qvapay.get("evidence"), dict) else {}
+    items = []
+    for item in doc.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        items.append({
+            "name": item.get("name") or "",
+            "quantity": item.get("quantity") or 0,
+            "unit_price": item.get("unit_price"),
+            "currency": item.get("currency") or "",
+            "line_total": item.get("line_total"),
+        })
+    delivery = doc.get("delivery") if isinstance(doc.get("delivery"), dict) else None
     return {
         "id": str(doc["_id"]),
         "code": str(doc["_id"])[-6:].upper(),
         "created_at": doc.get("created_at"),
         "status": doc.get("status"),
         "store_name": doc.get("store_name") or "",
+        "buyer_name": doc.get("buyer_name") or "",
+        "buyer_phone": doc.get("buyer_phone") or "",
         "payment_method": doc.get("payment_method") or "contact",
+        "payment_currency": doc.get("payment_currency") or "",
+        "origin": doc.get("origin") or "platform",
         "total": total,
+        "subtotals": subtotals if isinstance(subtotals, list) else [],
+        "items": items,
+        "delivery_requested": bool(doc.get("delivery_requested")),
+        "delivery": delivery,
+        "delivery_price": doc.get("delivery_price"),
+        "delivery_currency": doc.get("delivery_currency") or "",
+        "evidence_status": evidence.get("status"),
+        "release_status": qvapay.get("release_status"),
         "disputed": doc["_id"] == disputed_id,
     }
 
