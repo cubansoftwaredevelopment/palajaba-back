@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -156,6 +157,28 @@ class SellerContactOtpResendRequest(BaseModel):
 class SellerContactOtpConfirmRequest(BaseModel):
     challenge_id: str = Field(..., min_length=1, max_length=40)
     code: str = Field(..., min_length=4, max_length=8)
+
+
+StorePageKey = Literal["faq", "about", "delivery_policy", "terms"]
+
+
+class StorePageUpdate(BaseModel):
+    page: StorePageKey
+    content: dict[str, Any]
+
+
+class StorePagesPublic(BaseModel):
+    faq: dict[str, Any] | None = None
+    about: dict[str, Any] | None = None
+    delivery_policy: dict[str, Any] | None = None
+    terms: dict[str, Any] | None = None
+
+
+class StorePageAvailabilityPublic(BaseModel):
+    faq: bool = False
+    about: bool = False
+    delivery_policy: bool = False
+    terms: bool = False
 
 
 class SellerStoreNameUpdate(BaseModel):

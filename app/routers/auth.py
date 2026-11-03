@@ -9,6 +9,7 @@ from app.schemas.seller_profile import (
     SellerProfileUpdate,
     SellerStoreNameUpdate,
     StoreBannerUpdate,
+    StorePageUpdate,
 )
 from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.gestores import (
@@ -88,6 +89,22 @@ async def update_store_banner(
         banner_id,
         payload,
     )
+
+
+@router.patch("/me/store-pages", response_model=SellerPublic)
+async def update_store_page(
+    payload: StorePageUpdate,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.update_store_page(seller_payload["seller_id"], payload)
+
+
+@router.post("/me/store-pages/images")
+async def upload_store_page_image(
+    photo: UploadFile = File(...),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await profile_service.upload_store_page_image(seller_payload["seller_id"], photo)
 
 
 @router.delete("/me/store-banners/{banner_id}", response_model=SellerPublic)

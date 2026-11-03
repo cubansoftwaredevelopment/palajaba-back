@@ -21,6 +21,8 @@ from app.schemas.seller_profile import (
     SellerStoreNameUpdate,
     StoreBannerPublic,
     StoreBannerUpdate,
+    StorePageUpdate,
+    StorePagesPublic,
 )
 from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
 from app.services.categories import categories_for_profile, list_categories, validate_category_ids
@@ -39,6 +41,11 @@ from app.subscriptions.service import (
     is_subscription_active,
     subscription_days_remaining,
     subscription_hours_remaining,
+)
+from app.services.store_pages import (
+    STORE_PAGE_KEYS,
+    sanitize_store_page_content,
+    store_pages_from_document,
 )
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
@@ -288,6 +295,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
             doc.get("catalog_theme"),
         ),
         store_banners=store_banners_from_document(doc),
+        store_pages=StorePagesPublic(**store_pages_from_document(doc)),
         gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
     )
 
@@ -594,3 +602,33 @@ async def set_store_banner_active(
     )
     updated = await collection.find_one({"_id": doc["_id"]})
     return document_to_seller(updated)
+
+
+async def update_store_page(seller_id: str, payload: StorePageUpdate) -> SellerPublic:
+    doc = await _get_seller_doc(seller_id)
+    clean = sanitize_store_page_content(payload.content)
+    current = doc.get("store_pages")
+    if not isinstance(current, dict):
+        current = {}
+    pages = {key: current[key] for key in STORE_PAGE_KEYS if key in current}
+    pages[payload.page] = clean
+    now = to_utc_naive(utc_now())
+    collection = get_registrations_collection()
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"store_pages": pages, "updated_at": now}},
+    )
+    updated = await collection.find_one({"_id": doc["_id"]})
+    return document_to_seller(updated)
+
+
+async def upload_store_page_image(seller_id: str, file: UploadFile) -> dict[str, str]:
+    await _get_seller_doc(seller_id)
+    content, content_type = await read_image_upload(file)
+    stored = await store_image(
+        content,
+        content_type,
+        scope="store-pages",
+        owner_id=seller_id,
+    )
+    return {"url": stored.url}

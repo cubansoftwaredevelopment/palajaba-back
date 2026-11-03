@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -9,6 +9,8 @@ from app.schemas.seller_profile import (
     CategoryPublic,
     SellerSocialLink,
     StoreBannerPublic,
+    StorePageAvailabilityPublic,
+    StorePageKey,
 )
 
 
@@ -181,6 +183,7 @@ class MarketplaceStoreCatalogPublic(BaseModel):
     catalog_palette: CatalogPalette | None = None
     banners: list[StoreBannerPublic] = Field(default_factory=list)
     checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)
+    store_pages: StorePageAvailabilityPublic = Field(default_factory=StorePageAvailabilityPublic)
 
 
 class MarketplaceGestorStoreLocalSectionPublic(BaseModel):
@@ -209,7 +212,17 @@ class MarketplaceGestorStoreCatalogPublic(BaseModel):
     catalog_theme: str = "default"
     catalog_palette: CatalogPalette | None = None
     banners: list[StoreBannerPublic] = Field(default_factory=list)
+    store_pages: StorePageAvailabilityPublic = Field(default_factory=StorePageAvailabilityPublic)
     gestor: MarketplaceGestorPublic
+
+
+class MarketplaceStorePagePublic(BaseModel):
+    store_name: str
+    store_slug: str
+    page: StorePageKey
+    title: str
+    content: dict[str, Any]
+    store_pages: StorePageAvailabilityPublic = Field(default_factory=StorePageAvailabilityPublic)
 
 
 class MarketplaceStoreCategoryProductsPublic(BaseModel):

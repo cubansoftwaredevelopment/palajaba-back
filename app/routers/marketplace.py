@@ -15,6 +15,7 @@ from app.schemas.marketplace import (
     MarketplaceSharedProductsPublic,
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
+    MarketplaceStorePagePublic,
     MarketplaceStorePublic,
 )
 from app.schemas.orders import CreateOrderRequest, OrderPublic
@@ -340,6 +341,17 @@ async def list_marketplace_gestor_store_category_products(
             offset=offset,
             currency=currency,
         )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/stores/{store_slug}/pages/{page_slug}", response_model=MarketplaceStorePagePublic)
+async def get_marketplace_store_page(store_slug: str, page_slug: str):
+    try:
+        return await marketplace_service.get_store_page(store_slug, page_slug)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

@@ -47,6 +47,7 @@ from app.subscriptions.utils import (
 )
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import phone_display
+from app.services.store_pages import STORE_PAGE_SLUGS
 from app.utils.store_slug import store_name_to_slug
 
 _USERNAME_PATTERN = re.compile(r"^[a-z0-9]+(?:[_-][a-z0-9]+)*$")
@@ -65,6 +66,8 @@ def validate_gestor_username(value: str) -> str:
             "El usuario solo puede contener letras minúsculas, números, guiones y guiones bajos "
             "(sin empezar ni terminar con guion)."
         )
+    if normalized in STORE_PAGE_SLUGS:
+        raise ValueError("Ese usuario está reservado para las páginas de la tienda.")
     return normalized
 
 

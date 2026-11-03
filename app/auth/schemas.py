@@ -3,7 +3,13 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.products.schemas import CatalogPalette
-from app.schemas.seller_profile import BusinessArea, BusinessLocation, SellerSocialLink, StoreBannerPublic
+from app.schemas.seller_profile import (
+    BusinessArea,
+    BusinessLocation,
+    SellerSocialLink,
+    StoreBannerPublic,
+    StorePagesPublic,
+)
 from app.schemas.gestores import GestorCatalogAccess
 from app.utils.datetime import UtcDateTime
 
@@ -83,6 +89,7 @@ class SellerPublic(BaseModel):
     catalog_theme: str = "default"
     catalog_palette: CatalogPalette | None = None
     store_banners: list[StoreBannerPublic] = Field(default_factory=list)
+    store_pages: StorePagesPublic = Field(default_factory=StorePagesPublic)
     gestor_catalog_access: GestorCatalogAccess = Field(
         default_factory=lambda: GestorCatalogAccess(mode="selected", product_ids=[])
     )

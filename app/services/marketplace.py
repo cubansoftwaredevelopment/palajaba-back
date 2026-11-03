@@ -34,12 +34,20 @@ from app.schemas.marketplace import (
     MarketplaceStoreCatalogPublic,
     MarketplaceStoreCategoryProductsPublic,
     MarketplaceStoreLocalSectionPublic,
+    MarketplaceStorePagePublic,
     MarketplaceStorePublic,
 )
 from app.schemas.seller_profile import BusinessArea, BusinessLocation, CategoryPublic
 from app.products.sales_areas import product_covers_municipality, sales_area_match_clause
 from app.products.service import public_product_images
 from app.services.seller_profile import store_banners_from_document
+from app.services.store_pages import (
+    STORE_PAGE_SLUGS,
+    STORE_PAGE_TITLES,
+    sanitize_store_page_content,
+    store_page_flags,
+    store_page_has_content,
+)
 from app.services.admin_registration_insights import aggregate_product_counts_by_seller
 from app.services.categories import (
     DEFAULT_CATEGORIES,
@@ -224,6 +232,7 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
             if seller_has_store_banners(seller)
             else []
         ),
+        "store_pages": store_page_flags(seller),
     }
 
 
@@ -2283,6 +2292,36 @@ async def list_businesses(
         limit=page_size,
         offset=safe_offset,
         has_more=loaded < total_businesses,
+    )
+
+
+async def get_store_page(store_ref: str, page_slug: str) -> MarketplaceStorePagePublic:
+    from fastapi import HTTPException
+
+    key = STORE_PAGE_SLUGS.get((page_slug or "").strip().lower())
+    if not key:
+        raise ValueError("Página no encontrada.")
+
+    seller = await _find_seller_by_store_ref(store_ref)
+    if not is_subscription_active(seller) or not is_profile_complete(seller):
+        raise ValueError("Página no encontrada.")
+
+    raw_pages = seller.get("store_pages")
+    raw = raw_pages.get(key) if isinstance(raw_pages, dict) else None
+    if not store_page_has_content(raw):
+        raise ValueError("Página no encontrada.")
+    try:
+        content = sanitize_store_page_content(raw)
+    except HTTPException as exc:
+        raise ValueError("Página no encontrada.") from exc
+
+    return MarketplaceStorePagePublic(
+        store_name=seller["store_name"],
+        store_slug=seller.get("store_slug") or store_name_to_slug(seller["store_name"]),
+        page=key,
+        title=STORE_PAGE_TITLES[key],
+        content=content,
+        store_pages=store_page_flags(seller),
     )
 
 
