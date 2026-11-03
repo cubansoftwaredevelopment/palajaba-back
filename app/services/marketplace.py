@@ -56,17 +56,18 @@ from app.services.categories import (
     business_category_source_ids,
     normalize_business_category_id,
 )
-from app.products.categories import REVOLICO_PRODUCT_CATEGORIES
-from app.services.product_popularity import MARKETPLACE_PRODUCT_SORT, refresh_popularity_window
-from app.products.utils import (
-    mongo_sort_for_product_mode,
-    public_discount_percent,
-    sort_product_docs,
-)
-from app.services.catalog_theme import (
+from app.catalogs.catalog_theme import (
     DEFAULT_CATALOG_THEME,
+    REVOLICO_PRODUCT_CATEGORIES,
     normalize_catalog_theme,
     public_catalog_palette,
+)
+from app.products.utils import (
+    MARKETPLACE_PRODUCT_SORT,
+    mongo_sort_for_product_mode,
+    public_discount_percent,
+    refresh_popularity_window,
+    sort_product_docs,
 )
 from app.subscriptions.service import (
     plan_search_rank,
@@ -260,7 +261,7 @@ async def _find_seller_by_store_ref(store_ref: str) -> dict[str, Any]:
 
     if len(decoded) == 24:
         try:
-            seller = await collection.find_one({"_id": ObjectId(decoded)})
+            seller = await collection.find_one({"_id": ObjectId(decoded), "deleted_at": None})
             if seller is not None:
                 return seller
         except InvalidId:
@@ -268,12 +269,15 @@ async def _find_seller_by_store_ref(store_ref: str) -> dict[str, Any]:
 
     slug = store_name_to_slug(decoded)
     if slug:
-        seller = await collection.find_one({"store_slug": slug})
+        seller = await collection.find_one({"store_slug": slug, "deleted_at": None})
         if seller is not None:
             return seller
 
     seller = await collection.find_one(
-        {"store_name": {"$regex": f"^{re.escape(decoded)}$", "$options": "i"}}
+        {
+            "store_name": {"$regex": f"^{re.escape(decoded)}$", "$options": "i"},
+            "deleted_at": None,
+        }
     )
     if seller is not None:
         return seller
@@ -393,6 +397,7 @@ async def _get_visible_sellers(
     registrations = get_registrations_collection()
     seller_query = {
         "status": "approved",
+        "deleted_at": None,
         "profile_photo_url": {"$exists": True, "$ne": None},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},
@@ -431,6 +436,7 @@ async def _get_pickup_sellers_in_municipalities(
     registrations = get_registrations_collection()
     seller_query = {
         "status": "approved",
+        "deleted_at": None,
         "profile_photo_url": {"$exists": True, "$ne": None},
         "offers_delivery": {"$exists": True},
         "business_area": {"$exists": True},

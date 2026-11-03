@@ -25,7 +25,7 @@ from app.notifications.otp_manager import send_custom_sms
 from app.notifications.schemas import SellerNotificationPublic
 from app.payments.qvapay import create_invoice, qvapay_escrow_configured, transfer_to_user, verify_qvapay_username
 from app.services.exchange_rates import get_cup_per_unit
-from app.services.media_storage import read_image_upload, store_image
+from app.catalogs.media_storage import read_image_upload, store_image
 from app.utils.datetime import to_utc_naive, utc_now
 
 logger = logging.getLogger(__name__)
@@ -497,7 +497,7 @@ async def _release_funds(order_id: ObjectId) -> None:
                   "status": "completed", "payment_currency": "USD", "completed_at": now,
                   "updated_at": now, "collected_total": amount}},
     )
-    from app.services.product_popularity import bump_products_on_order_completed
+    from app.products.utils import bump_products_on_order_completed
     await bump_products_on_order_completed(doc.get("items") or [])
     await _notify_seller(doc["seller_id"], str(order_id), "Pago QvaPay liberado",
                          f"El pago del pedido #{str(order_id)[-6:].upper()} fue transferido a tu cuenta QvaPay.", "qvapay_released")

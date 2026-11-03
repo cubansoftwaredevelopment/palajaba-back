@@ -426,7 +426,7 @@ async def get_sales_chart(
                     "items": 1, "delivery_requested": 1, "delivery_price": 1,
                     "delivery_currency": 1},
     ).to_list(length=None)
-    from app.services.order_totals import compute_order_products_revenue, compute_order_grand_total
+    from app.orders.utils import compute_order_products_revenue, compute_order_grand_total
     delivery_ranges = ranges_between(range_start, range_end, "daily")
     events_by_currency: dict[str, list[tuple[datetime, float]]] = {}
     delivery_by_currency: dict[str, list[tuple[datetime, float]]] = {}

@@ -1,11 +1,13 @@
 import asyncio
-from typing import Any, Literal
+from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
 
 from app.database import get_catalog_products_collection, get_customers_collection, get_orders_collection, get_registrations_collection
-from app.schemas.orders import (
+from app.notifications import service as notification_service
+from app.orders.constants import InvoiceType
+from app.orders.schemas import (
     CreateOrderRequest,
     CreateSellerManualOrderRequest,
     DeliveryInfo,
@@ -14,14 +16,11 @@ from app.schemas.orders import (
     OrderSubtotalPublic,
     UpdateOrderRequest,
 )
-from app.notifications import service as notification_service
-from app.services.product_popularity import bump_products_on_order_completed
+from app.orders.utils import compute_order_products_revenue
+from app.products.utils import bump_products_on_order_completed
 from app.subscriptions.service import is_subscription_active
-from app.services.order_totals import compute_order_products_revenue
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now
-
-InvoiceType = Literal["store", "transporter"]
 
 
 def _calc_subtotals(items: list[dict[str, Any]]) -> list[OrderSubtotalPublic]:
@@ -580,7 +579,7 @@ async def generate_order_invoice_pdf(
     if seller is None:
         raise ValueError("Tienda no encontrada.")
 
-    from app.services.order_invoice import build_order_invoice_pdf
+    from app.orders.invoice import build_order_invoice_pdf
 
     pdf_bytes = await asyncio.to_thread(build_order_invoice_pdf, doc, seller, invoice_type)
     order_code = str(doc["_id"])[-6:].upper()

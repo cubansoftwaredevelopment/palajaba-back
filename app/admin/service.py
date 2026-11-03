@@ -1,11 +1,10 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
-from app.constants import CURRENCY_CODES, DEFAULT_ADVERTISING_PRICES, DEFAULT_PLAN_PRICES
-from app.database import get_platform_settings_collection
-from app.schemas.platform_settings import (
+from app.admin.schemas import (
     AdvertisingPlanPrice,
     AdvertisingPricesSettings,
     PlanPeriodPrices,
@@ -18,10 +17,49 @@ from app.schemas.platform_settings import (
     default_plan_prices,
     normalize_admin_email,
 )
+from app.auth.utils import hash_password, verify_password
+from app.config import settings
+from app.constants import CURRENCY_CODES, DEFAULT_ADVERTISING_PRICES, DEFAULT_PLAN_PRICES
+from app.database import get_admins_collection, get_platform_settings_collection
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import normalize_admin_phone
 
 SETTINGS_ID = "global"
+
+
+async def ensure_admin_indexes() -> None:
+    collection = get_admins_collection()
+    await collection.create_index("username", unique=True)
+
+
+async def seed_default_admin() -> bool:
+    """Crea el admin por defecto si no existe. Devuelve True si se insertó."""
+    collection = get_admins_collection()
+    existing = await collection.find_one({"username": settings.admin_username})
+    if existing:
+        return False
+
+    now = datetime.now(UTC)
+    await collection.insert_one(
+        {
+            "username": settings.admin_username,
+            "password_hash": hash_password(settings.admin_password),
+            "is_active": True,
+            "created_at": now,
+            "updated_at": now,
+        }
+    )
+    return True
+
+
+async def authenticate_admin(username: str, password: str) -> dict[str, Any] | None:
+    collection = get_admins_collection()
+    admin = await collection.find_one({"username": username, "is_active": True})
+    if admin is None:
+        return None
+    if not verify_password(password, admin["password_hash"]):
+        return None
+    return admin
 
 
 def _price_from_raw(raw: Any, fallback: dict[str, Any]) -> PlanPriceConfig:
@@ -147,18 +185,18 @@ async def get_platform_settings() -> PlatformSettingsPublic:
 
 
 async def get_plan_prices() -> PlanPricesSettings:
-    settings = await get_platform_settings()
-    return settings.plan_prices or default_plan_prices()
+    stored = await get_platform_settings()
+    return stored.plan_prices or default_plan_prices()
 
 
 async def get_advertising_prices() -> AdvertisingPricesSettings:
-    settings = await get_platform_settings()
-    return settings.advertising_prices or default_advertising_prices()
+    stored = await get_platform_settings()
+    return stored.advertising_prices or default_advertising_prices()
 
 
 async def get_renewal_contact_phone() -> str | None:
-    settings = await get_platform_settings()
-    return settings.renewal_contact_phone
+    stored = await get_platform_settings()
+    return stored.renewal_contact_phone
 
 
 async def update_platform_settings(payload: PlatformSettingsUpdate) -> PlatformSettingsPublic:

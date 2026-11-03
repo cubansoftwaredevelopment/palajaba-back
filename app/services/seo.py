@@ -37,6 +37,7 @@ async def list_indexable_store_entries() -> list[dict[str, Any]]:
     cursor = collection.find(
         {
             "status": "approved",
+            "deleted_at": None,
             "phone": {"$exists": True, "$nin": [None, ""]},
         },
         {

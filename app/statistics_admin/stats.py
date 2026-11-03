@@ -306,7 +306,7 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     payments_total = int(payments_result[0]["total"]) if payments_result else 0
     payments_count = int(payments_result[0]["count"]) if payments_result else 0
 
-    from app.services.order_totals import compute_order_grand_total
+    from app.orders.utils import compute_order_grand_total
     completed_orders = await get_orders_collection().find(
         {"status": "completed", "completed_at": {"$gte": start, "$lt": end}},
         projection={"items": 1, "payment_currency": 1, "delivery_requested": 1,
@@ -326,15 +326,18 @@ async def get_stats_summary(year: int, month: int) -> AdminStatsSummary:
     active_stores = await registrations.count_documents(
         {
             "status": "approved",
+            "deleted_at": None,
             "subscription_ends_at": {"$gt": now},
         }
     )
-    pending_registrations = await registrations.count_documents({"status": "pending"})
+    pending_registrations = await registrations.count_documents(
+        {"status": "pending", "deleted_at": None}
+    )
 
     products = get_catalog_products_collection()
     products_existing = await products.count_documents({})
     active_sellers = await registrations.find(
-        {"status": "approved", "subscription_ends_at": {"$gt": now}},
+        {"status": "approved", "deleted_at": None, "subscription_ends_at": {"$gt": now}},
         {"_id": 1},
     ).to_list(length=None)
     active_seller_ids = [str(seller["_id"]) for seller in active_sellers]
@@ -509,7 +512,7 @@ async def get_businesses_by_province() -> AdminBusinessesByProvince:
     collection = get_registrations_collection()
 
     pipeline = [
-        {"$match": {"status": "approved", "business_area.province_id": {"$exists": True, "$ne": ""}}},
+        {"$match": {"status": "approved", "deleted_at": None, "business_area.province_id": {"$exists": True, "$ne": ""}}},
         {
             "$group": {
                 "_id": "$business_area.province_id",
@@ -538,6 +541,7 @@ async def get_businesses_by_province() -> AdminBusinessesByProvince:
     without_location = await collection.count_documents(
         {
             "status": "approved",
+            "deleted_at": None,
             "$or": [
                 {"business_area": {"$exists": False}},
                 {"business_area.province_id": {"$exists": False}},

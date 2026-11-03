@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 
 from app.services.categories import DEFAULT_CATEGORIES
-from app.products.categories import REVOLICO_PRODUCT_CATEGORIES
+from app.catalogs.catalog_theme import REVOLICO_PRODUCT_CATEGORIES
 from test_e2e.categories.utils.fixtures import cleanup_db, load_category_documents, seed_seller
 from test_e2e.utils.api import api_client, seller_auth_headers
 from test_e2e.utils.database import mongo_configured

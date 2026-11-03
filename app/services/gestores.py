@@ -272,7 +272,7 @@ def _seller_oid(seller_id: str) -> ObjectId:
 
 async def _get_seller_doc(seller_id: str) -> dict[str, Any]:
     doc = await get_registrations_collection().find_one({"_id": _seller_oid(seller_id)})
-    if doc is None:
+    if doc is None or doc.get("deleted_at"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Negocio no encontrado.")
     return doc
 
@@ -281,10 +281,13 @@ async def _find_seller_by_store_name(store_name: str) -> dict[str, Any]:
     collection = get_registrations_collection()
     stripped = store_name.strip()
     slug = store_name_to_slug(stripped)
-    doc = await collection.find_one({"store_slug": slug})
+    doc = await collection.find_one({"store_slug": slug, "deleted_at": None})
     if doc is None:
         doc = await collection.find_one(
-            {"store_name": {"$regex": f"^{re.escape(stripped)}$", "$options": "i"}}
+            {
+                "store_name": {"$regex": f"^{re.escape(stripped)}$", "$options": "i"},
+                "deleted_at": None,
+            }
         )
     if doc is None or doc.get("status") not in {"approved", "expired"}:
         raise HTTPException(

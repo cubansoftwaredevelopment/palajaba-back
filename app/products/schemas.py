@@ -118,14 +118,14 @@ class CatalogPaletteColor(BaseModel):
     @field_validator("hex")
     @classmethod
     def validate_hex(cls, value: str) -> str:
-        from app.services.catalog_theme import parse_hex_color
+        from app.catalogs.catalog_theme import parse_hex_color
 
         return parse_hex_color(value)
 
     @field_validator("opacity")
     @classmethod
     def validate_opacity(cls, value: int) -> int:
-        from app.services.catalog_theme import parse_opacity
+        from app.catalogs.catalog_theme import parse_opacity
 
         return parse_opacity(value)
 
@@ -144,7 +144,7 @@ class CatalogThemeUpdate(BaseModel):
     @field_validator("catalog_theme")
     @classmethod
     def validate_theme(cls, value: str) -> str:
-        from app.services.catalog_theme import parse_catalog_theme
+        from app.catalogs.catalog_theme import parse_catalog_theme
 
         return parse_catalog_theme(value)
 

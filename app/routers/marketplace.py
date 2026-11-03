@@ -18,14 +18,11 @@ from app.schemas.marketplace import (
     MarketplaceStorePagePublic,
     MarketplaceStorePublic,
 )
-from app.schemas.orders import CreateOrderRequest, OrderPublic
 from app.schemas.popularity import ProductPopularityEventRequest
+from app.products import utils as popularity_service
 from app.services import banners as banners_service
 from app.services import marketplace as marketplace_service
-from app.services import orders as orders_service
-from app.services import product_popularity as popularity_service
 from app.services import seller_stats as seller_stats_service
-from app.auth.utils import require_customer
 
 router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
 
@@ -399,16 +396,3 @@ async def record_product_popularity(product_id: str, payload: ProductPopularityE
             detail=str(exc),
         ) from exc
 
-
-@router.post("/orders", response_model=OrderPublic, status_code=201)
-async def create_marketplace_order(
-    payload: CreateOrderRequest,
-    customer_payload: dict = Depends(require_customer),
-):
-    try:
-        return await orders_service.create_order(payload, customer_id=customer_payload["customer_id"])
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        ) from exc

@@ -1,8 +1,7 @@
-"""Eliminación en cascada de una tienda/vendedor y todos sus datos relacionados."""
+"""Marca como eliminada una tienda y los datos que le pertenecen. No borra documentos ni imágenes."""
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from bson import ObjectId
@@ -12,83 +11,36 @@ from app.database import (
     get_catalog_products_collection,
     get_notifications_collection,
     get_orders_collection,
+    get_product_popularity_events_collection,
     get_registrations_collection,
     get_seller_profile_views_collection,
 )
-from app.services.media_storage import remove_image
-
-logger = logging.getLogger(__name__)
+from app.utils.datetime import to_utc_naive, utc_now
 
 
-def _product_image_files(product: dict[str, Any]) -> list[tuple[str | None, str | None]]:
-    files: list[tuple[str | None, str | None]] = []
-    seen: set[str] = set()
-    raw_images = product.get("images")
-    if isinstance(raw_images, list):
-        for item in raw_images:
-            if not isinstance(item, dict):
-                continue
-            image_url = str(item.get("image_url") or "").strip()
-            if not image_url or image_url in seen:
-                continue
-            seen.add(image_url)
-            public_id = item.get("image_public_id")
-            files.append((image_url, str(public_id) if public_id else None))
-    image_url = str(product.get("image_url") or "").strip()
-    if image_url and image_url not in seen:
-        public_id = product.get("image_public_id")
-        files.append((image_url, str(public_id) if public_id else None))
-    return files
-
-
-async def _remove_product_images(products: list[dict[str, Any]]) -> None:
-    for product in products:
-        for image_url, public_id in _product_image_files(product):
-            try:
-                await remove_image(image_url, public_id=public_id)
-            except Exception:
-                logger.exception(
-                    "No se pudo eliminar la imagen del producto %s",
-                    product.get("_id"),
-                )
+async def _mark_deleted(collection, query: dict[str, Any], now) -> None:
+    await collection.update_many(
+        {**query, "deleted_at": None},
+        {"$set": {"deleted_at": now, "updated_at": now}},
+    )
 
 
 async def delete_seller_data(seller_id: str, registration_doc: dict[str, Any]) -> None:
-    """Borra catálogo, pedidos, notificaciones, vistas y medios del vendedor."""
-    products_col = get_catalog_products_collection()
-    categories_col = get_catalog_categories_collection()
-    orders_col = get_orders_collection()
-    notifications_col = get_notifications_collection()
-    profile_views_col = get_seller_profile_views_collection()
-
-    product_docs = await products_col.find({"seller_id": seller_id}).to_list(length=None)
-    await _remove_product_images(product_docs)
-    from app.services.product_popularity import delete_popularity_events_for_seller
-
-    await delete_popularity_events_for_seller(seller_id)
-    await products_col.delete_many({"seller_id": seller_id})
-    await categories_col.delete_many({"seller_id": seller_id})
-    await orders_col.delete_many({"seller_id": seller_id})
+    """Marca catálogo, pedidos, avisos, vistas y popularidad del vendedor."""
+    _ = registration_doc
+    now = to_utc_naive(utc_now())
+    await _mark_deleted(get_catalog_products_collection(), {"seller_id": seller_id}, now)
+    await _mark_deleted(get_catalog_categories_collection(), {"seller_id": seller_id}, now)
+    await _mark_deleted(get_orders_collection(), {"seller_id": seller_id}, now)
+    await _mark_deleted(get_seller_profile_views_collection(), {"seller_id": seller_id}, now)
+    await _mark_deleted(get_product_popularity_events_collection(), {"seller_id": seller_id}, now)
 
     try:
         seller_oid = ObjectId(seller_id)
     except Exception:
         seller_oid = None
-
     if seller_oid is not None:
-        await notifications_col.delete_many({"seller_id": seller_oid})
-
-    await profile_views_col.delete_many({"seller_id": seller_id})
-
-    profile_photo_url = registration_doc.get("profile_photo_url")
-    if profile_photo_url:
-        try:
-            await remove_image(profile_photo_url)
-        except Exception:
-            logger.exception(
-                "No se pudo eliminar la foto de perfil del vendedor %s",
-                seller_id,
-            )
+        await _mark_deleted(get_notifications_collection(), {"seller_id": seller_oid}, now)
 
 
 async def delete_registration_document(registration_id: str) -> dict[str, str]:
@@ -100,7 +52,11 @@ async def delete_registration_document(registration_id: str) -> dict[str, str]:
     store_name = doc.get("store_name") or ""
 
     await delete_seller_data(seller_id, doc)
-    await collection.delete_one({"_id": doc["_id"]})
+    now = to_utc_naive(utc_now())
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"deleted_at": now, "updated_at": now}},
+    )
 
     return {
         "id": seller_id,

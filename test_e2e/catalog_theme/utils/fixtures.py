@@ -7,7 +7,7 @@ from datetime import timedelta
 from bson import ObjectId
 
 from app.database import get_registrations_collection
-from app.services.catalog_theme import PALETTE_SLOTS, palette_from_theme
+from app.catalogs.catalog_theme import PALETTE_SLOTS, palette_from_theme
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.utils.api import seller_auth_headers
 from test_e2e.utils.database import run_db

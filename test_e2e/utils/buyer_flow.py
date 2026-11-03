@@ -16,7 +16,7 @@ def complete_marketplace_order(
     seller_headers: dict[str, str],
 ) -> None:
     with api_client() as client, patch(
-        "app.services.orders.notification_service.notify_seller_new_order",
+        "app.orders.service.notification_service.notify_seller_new_order",
         new_callable=AsyncMock,
     ):
         view = client.post(

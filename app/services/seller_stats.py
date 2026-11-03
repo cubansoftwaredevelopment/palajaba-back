@@ -20,9 +20,9 @@ from app.schemas.seller_stats import (
     SellerTopProductItem,
     SellerTopProducts,
 )
-from app.services.order_totals import compute_order_products_revenue, compute_order_grand_total
+from app.orders.utils import compute_order_products_revenue, compute_order_grand_total
 from app.subscriptions.service import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
-from app.services.product_popularity import refresh_popularity_window
+from app.products.utils import refresh_popularity_window
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.month_bounds import (
     compare_month,

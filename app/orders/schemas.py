@@ -1,14 +1,8 @@
-from app.utils.datetime import UtcDateTime
-from typing import Literal
-
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
-OrderStatus = Literal["pending_confirmation", "completed", "cancelled"]
-InvoiceType = Literal["store", "transporter"]
-OrderOrigin = Literal["platform", "manual"]
-OrderPaymentMethod = Literal["contact", "qvapay"]
-PAYMENT_CURRENCIES = ("CUP", "USD", "EUR", "MLC")
+from app.orders.constants import PAYMENT_CURRENCIES, OrderOrigin, OrderPaymentMethod, OrderStatus
+from app.utils.datetime import UtcDateTime
 
 
 class OrderItemCreate(BaseModel):

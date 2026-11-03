@@ -6,7 +6,7 @@ from app.config import settings
 from app.database import get_registrations_collection
 from app.auth.schemas import SubscriptionExpiredPublic
 from app.auth.utils import verify_password
-from app.services.platform_settings import get_renewal_contact_phone
+from app.admin.service import get_renewal_contact_phone
 from app.auth.registrations import mark_registration_expired_if_needed
 from app.subscriptions.service import is_subscription_active, subscription_expired_detail
 from app.payments import subscription_service
@@ -29,10 +29,13 @@ async def login_seller(
     collection = get_registrations_collection()
 
     if method == "phone":
-        doc = await collection.find_one({"phone": phone})
+        doc = await collection.find_one({"phone": phone, "deleted_at": None})
     else:
         doc = await collection.find_one(
-            {"store_name": {"$regex": f"^{store_name}$", "$options": "i"}}
+            {
+                "store_name": {"$regex": f"^{store_name}$", "$options": "i"},
+                "deleted_at": None,
+            }
         )
 
     if doc is None or not verify_password(password, doc["password_hash"]):
@@ -464,10 +467,13 @@ def _start_response(doc: dict, *, message: str) -> PasswordResetStartResponse:
 async def _find_seller(*, method: str, phone: str | None, store_name: str | None) -> dict:
     collection = get_registrations_collection()
     if method == "phone":
-        doc = await collection.find_one({"phone": phone})
+        doc = await collection.find_one({"phone": phone, "deleted_at": None})
     else:
         doc = await collection.find_one(
-            {"store_name": {"$regex": f"^{store_name}$", "$options": "i"}}
+            {
+                "store_name": {"$regex": f"^{store_name}$", "$options": "i"},
+                "deleted_at": None,
+            }
         )
     if not doc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=ACCOUNT_NOT_FOUND)

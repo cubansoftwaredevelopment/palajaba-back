@@ -331,7 +331,7 @@ async def mark_registration_expired_if_needed(doc: dict[str, Any]) -> None:
 async def list_registrations(status_filter: str | None = None) -> list[RegistrationPublic]:
     await sync_expired_registrations()
     collection = get_registrations_collection()
-    query: dict[str, Any] = {}
+    query: dict[str, Any] = {"deleted_at": None}
     if status_filter and status_filter != "all":
         query["status"] = status_filter
 
@@ -624,7 +624,7 @@ async def _get_document_or_404(collection, registration_id: str) -> dict[str, An
         ) from exc
 
     doc = await collection.find_one({"_id": object_id})
-    if doc is None:
+    if doc is None or doc.get("deleted_at"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Solicitud no encontrada.",

@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.auth.utils import require_seller
 from app.auth.schemas import SellerPublic
-from app.schemas.orders import CreateSellerManualOrderRequest, InvoiceType, OrderPublic, UpdateOrderRequest
 from app.schemas.seller_profile import (
     CategoryPublic,
     SellerProfileUpdate,
@@ -23,7 +21,6 @@ from app.schemas.gestores import (
     GestorPublic,
 )
 from app.services import gestores as gestores_service
-from app.services import orders as orders_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
 
@@ -184,77 +181,3 @@ async def delete_my_gestor(
     )
 
 
-@router.get("/me/orders")
-async def list_my_orders(
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=25, ge=1, le=100),
-    seller_payload: dict = Depends(require_seller),
-):
-    return await orders_service.list_seller_orders(
-        seller_payload["seller_id"], offset=offset, limit=limit
-    )
-
-
-@router.post("/me/orders", response_model=OrderPublic, status_code=201)
-async def create_my_manual_order(
-    payload: CreateSellerManualOrderRequest,
-    seller_payload: dict = Depends(require_seller),
-):
-    try:
-        return await orders_service.create_seller_manual_order(
-            seller_payload["seller_id"],
-            payload,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.patch("/me/orders/{order_id}", response_model=OrderPublic)
-async def update_my_order(
-    order_id: str,
-    payload: UpdateOrderRequest,
-    seller_payload: dict = Depends(require_seller),
-):
-    try:
-        return await orders_service.update_seller_order(
-            seller_payload["seller_id"],
-            order_id,
-            payload,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.delete("/me/orders/{order_id}", status_code=204)
-async def delete_my_order(
-    order_id: str,
-    seller_payload: dict = Depends(require_seller),
-):
-    try:
-        await orders_service.delete_seller_order(
-            seller_payload["seller_id"],
-            order_id,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.get("/me/orders/{order_id}/invoice.pdf")
-async def download_my_order_invoice(
-    order_id: str,
-    type: InvoiceType = Query("store"),
-    seller_payload: dict = Depends(require_seller),
-):
-    try:
-        pdf_bytes, filename = await orders_service.generate_order_invoice_pdf(
-            seller_payload["seller_id"],
-            order_id,
-            type,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )

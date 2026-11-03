@@ -14,16 +14,16 @@ async def connect_to_mongo():
     )
     db = client[settings.database_name]
 
-    from app.services.admins import ensure_admin_indexes, seed_default_admin
+    from app.admin.service import ensure_admin_indexes, seed_default_admin
     from app.products.service import ensure_catalog_indexes
     from app.services.categories import ensure_category_seed
-    from app.products.categories import ensure_product_category_seed
+    from app.catalogs.catalog_theme import ensure_product_category_seed
     from app.notifications.service import (
         ensure_notification_indexes,
         ensure_pending_order_notifications,
         ensure_subscription_expiring_notifications,
     )
-    from app.services.orders import ensure_order_indexes
+    from app.orders.service import ensure_order_indexes
     from app.auth.service import (
         ensure_password_reset_indexes,
         ensure_registration_otp_indexes,
@@ -31,14 +31,14 @@ async def connect_to_mongo():
     from app.customer_accounts.services import ensure_customer_indexes
     from app.auth.contact_changes import ensure_seller_contact_otp_indexes
     from app.auth.registrations import ensure_registration_indexes
-    from app.services.media_storage import init_cloudinary
+    from app.catalogs.media_storage import init_cloudinary
     from app.services.seller_stats import ensure_seller_stats_indexes
     from app.subscriptions.service import ensure_subscription_payment_indexes
     from app.statistics_admin.traffic import ensure_marketplace_visit_indexes
     from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.advertising.service import ensure_advertising_indexes
     from app.payments.subscription_service import ensure_subscription_qvapay_indexes
-    from app.services.platform_settings import ensure_platform_settings_indexes
+    from app.admin.service import ensure_platform_settings_indexes
     from app.services.banners import ensure_banner_indexes
     from app.services.seller_profile import ensure_uploads_dir
 
@@ -61,7 +61,7 @@ async def connect_to_mongo():
     await ensure_catalog_indexes()
     from app.services.seller_feedback import ensure_seller_feedback_indexes
     from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
-    from app.services.catalog_theme_settings import ensure_catalog_theme_defaults_on_startup
+    from app.catalogs.catalog_theme import ensure_catalog_theme_defaults_on_startup
     from app.services.discount_codes import ensure_discount_code_indexes
     from app.services.gestores import (
         ensure_gestor_indexes,

@@ -19,7 +19,7 @@ from app.services.categories import (
     normalize_business_category_id,
     parse_product_global_category_id,
 )
-from app.products.categories import map_local_category_name_to_business_category
+from app.catalogs.catalog_theme import map_local_category_name_to_business_category
 from app.products.schemas import (
     CatalogCategoryCreate,
     CatalogCategoryProductSortUpdate,
@@ -39,7 +39,7 @@ from app.products.utils import (
     normalize_product_sort_mode,
     sort_product_docs,
 )
-from app.services.media_storage import read_image_upload, remove_image, store_image
+from app.catalogs.media_storage import read_image_upload, remove_image, store_image
 from app.subscriptions.service import seller_has_product_discounts
 from app.products.utils import (
     PRODUCT_DISCOUNT_PLAN_REQUIRED_MESSAGE,
@@ -239,7 +239,7 @@ async def ensure_catalog_indexes() -> None:
     await _backfill_category_sort_orders()
     await _backfill_product_categories()
 
-    from app.services.product_popularity import ensure_popularity_field
+    from app.products.utils import ensure_popularity_field
 
     await ensure_popularity_field()
 

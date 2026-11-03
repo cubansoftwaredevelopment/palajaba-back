@@ -220,7 +220,7 @@ async def get_kpis(
     orders = await _completed_orders(seller_id, range_start, range_end)
     totals: dict[str, float] = {}
     delivery_totals: dict[str, float] = {}
-    from app.services.order_totals import compute_order_grand_total
+    from app.orders.utils import compute_order_grand_total
     for order in orders:
         if order.get("delivery_requested") and order.get("delivery_price") is not None:
             delivery_currency = str(order.get("delivery_currency") or "CUP").strip().upper()

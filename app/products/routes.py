@@ -16,7 +16,7 @@ from app.products.schemas import (
     CurrencyPublic,
 )
 from app.products import service as products_service
-from app.services import catalog_theme_settings as catalog_theme_service
+from app.catalogs import catalog_theme as catalog_theme_service
 
 router = APIRouter()
 
@@ -232,4 +232,3 @@ async def list_products(_: dict = Depends(require_admin)):
 
 
 router.include_router(seller_router)
-router.include_router(admin_router)

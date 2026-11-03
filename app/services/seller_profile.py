@@ -7,8 +7,8 @@ from fastapi import HTTPException, UploadFile, status
 
 from app.config import settings
 from app.database import get_registrations_collection
-from app.services.admins import is_admin_username
-from app.services.media_storage import read_image_upload, remove_image, store_image
+from app.admin.utils import is_admin_username
+from app.catalogs.media_storage import read_image_upload, remove_image, store_image
 from app.auth.schemas import SellerPublic
 from app.schemas.seller_profile import (
     BusinessArea,
@@ -24,7 +24,7 @@ from app.schemas.seller_profile import (
     StorePageUpdate,
     StorePagesPublic,
 )
-from app.services.catalog_theme import normalize_catalog_theme, public_catalog_palette
+from app.catalogs.catalog_theme import normalize_catalog_theme, public_catalog_palette
 from app.services.categories import categories_for_profile, list_categories, validate_category_ids
 from app.constants import validate_business_area
 from app.services.gestores import parse_gestor_catalog_access

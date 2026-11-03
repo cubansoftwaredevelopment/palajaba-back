@@ -206,6 +206,7 @@ async def ensure_subscription_expiring_notifications() -> int:
     cursor = registrations.find(
         {
             "status": "approved",
+            "deleted_at": None,
             "subscription_ends_at": {"$ne": None},
         },
         {
@@ -481,6 +482,7 @@ async def _resolve_single_seller(seller_id: str) -> dict[str, Any]:
     seller = await get_registrations_collection().find_one(
         {
             "_id": seller_oid,
+            "deleted_at": None,
             "status": {"$in": ["approved", "expired"]},
         },
         {
@@ -514,7 +516,7 @@ _SELLER_NOTIFY_PROJECTION = {
 
 async def _load_active_sellers() -> list[dict[str, Any]]:
     sellers = await get_registrations_collection().find(
-        {"status": "approved"},
+        {"status": "approved", "deleted_at": None},
         _SELLER_NOTIFY_PROJECTION,
     ).to_list(length=None)
     return [seller for seller in sellers if is_subscription_active(seller)]

@@ -120,7 +120,7 @@ def normalize_billing_period(value: str | None) -> BillingPeriod:
 
 
 async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
-    from app.services.platform_settings import get_plan_prices
+    from app.admin.service import get_plan_prices
 
     prices = await get_plan_prices()
     configured = prices.get_price(
@@ -333,7 +333,7 @@ async def assert_seller_subscription_active(seller_id: str) -> dict[str, Any]:
         )
 
     if not is_subscription_active(doc):
-        from app.services.platform_settings import get_renewal_contact_phone
+        from app.admin.service import get_renewal_contact_phone
         from app.auth.registrations import mark_registration_expired_if_needed
 
         await mark_registration_expired_if_needed(doc)

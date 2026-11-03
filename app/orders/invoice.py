@@ -1,18 +1,17 @@
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
+from app.orders.constants import InvoiceType
 from app.utils.currency_conversion import convert_amount, format_money
 from app.utils.datetime import format_utc_naive_for_display
 from app.utils.phone import phone_display
-
-InvoiceType = Literal["store", "transporter"]
 
 BRAND_LOGO_PATH = Path(__file__).resolve().parent.parent / "assets" / "brand" / "logo.png"
 

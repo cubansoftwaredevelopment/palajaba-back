@@ -397,7 +397,7 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str, refund_u
                 "collected_total": amount,
             }},
         )
-        from app.services.product_popularity import bump_products_on_order_completed
+        from app.products.utils import bump_products_on_order_completed
         await bump_products_on_order_completed(order.get("items") or [])
     else:
         await get_orders_collection().update_one(

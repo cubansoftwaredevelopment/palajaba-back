@@ -67,7 +67,7 @@ def seed_seller() -> dict[str, str]:
 
 
 async def seed_admin_contact() -> None:
-    from app.services.platform_settings import SETTINGS_ID
+    from app.admin.service import SETTINGS_ID
     from app.utils.datetime import to_utc_naive, utc_now
 
     now = to_utc_naive(utc_now())

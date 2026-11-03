@@ -11,17 +11,16 @@ from app.live.routes import router as live_router
 from app.notifications.routes import router as notifications_router
 from app.auth.routes import router as account_router
 from app.customer_accounts.routes import router as customer_accounts_router
+from app.orders.routes import router as orders_router
 from app.products.routes import router as products_router
-from app.subscriptions.routes import router as subscriptions_router
-from app.finance_admin.routes import router as finance_router
+from app.admin.routes import router as admin_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
-from app.statistics_admin.routes import router as statistics_router
 from app.advertising.routes import router as advertising_router
 from app.payments.routes import account_router as payment_workflow_router
 from app.payments.routes import router as payments_router
 from app.payments.service import start_expiry_task, stop_expiry_task
-from app.routers import admin, auth, categories, marketplace, platform, product_categories, seo, gestores
+from app.routers import auth, categories, marketplace, platform, product_categories, seo, gestores
 from app.notifications.service import (
     start_subscription_reminder_task,
     stop_subscription_reminder_task,
@@ -61,7 +60,7 @@ app.include_router(account_router)
 app.include_router(customer_accounts_router)
 app.include_router(auth.router)
 app.include_router(products_router)
-app.include_router(subscriptions_router)
+app.include_router(orders_router)
 app.include_router(gestores.router)
 app.include_router(categories.router)
 app.include_router(product_categories.router)
@@ -71,10 +70,8 @@ app.include_router(advertising_router)
 app.include_router(payments_router)
 app.include_router(payment_workflow_router)
 app.include_router(seo.router)
-app.include_router(admin.router)
-app.include_router(statistics_router)
+app.include_router(admin_router)
 app.include_router(statistics_public_router)
-app.include_router(finance_router)
 app.include_router(seller_statistics_router)
 app.include_router(notifications_router)
 app.include_router(live_router)

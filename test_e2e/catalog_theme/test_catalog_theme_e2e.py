@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.services.catalog_theme import palette_from_theme
+from app.catalogs.catalog_theme import palette_from_theme
 from app.subscriptions.service import CATALOG_THEME_PLAN_REQUIRED_MESSAGE
 from test_e2e.catalog_theme.utils.fixtures import (
     cleanup_db,

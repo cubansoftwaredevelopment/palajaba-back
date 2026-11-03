@@ -17,7 +17,7 @@ from app.database import (
     get_registrations_collection,
 )
 from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
-from app.services.media_storage import read_image_upload, remove_image, store_image
+from app.catalogs.media_storage import read_image_upload, remove_image, store_image
 from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
 from .schema import (

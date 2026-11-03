@@ -189,6 +189,28 @@ async def require_seller(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    from bson import ObjectId
+    from app.database import get_registrations_collection
+
+    try:
+        seller_oid = ObjectId(str(payload.get("seller_id") or ""))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+    seller = await get_registrations_collection().find_one(
+        {"_id": seller_oid},
+        {"deleted_at": 1},
+    )
+    if seller is None or seller.get("deleted_at"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Cuenta de tienda no encontrada.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return payload
 
 

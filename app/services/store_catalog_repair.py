@@ -192,7 +192,7 @@ async def repair_store_catalog_by_slug(store_slug: str) -> StoreCatalogRepairRes
         raise ValueError("Slug de tienda inválido.")
 
     registrations = get_registrations_collection()
-    seller = await registrations.find_one({"store_slug": slug})
+    seller = await registrations.find_one({"store_slug": slug, "deleted_at": None})
     if seller is None:
         raise ValueError(f"Tienda no encontrada para slug «{slug}».")
 
