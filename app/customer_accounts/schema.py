@@ -86,6 +86,9 @@ class CustomerPublic(BaseModel):
     addresses: list[dict[str, Any]] = Field(default_factory=list)
     favorite_product_ids: list[str] = Field(default_factory=list)
     favorites: list[dict[str, Any]] = Field(default_factory=list)
+    qvapay_username: str | None = None
+    qvapay_verified: bool = False
+    qvapay_prompt_dismissed: bool = False
 
 
 class CustomerLoginResponse(BaseModel):

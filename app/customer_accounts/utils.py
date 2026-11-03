@@ -14,6 +14,9 @@ def customer_public(doc: dict[str, Any]) -> CustomerPublic:
         addresses=doc.get("addresses") or [],
         favorite_product_ids=doc.get("favorite_product_ids") or [],
         favorites=doc.get("favorites") or [],
+        qvapay_username=doc.get("qvapay_username"),
+        qvapay_verified=bool(doc.get("qvapay_username") and doc.get("qvapay_verified_at")),
+        qvapay_prompt_dismissed=bool(doc.get("qvapay_prompt_dismissed")),
     )
 
 

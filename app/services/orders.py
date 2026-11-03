@@ -325,6 +325,8 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
     if payload.payment_method == "qvapay":
         if not seller.get("qvapay_username"):
             raise ValueError("Esta tienda no tiene QvaPay configurado.")
+        if not customer.get("qvapay_username"):
+            raise ValueError("Configura tu usuario QvaPay en tu perfil para pagar por QvaPay.")
         from app.payments.qvapay import qvapay_escrow_configured
 
         if not qvapay_escrow_configured():
@@ -334,6 +336,7 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
             "payment_status": "not_invoiced",
             "release_status": "held",
             "evidence": None,
+            "buyer_username": customer["qvapay_username"],
         }
 
     result = await get_orders_collection().insert_one(doc)

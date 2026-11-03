@@ -17,6 +17,8 @@ from app.services import gestores as gestores_service
 from app.auth import registrations as registration_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_deletion as seller_deletion_service
+from app.payments import disputes as dispute_service
+from app.payments.schema import DisputeRulingRequest
 router = APIRouter(prefix='/api/admin', tags=['admin'])
 
 @router.post('/login', response_model=AdminLoginResponse)
@@ -115,3 +117,24 @@ async def replace_banner_image(banner_id: str, file: UploadFile=File(...), admin
 @router.delete('/banners/{banner_id}')
 async def delete_banner(banner_id: str, _: dict=Depends(require_admin)):
     return await banners_service.delete_banner(banner_id)
+
+@router.get('/disputes/open-count')
+async def disputes_open_count(_: dict=Depends(require_admin)):
+    return {'count': await dispute_service.count_open_disputes()}
+
+@router.get('/disputes')
+async def list_disputes(_: dict=Depends(require_admin)):
+    return await dispute_service.list_disputes()
+
+@router.get('/disputes/{dispute_id}')
+async def get_dispute(dispute_id: str, _: dict=Depends(require_admin)):
+    return await dispute_service.get_dispute_detail(dispute_id)
+
+@router.post('/disputes/{dispute_id}/ruling')
+async def rule_dispute(dispute_id: str, payload: DisputeRulingRequest, _: dict=Depends(require_admin)):
+    return await dispute_service.rule_dispute(
+        dispute_id,
+        winner=payload.winner,
+        reason=payload.reason,
+        refund_username=payload.refund_username,
+    )

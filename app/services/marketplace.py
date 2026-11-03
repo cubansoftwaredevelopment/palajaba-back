@@ -620,6 +620,7 @@ async def _seller_acceptance_counts(
                             ]
                         },
                         clause,
+                        {"deleted_at": None},
                     ]
                 }
             },
@@ -652,6 +653,7 @@ def _marketplace_product_query(
     query: dict[str, Any] = {
         "is_available": True,
         "view_only": {"$ne": True},
+        "deleted_at": None,
         "$or": visibility,
     }
     if extra:
@@ -676,7 +678,7 @@ def _seller_store_product_query(
 ) -> dict[str, Any]:
     """Catálogo público de una tienda: incluye agotados; el marketplace usa otra query."""
     _ = seller
-    query: dict[str, Any] = {"seller_id": seller_id}
+    query: dict[str, Any] = {"seller_id": seller_id, "deleted_at": None}
     if extra:
         query.update(extra)
     if province_id and municipality_id:

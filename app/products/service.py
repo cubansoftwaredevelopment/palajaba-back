@@ -283,7 +283,7 @@ async def _backfill_product_categories() -> None:
         if not seller_id or not category_oid:
             continue
         count = await products_col.count_documents(
-            {"seller_id": seller_id, "category_id": category_oid}
+            {"seller_id": seller_id, "category_id": category_oid, "deleted_at": None}
         )
         await categories_col.update_one(
             {"_id": category_oid},
@@ -310,7 +310,7 @@ async def _refresh_seller_global_categories(seller_id: str) -> None:
 
     product_ids = await get_catalog_products_collection().distinct(
         "global_category_id",
-        {"seller_id": seller_id},
+        {"seller_id": seller_id, "deleted_at": None},
     )
     category_ids = sorted(
         {
@@ -341,7 +341,7 @@ async def _sync_local_category_product_count(seller_id: str, category_oid: Objec
     products_col = get_catalog_products_collection()
     categories_col = get_catalog_categories_collection()
     count = await products_col.count_documents(
-        {"seller_id": seller_id, "category_id": category_oid}
+        {"seller_id": seller_id, "category_id": category_oid, "deleted_at": None}
     )
     await categories_col.update_one(
         {"_id": category_oid, "seller_id": seller_id},
@@ -384,6 +384,7 @@ def ordered_product_search_filter(
         "_id": {"$in": product_ids},
         "is_available": True,
         "view_only": {"$ne": True},
+        "deleted_at": None,
     }
     normalized = query.strip()
     if not normalized:
@@ -456,7 +457,7 @@ async def get_catalog_summary(seller_id: str) -> CatalogSummaryPublic:
 
     seller_doc = await _seller_doc(seller_id)
     category_docs = await categories_col.find({"seller_id": seller_id}).sort("sort_order", 1).to_list(length=None)
-    product_docs = await products_col.find({"seller_id": seller_id}).to_list(length=None)
+    product_docs = await products_col.find({"seller_id": seller_id, "deleted_at": None}).to_list(length=None)
 
     products_by_category: dict[str, list[dict[str, Any]]] = {}
     for doc in product_docs:
@@ -848,7 +849,7 @@ async def create_catalog_product(
     )
     products = get_catalog_products_collection()
     product_count = await products.count_documents(
-        {"seller_id": seller_id, "category_id": local_category_oid}
+        {"seller_id": seller_id, "category_id": local_category_oid, "deleted_at": None}
     )
     if product_count >= MAX_PRODUCTS_PER_CATEGORY:
         raise HTTPException(
@@ -960,7 +961,7 @@ async def _get_product_doc(seller_id: str, product_id: str) -> dict[str, Any]:
         ) from exc
 
     collection = get_catalog_products_collection()
-    doc = await collection.find_one({"_id": oid, "seller_id": seller_id})
+    doc = await collection.find_one({"_id": oid, "seller_id": seller_id, "deleted_at": None})
     if not doc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1209,8 +1210,11 @@ async def delete_catalog_product(seller_id: str, product_id: str) -> None:
     from app.products.utils import delete_popularity_events_for_products
 
     await delete_popularity_events_for_products([str(doc["_id"])])
-    await products.delete_one({"_id": doc["_id"]})
-    await _delete_stored_images(product_images_from_document(doc))
+    now = to_utc_naive(utc_now())
+    await products.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"deleted_at": now, "updated_at": now}},
+    )
     category_oid = doc.get("category_id")
     if isinstance(category_oid, ObjectId):
         await _sync_local_category_product_count(seller_id, category_oid)
@@ -1291,7 +1295,7 @@ async def _sales_counts_by_product() -> dict[str, int]:
 
 async def list_admin_products() -> AdminProductList:
     docs = await get_catalog_products_collection().find(
-        {},
+        {"deleted_at": None},
         projection={
             "name": 1,
             "seller_id": 1,

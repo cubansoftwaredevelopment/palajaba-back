@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -76,3 +76,25 @@ class CustomerDeviceRequest(BaseModel):
 
 class CustomerDeviceDelete(BaseModel):
     token: str = Field(..., min_length=10, max_length=4096)
+
+
+class DisputeRulingRequest(BaseModel):
+    winner: Literal["buyer", "seller"]
+    reason: str = Field(..., min_length=3, max_length=500)
+    refund_username: str | None = Field(default=None, max_length=64)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 3:
+            raise ValueError("Escribe el motivo del fallo.")
+        return cleaned
+
+    @field_validator("refund_username")
+    @classmethod
+    def normalize_refund_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().lstrip("@").lower()
+        return cleaned or None

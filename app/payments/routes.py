@@ -8,9 +8,11 @@ from app.advertising.service import mark_advertising_paid
 from app.payments.qvapay import verify_webhook_signature
 from app.payments import service
 from app.payments import subscription_service
+from app.payments import disputes as dispute_service
 from app.payments.schema import (
     CustomerDeviceDelete,
     CustomerDeviceRequest,
+    DisputeRulingRequest,
     EvidenceSubmitRequest,
     QvaPayAccountRequest,
     SellerAcceptPaymentRequest,
@@ -124,6 +126,40 @@ async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict 
 @account_router.delete("/api/auth/me/payment-methods/qvapay", status_code=204)
 async def delete_seller_qvapay_account(seller: dict = Depends(require_seller)):
     await service.delete_qvapay_account(seller["seller_id"])
+
+
+@account_router.get("/api/customers/me/payment-methods/qvapay")
+async def get_customer_qvapay_account(customer: dict = Depends(require_customer)):
+    return await service.get_customer_qvapay_account(customer["customer_id"])
+
+
+@account_router.put("/api/customers/me/payment-methods/qvapay")
+async def put_customer_qvapay_account(payload: QvaPayAccountRequest, customer: dict = Depends(require_customer)):
+    return await service.save_customer_qvapay_account(
+        customer["customer_id"],
+        payload.username,
+        skip_verification_on_service_error=payload.skip_verification,
+    )
+
+
+@account_router.delete("/api/customers/me/payment-methods/qvapay", status_code=204)
+async def delete_customer_qvapay_account(customer: dict = Depends(require_customer)):
+    await service.delete_customer_qvapay_account(customer["customer_id"])
+
+
+@account_router.post("/api/customers/me/payment-methods/qvapay/dismiss", status_code=204)
+async def dismiss_customer_qvapay_prompt(customer: dict = Depends(require_customer)):
+    await service.dismiss_customer_qvapay_prompt(customer["customer_id"])
+
+
+@account_router.post("/api/customers/me/orders/{order_id}/disputes")
+async def open_customer_order_dispute(order_id: str, customer: dict = Depends(require_customer)):
+    return await dispute_service.open_dispute(order_id, "buyer", customer["customer_id"])
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/disputes")
+async def open_seller_order_dispute(order_id: str, seller: dict = Depends(require_seller)):
+    return await dispute_service.open_dispute(order_id, "seller", seller["seller_id"])
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/accept")

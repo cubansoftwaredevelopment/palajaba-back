@@ -82,6 +82,9 @@ async def connect_to_mongo():
 
     await ensure_app_device_indexes()
     await ensure_finance_indexes()
+    from app.payments.disputes import ensure_dispute_indexes
+
+    await ensure_dispute_indexes()
     await ensure_category_seed()
     await ensure_product_category_seed()
     await seed_default_admin()
@@ -199,6 +202,12 @@ def get_orders_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["seller_orders"]
+
+
+def get_disputes_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["disputes"]
 
 
 def get_seller_profile_views_collection() -> AsyncIOMotorCollection:

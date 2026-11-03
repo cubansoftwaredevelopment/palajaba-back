@@ -89,6 +89,65 @@ async def save_qvapay_account(
     return {"username": normalized, "verified": verified}
 
 
+async def get_customer_qvapay_account(customer_id: str) -> dict[str, Any]:
+    customer = await get_customers_collection().find_one(
+        {"_id": _oid(customer_id, "Cliente no encontrado.")},
+        {"qvapay_username": 1, "qvapay_verified_at": 1, "qvapay_prompt_dismissed": 1},
+    )
+    if customer is None:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    return {
+        "username": customer.get("qvapay_username"),
+        "verified": bool(customer.get("qvapay_username") and customer.get("qvapay_verified_at")),
+        "prompt_dismissed": bool(customer.get("qvapay_prompt_dismissed")),
+    }
+
+
+async def save_customer_qvapay_account(
+    customer_id: str,
+    username: str,
+    *,
+    skip_verification_on_service_error: bool = False,
+) -> dict[str, Any]:
+    normalized = username.strip().lstrip("@").lower()
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Escribe tu usuario QvaPay.")
+    verified = True
+    try:
+        normalized = await verify_qvapay_username(normalized)
+    except HTTPException as exc:
+        if not skip_verification_on_service_error or exc.status_code != 503:
+            raise
+        verified = False
+    update: dict[str, Any] = {"$set": {"qvapay_username": normalized}}
+    if verified:
+        update["$set"]["qvapay_verified_at"] = to_utc_naive(utc_now())
+    else:
+        update["$unset"] = {"qvapay_verified_at": ""}
+    result = await get_customers_collection().update_one({"_id": _oid(customer_id, "Cliente no encontrado.")}, update)
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+    return {"username": normalized, "verified": verified, "prompt_dismissed": False}
+
+
+async def delete_customer_qvapay_account(customer_id: str) -> None:
+    result = await get_customers_collection().update_one(
+        {"_id": _oid(customer_id, "Cliente no encontrado.")},
+        {"$unset": {"qvapay_username": "", "qvapay_verified_at": ""}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+
+async def dismiss_customer_qvapay_prompt(customer_id: str) -> None:
+    result = await get_customers_collection().update_one(
+        {"_id": _oid(customer_id, "Cliente no encontrado.")},
+        {"$set": {"qvapay_prompt_dismissed": True}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+
 async def delete_qvapay_account(seller_id: str) -> None:
     result = await get_registrations_collection().update_one(
         {"_id": _oid(seller_id, "Tienda no encontrada.")},
@@ -263,6 +322,8 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
                  "invoice_url": invoice.url, "invoice_uuid": invoice.transaction_uuid,
                  "invoice_remote_id": invoice.remote_id, "release_status": "held",
                  "payout_username": seller["qvapay_username"]}
+    if doc.get("qvapay", {}).get("buyer_username"):
+        qv_update["buyer_username"] = doc["qvapay"]["buyer_username"]
     await get_orders_collection().update_one(
         {"_id": doc["_id"], "qvapay.request_status": "creating_invoice"},
         {"$set": {"qvapay": qv_update, "updated_at": to_utc_naive(utc_now())}},
@@ -481,6 +542,8 @@ async def customer_evidence_decision(customer_id: str, order_id: str, *, accept:
         from app.live.hub import publish_seller_data_update
         await publish_seller_data_update(doc["seller_id"], "orders")
         await _release_funds(doc["_id"])
+        from app.payments.disputes import close_dispute_on_acceptance
+        await close_dispute_on_acceptance(str(doc["_id"]))
     else:
         await _notify_seller(doc["seller_id"], str(doc["_id"]), "El cliente rechazó la evidencia",
                              f"El cliente rechazó la evidencia del pedido #{str(doc['_id'])[-6:].upper()}. Revisa el pedido antes de enviar otra.", "qvapay_evidence_rejected")
