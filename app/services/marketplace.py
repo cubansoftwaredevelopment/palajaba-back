@@ -672,6 +672,7 @@ def _seller_store_product_query(
     *,
     currency: str | None = None,
     extra: dict[str, Any] | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> dict[str, Any]:
     """Catálogo público de una tienda: incluye agotados; el marketplace usa otra query."""
     _ = seller
@@ -679,8 +680,26 @@ def _seller_store_product_query(
     if extra:
         query.update(extra)
     if province_id and municipality_id:
-        query = _and_match(query, sales_area_match_clause(province_id, municipality_id))
+        selected_ids = _selected_sales_area_municipality_ids(
+            province_id,
+            municipality_id,
+            municipios_adicionales,
+        )
+        query = _and_match(query, sales_area_match_clause(province_id, selected_ids))
     return _and_currency(query, currency)
+
+
+def _extra_buyer_municipality_ids(
+    province_id: str,
+    municipality_id: str,
+    municipios_adicionales: list[str] | None,
+) -> list[str]:
+    selected_ids = _selected_sales_area_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
+    return [item for item in selected_ids if item != municipality_id]
 
 
 async def _store_catalog_category_docs(
@@ -690,6 +709,7 @@ async def _store_catalog_category_docs(
     municipality_id: str,
     *,
     currency: str | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     categories_col = get_catalog_categories_collection()
     products_col = get_catalog_products_collection()
@@ -703,6 +723,7 @@ async def _store_catalog_category_docs(
             province_id,
             municipality_id,
             currency=currency,
+            municipios_adicionales=municipios_adicionales,
         )
         orphan_category_ids = await products_col.distinct("category_id", base_query)
         for category_oid in orphan_category_ids:
@@ -725,6 +746,7 @@ async def _store_catalog_category_docs(
             province_id,
             municipality_id,
             currency=currency,
+            municipios_adicionales=municipios_adicionales,
         )
     ) <= 0:
         return []
@@ -1363,7 +1385,13 @@ async def _search_store_catalog(
     limit: int,
     offset: int,
     currency: str | None,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceSearchPublic:
+    extra_municipality_ids = _extra_buyer_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
     seller = await _resolve_store_catalog_seller(store_slug)
     seller_id = str(seller["_id"])
     seller_by_id = {seller_id: seller}
@@ -1388,6 +1416,7 @@ async def _search_store_catalog(
         municipality_id,
         currency=currency,
         extra=extra,
+        municipios_adicionales=municipios_adicionales,
     )
     text_filter = _search_text_filter(query)
     if text_filter and match_query.get("_id") != {"$exists": False}:
@@ -1416,6 +1445,7 @@ async def _search_store_catalog(
             seller_by_id,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=extra_municipality_ids,
         )
         if item is None:
             continue
@@ -1481,6 +1511,7 @@ async def search_products(
             limit=limit,
             offset=offset,
             currency=currency,
+            municipios_adicionales=municipios_adicionales,
         )
 
     page_size = _normalize_page_size(limit)
@@ -1558,6 +1589,7 @@ async def _list_store_local_product_docs(
     offset: int,
     currency: str | None = None,
     extra: dict[str, Any] | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
     category_oid = category_doc["_id"] if category_doc else None
@@ -1573,6 +1605,7 @@ async def _list_store_local_product_docs(
         municipality_id,
         currency=currency,
         extra=query_extra or None,
+        municipios_adicionales=municipios_adicionales,
     )
     sort_spec = mongo_sort_for_product_mode(
         category_doc.get("product_sort_mode") if category_doc else "popularity",
@@ -1599,9 +1632,15 @@ async def get_store_catalog(
     *,
     limit_per_category: int = DEFAULT_PAGE_SIZE,
     currency: str | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceStoreCatalogPublic:
     currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
+    extra_municipality_ids = _extra_buyer_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
     page_size = _normalize_page_size(limit_per_category)
     await refresh_popularity_window()
 
@@ -1620,6 +1659,7 @@ async def get_store_catalog(
         province_id,
         municipality_id,
         currency=currency,
+        municipios_adicionales=municipios_adicionales,
     )
 
     sections: list[MarketplaceStoreLocalSectionPublic] = []
@@ -1641,6 +1681,7 @@ async def get_store_catalog(
                 municipality_id,
                 currency=currency,
                 extra=category_filter or None,
+                municipios_adicionales=municipios_adicionales,
             )
         )
         if total_in_category <= 0:
@@ -1654,6 +1695,7 @@ async def get_store_catalog(
                     province_id,
                     municipality_id,
                     currency=currency,
+                    municipios_adicionales=municipios_adicionales,
                 )
             ).sort(MARKETPLACE_PRODUCT_SORT).limit(page_size).to_list(length=page_size)
         else:
@@ -1666,6 +1708,7 @@ async def get_store_catalog(
                 limit=page_size,
                 offset=0,
                 currency=currency,
+                municipios_adicionales=municipios_adicionales,
             )
         products = [
             item
@@ -1675,6 +1718,7 @@ async def get_store_catalog(
                 seller_by_id,
                 buyer_province_id=province_id,
                 buyer_municipality_id=municipality_id,
+                buyer_municipality_ids=extra_municipality_ids,
             )) is not None
         ]
         if not products:
@@ -1709,9 +1753,15 @@ async def list_store_category_products(
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
     currency: str | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceStoreCategoryProductsPublic:
     currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
+    extra_municipality_ids = _extra_buyer_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
 
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
@@ -1732,6 +1782,7 @@ async def list_store_category_products(
             municipality_id,
             currency=currency,
             extra={"category_id": category_oid},
+            municipios_adicionales=municipios_adicionales,
         )
     )
 
@@ -1744,6 +1795,7 @@ async def list_store_category_products(
         limit=page_size,
         offset=safe_offset,
         currency=currency,
+        municipios_adicionales=municipios_adicionales,
     )
     products = [
         item
@@ -1753,6 +1805,7 @@ async def list_store_category_products(
             seller_by_id,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=extra_municipality_ids,
         )) is not None    ]
 
     loaded = safe_offset + len(products)
@@ -1849,9 +1902,15 @@ async def get_gestor_store_catalog(
     *,
     limit_per_category: int = DEFAULT_PAGE_SIZE,
     currency: str | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceGestorStoreCatalogPublic:
     currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
+    extra_municipality_ids = _extra_buyer_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
     page_size = _normalize_page_size(limit_per_category)
     await refresh_popularity_window()
 
@@ -1884,6 +1943,7 @@ async def get_gestor_store_catalog(
         province_id,
         municipality_id,
         currency=currency,
+        municipios_adicionales=municipios_adicionales,
     )
 
     sections: list[MarketplaceGestorStoreLocalSectionPublic] = []
@@ -1905,6 +1965,7 @@ async def get_gestor_store_catalog(
                 municipality_id,
                 currency=currency,
                 extra=category_filter,
+                municipios_adicionales=municipios_adicionales,
             )
         )
         if total_in_category <= 0:
@@ -1920,6 +1981,7 @@ async def get_gestor_store_catalog(
                         municipality_id,
                         currency=currency,
                         extra=id_filter,
+                        municipios_adicionales=municipios_adicionales,
                     )
                 )
                 .sort(MARKETPLACE_PRODUCT_SORT)
@@ -1937,6 +1999,7 @@ async def get_gestor_store_catalog(
                 offset=0,
                 currency=currency,
                 extra=id_filter,
+                municipios_adicionales=municipios_adicionales,
             )
 
         products: list[MarketplaceGestorProductPublic] = []
@@ -1946,6 +2009,7 @@ async def get_gestor_store_catalog(
                 seller_by_id,
                 buyer_province_id=province_id,
                 buyer_municipality_id=municipality_id,
+                buyer_municipality_ids=extra_municipality_ids,
             )
             if item is None:
                 continue
@@ -1993,9 +2057,15 @@ async def list_gestor_store_category_products(
     limit: int = DEFAULT_PAGE_SIZE,
     offset: int = 0,
     currency: str | None = None,
+    municipios_adicionales: list[str] | None = None,
 ) -> MarketplaceGestorStoreCategoryProductsPublic:
     currency = _normalize_display_currencies(currency)
     _validate_location_ids(province_id, municipality_id)
+    extra_municipality_ids = _extra_buyer_municipality_ids(
+        province_id,
+        municipality_id,
+        municipios_adicionales,
+    )
     page_size = _normalize_page_size(limit)
     safe_offset = max(0, offset)
     await refresh_popularity_window()
@@ -2034,6 +2104,7 @@ async def list_gestor_store_category_products(
             municipality_id,
             currency=currency,
             extra={**id_filter, "category_id": category_oid},
+            municipios_adicionales=municipios_adicionales,
         )
     )
 
@@ -2047,6 +2118,7 @@ async def list_gestor_store_category_products(
         offset=safe_offset,
         currency=currency,
         extra=id_filter,
+        municipios_adicionales=municipios_adicionales,
     )
 
     products: list[MarketplaceGestorProductPublic] = []
@@ -2056,6 +2128,7 @@ async def list_gestor_store_category_products(
             seller_by_id,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=extra_municipality_ids,
         )
         if item is None:
             continue

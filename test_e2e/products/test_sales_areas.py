@@ -98,3 +98,14 @@ class ProductSalesAreasE2ETests(unittest.TestCase):
             )
             self.assertEqual(hidden.status_code, 200, hidden.text)
             self.assertNotIn(product["id"], public_product_ids(hidden.json()))
+
+            with_extra_zone = client.get(
+                f"/api/marketplace/stores/{seller['store_slug']}/catalog",
+                params={
+                    "province_id": PROVINCE_ID,
+                    "municipality_id": SELLER_MUNICIPALITY_ID,
+                    "municipios_adicionales": EXTRA_MUNICIPALITY_ID,
+                },
+            )
+            self.assertEqual(with_extra_zone.status_code, 200, with_extra_zone.text)
+            self.assertIn(product["id"], public_product_ids(with_extra_zone.json()))
