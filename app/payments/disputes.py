@@ -16,7 +16,7 @@ from app.database import (
     get_orders_collection,
     get_registrations_collection,
 )
-from app.payments.qvapay import transfer_to_user, verify_qvapay_username
+from app.payments.qvapay import transfer_to_user
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.store_slug import store_name_to_slug
 
@@ -325,6 +325,20 @@ async def get_dispute_detail(dispute_id: str) -> dict[str, Any]:
     }
 
 
+async def _buyer_qvapay_username(order: dict[str, Any]) -> str:
+    buyer_id = str(order.get("buyer_id") or "").strip()
+    if not buyer_id:
+        return ""
+    try:
+        customer = await get_customers_collection().find_one(
+            {"_id": ObjectId(buyer_id)},
+            {"qvapay_username": 1},
+        )
+    except Exception:
+        return ""
+    return str((customer or {}).get("qvapay_username") or "").strip()
+
+
 def _money(order: dict[str, Any], *, refund: bool) -> tuple[float, str]:
     qvapay = order.get("qvapay") or {}
     if refund:
@@ -362,7 +376,7 @@ async def _resolve(dispute_id: ObjectId, *, winner: Winner, reason: str, resolut
     )
 
 
-async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str, refund_username: str | None) -> dict[str, Any]:
+async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[str, Any]:
     dispute = await get_disputes_collection().find_one({"_id": _oid(dispute_id, "Disputa no encontrada.")})
     if not dispute:
         raise HTTPException(status_code=404, detail="Disputa no encontrada.")
@@ -392,14 +406,13 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str, refund_u
 
     previous_evidence = (qvapay.get("evidence") or {}).get("status") if isinstance(qvapay.get("evidence"), dict) else None
     amount, username = _money(order, refund=winner == "buyer")
-    if winner == "buyer" and not username:
-        username = str(refund_username or "").strip().lstrip("@").lower()
-        if not username:
-            raise HTTPException(status_code=400, detail="Escribe el usuario QvaPay del comprador.")
-        username = await verify_qvapay_username(username)
+    if winner == "buyer":
+        username = await _buyer_qvapay_username(order) or username
     if winner == "seller" and not username:
         seller = await get_registrations_collection().find_one({"_id": _oid(order["seller_id"], "Tienda no encontrada.")})
         username = str((seller or {}).get("qvapay_username") or "").strip()
+    if winner == "buyer" and not username:
+        raise HTTPException(status_code=409, detail="El comprador no tiene un usuario QvaPay.")
     if not username or amount <= 0:
         raise HTTPException(status_code=409, detail="No hay un destino o un monto para transferir.")
 

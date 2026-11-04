@@ -199,7 +199,6 @@ async def rule_dispute(dispute_id: str, payload: DisputeRulingRequest, _: dict =
         dispute_id,
         winner=payload.winner,
         reason=payload.reason,
-        refund_username=payload.refund_username,
     )
 
 

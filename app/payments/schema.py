@@ -81,7 +81,6 @@ class CustomerDeviceDelete(BaseModel):
 class DisputeRulingRequest(BaseModel):
     winner: Literal["buyer", "seller"]
     reason: str = Field(..., min_length=3, max_length=500)
-    refund_username: str | None = Field(default=None, max_length=64)
 
     @field_validator("reason")
     @classmethod
@@ -90,11 +89,3 @@ class DisputeRulingRequest(BaseModel):
         if len(cleaned) < 3:
             raise ValueError("Escribe el motivo del fallo.")
         return cleaned
-
-    @field_validator("refund_username")
-    @classmethod
-    def normalize_refund_username(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        cleaned = value.strip().lstrip("@").lower()
-        return cleaned or None
