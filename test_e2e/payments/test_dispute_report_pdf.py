@@ -43,6 +43,10 @@ class DisputeReportPdfTests(unittest.TestCase):
         self.assertNotIn(b"El pago se acuerda con la tienda.", policy_pdf)
         self.assertTrue(terms_name.startswith("terminos-"))
         self.assertTrue(policy_name.startswith("politica-de-entrega-"))
+        self.assertIn(b"startup", terms_pdf)
+        self.assertIn(b"startup", policy_pdf)
+        self.assertNotIn(b"Pa' La Jaba", terms_pdf)
+        self.assertNotIn(b"Pa' La Jaba", policy_pdf)
 
     def test_evidence_pdf_contains_the_delivery_note(self) -> None:
         order_id = ObjectId()
@@ -62,5 +66,7 @@ class DisputeReportPdfTests(unittest.TestCase):
         pdf, name = build_evidence_pdf(order, store_name="startup")
 
         self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"startup", pdf)
+        self.assertNotIn(b"Pa' La Jaba", pdf)
         self.assertIn(b"Dej\\351 el pedido en recepci\\363n.", pdf)
         self.assertEqual(name, f"evidencia-{str(order_id)[-6:].upper()}.pdf")

@@ -254,9 +254,9 @@ def build_agreement_pdf(order: dict[str, Any], kind: str, *, store_name: str) ->
     code = str(order.get("_id") or "")[-6:].upper()
     agreement = _agreement(order, kind)
 
-    report.text("Pa' La Jaba", font="Helvetica-Bold", size=16, color=BRAND_GREEN_DARK, leading=20)
+    report.text(store_name or "Tienda", font="Helvetica-Bold", size=16, color=BRAND_GREEN_DARK, leading=20)
     report.text(spec["title"], font="Helvetica-Bold", size=14, color=BRAND_GREEN_DARK, leading=18)
-    report.text(f"Pedido #{code} · {store_name or 'Tienda'}", size=11, leading=15)
+    report.text(f"Pedido #{code}", size=11, leading=15)
     report.text("Texto aceptado al momento del pedido.", size=9, color=TEXT_MUTED, leading=12)
     report.rule()
     if agreement:
@@ -275,9 +275,9 @@ def build_evidence_pdf(order: dict[str, Any], *, store_name: str) -> tuple[bytes
     qvapay = order.get("qvapay") if isinstance(order.get("qvapay"), dict) else {}
     evidence = qvapay.get("evidence") if isinstance(qvapay.get("evidence"), dict) else {}
 
-    report.text("Pa' La Jaba", font="Helvetica-Bold", size=16, color=BRAND_GREEN_DARK, leading=20)
+    report.text(store_name or "Tienda", font="Helvetica-Bold", size=16, color=BRAND_GREEN_DARK, leading=20)
     report.text("Evidencia de entrega", font="Helvetica-Bold", size=14, color=BRAND_GREEN_DARK, leading=18)
-    report.text(f"Pedido #{code} · {store_name or 'Tienda'}", size=11, leading=15)
+    report.text(f"Pedido #{code}", size=11, leading=15)
     sent = evidence.get("sent_at")
     if isinstance(sent, datetime):
         report.text(f"Enviada el {_when(sent)}.", size=9, color=TEXT_MUTED, leading=12)
