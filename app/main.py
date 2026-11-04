@@ -19,6 +19,7 @@ from app.statistics_admin.routes import public_router as statistics_public_route
 from app.advertising.routes import router as advertising_router
 from app.payments.routes import account_router as payment_workflow_router
 from app.payments.routes import router as payments_router
+from app.payments.evidence_clock import start_evidence_clock_task, stop_evidence_clock_task
 from app.payments.service import start_expiry_task, stop_expiry_task
 from app.routers import auth, categories, marketplace, platform, product_categories, seo, gestores
 from app.notifications.service import (
@@ -38,9 +39,11 @@ async def lifespan(app: FastAPI):
     await connect_to_mongo()
     start_exchange_rates_refresh_task()
     start_subscription_reminder_task()
+    start_evidence_clock_task()
     start_expiry_task()
     yield
     await stop_subscription_reminder_task()
+    await stop_evidence_clock_task()
     await stop_expiry_task()
     await stop_exchange_rates_refresh_task()
     await close_mongo_connection()

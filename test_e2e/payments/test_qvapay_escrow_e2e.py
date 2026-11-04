@@ -11,7 +11,8 @@ from bson import ObjectId
 
 from app.auth.utils import create_customer_token
 from app.config import settings
-from app.database import get_orders_collection
+from app.database import get_orders_collection, get_server_heartbeat_collection
+from app.payments.evidence_clock import CLOCK_ID, record_server_heartbeat
 from app.payments.qvapay import QvaPayInvoice
 from app.payments.service import expire_due_evidence
 from app.utils.datetime import to_utc_naive, utc_now
@@ -126,3 +127,59 @@ class QvaPayEscrowE2ETests(unittest.TestCase):
         self.assertEqual(final["qvapay"]["evidence"]["status"], "expired")
         self.assertEqual(final["qvapay"]["release_status"], "released")
         self.assertEqual(final["status"], "completed")
+
+    def test_server_downtime_extends_only_pending_evidence_deadlines(self) -> None:
+        seller = seed_seller(plan_tier="premium")
+        deadline = to_utc_naive(utc_now()) + timedelta(hours=2)
+        pending = run_db(lambda: seed_order(seller["seller_id"], deadline=deadline))
+        rejected = run_db(lambda: seed_order(seller["seller_id"], deadline=deadline))
+
+        async def mark_rejected() -> None:
+            await get_orders_collection().update_one(
+                {"_id": ObjectId(rejected["order_id"])},
+                {"$set": {"qvapay.evidence.status": "rejected"}},
+            )
+
+        run_db(mark_rejected)
+
+        async def apply_downtime() -> tuple[timedelta, timedelta, timedelta, timedelta, timedelta]:
+            orders = get_orders_collection()
+            clock = get_server_heartbeat_collection()
+            pending_filter = {
+                "payment_method": "qvapay",
+                "qvapay.evidence.status": "pending",
+                "qvapay.evidence.deadline": {"$type": "date"},
+            }
+            before = {
+                doc["_id"]: doc["qvapay"]["evidence"]["deadline"]
+                async for doc in orders.find(pending_filter, {"qvapay.evidence.deadline": 1})
+            }
+            rejected_before = (await orders.find_one({"_id": ObjectId(rejected["order_id"])}))["qvapay"]["evidence"]["deadline"]
+            stalled_at = to_utc_naive(utc_now()) - timedelta(minutes=30)
+            await clock.update_one({"_id": CLOCK_ID}, {"$set": {"beat_at": stalled_at}}, upsert=True)
+            try:
+                gap = await record_server_heartbeat()
+                moved = (await orders.find_one({"_id": ObjectId(pending["order_id"])}))["qvapay"]["evidence"]["deadline"]
+                untouched = (await orders.find_one({"_id": ObjectId(rejected["order_id"])}))["qvapay"]["evidence"]["deadline"]
+                second_gap = await record_server_heartbeat()
+                moved_again = (await orders.find_one({"_id": ObjectId(pending["order_id"])}))["qvapay"]["evidence"]["deadline"]
+            finally:
+                for order_id, previous_deadline in before.items():
+                    await orders.update_one(
+                        {"_id": order_id},
+                        {"$set": {"qvapay.evidence.deadline": previous_deadline}},
+                    )
+                await clock.update_one(
+                    {"_id": CLOCK_ID},
+                    {"$set": {"beat_at": to_utc_naive(utc_now())}},
+                    upsert=True,
+                )
+            return gap, second_gap, moved - before[ObjectId(pending["order_id"])], untouched - rejected_before, moved_again - moved
+
+        gap, second_gap, shift, rejected_shift, second_shift = run_db(apply_downtime)
+        self.assertGreater(gap, timedelta(minutes=29))
+        self.assertEqual(second_gap, timedelta(0))
+        self.assertGreater(shift, timedelta(minutes=29))
+        self.assertLess(abs(shift - gap), timedelta(seconds=2))
+        self.assertEqual(rejected_shift, timedelta(0))
+        self.assertEqual(second_shift, timedelta(0))

@@ -222,6 +222,12 @@ def get_platform_settings_collection() -> AsyncIOMotorCollection:
     return db["platform_settings"]
 
 
+def get_server_heartbeat_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["server_heartbeat"]
+
+
 def get_exchange_rates_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
