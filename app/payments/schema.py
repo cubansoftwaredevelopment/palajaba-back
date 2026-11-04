@@ -59,6 +59,24 @@ class EvidenceSubmitRequest(BaseModel):
     content: dict[str, Any]
 
 
+class DisputeOpenRequest(BaseModel):
+    text: str = Field(..., min_length=3, max_length=2000)
+    images: list[str] = Field(default_factory=list, max_length=6)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_text(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 3:
+            raise ValueError("Explica el motivo de la disputa.")
+        return cleaned
+
+    @field_validator("images")
+    @classmethod
+    def normalize_images(cls, value: list[str]) -> list[str]:
+        return [item.strip() for item in value if str(item or "").strip()]
+
+
 class CustomerOrderNotificationPublic(BaseModel):
     id: str
     title: str

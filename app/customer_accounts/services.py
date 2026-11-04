@@ -471,6 +471,9 @@ def _customer_order_qvapay_public(value: dict[str, Any] | None) -> dict[str, Any
         "delivery_amount_usd": value.get("delivery_amount_usd"),
         "fee_usd": value.get("fee_usd"),
         "evidence": value.get("evidence"),
+        "evidence_history": value.get("evidence_history") if isinstance(value.get("evidence_history"), list) else [],
+        "buyer_support_reported": bool(value.get("buyer_support_reported")),
+        "seller_support_reported": bool(value.get("seller_support_reported")),
         "release_status": value.get("release_status"),
     }
 

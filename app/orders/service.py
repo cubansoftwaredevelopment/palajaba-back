@@ -155,6 +155,9 @@ def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
         "delivery_amount_usd": value.get("delivery_amount_usd"),
         "fee_usd": value.get("fee_usd"),
         "evidence": value.get("evidence"),
+        "evidence_history": value.get("evidence_history") if isinstance(value.get("evidence_history"), list) else [],
+        "buyer_support_reported": bool(value.get("buyer_support_reported")),
+        "seller_support_reported": bool(value.get("seller_support_reported")),
         "release_status": value.get("release_status"),
     }
 
@@ -398,6 +401,9 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
             "payment_status": "not_invoiced",
             "release_status": "held",
             "evidence": None,
+            "evidence_history": [],
+            "buyer_support_reported": False,
+            "seller_support_reported": False,
             "buyer_username": customer["qvapay_username"],
         }
 

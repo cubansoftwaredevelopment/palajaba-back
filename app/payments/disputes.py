@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Literal
+from urllib.parse import urlparse
 
 from bson import ObjectId
 from fastapi import HTTPException
@@ -48,6 +49,7 @@ def _public(doc: dict[str, Any]) -> dict[str, Any]:
         "opened_by": list(doc.get("opened_by") or []),
         "winner": doc.get("winner"),
         "reason": doc.get("reason"),
+        "reports": _public_reports(doc.get("reports")),
         "resolution": doc.get("resolution"),
         "created_at": doc.get("created_at"),
         "resolved_at": doc.get("resolved_at"),
@@ -76,19 +78,94 @@ async def _order_for_party(order_id: str, party: Party, actor_id: str) -> dict[s
     return order
 
 
-async def open_dispute(order_id: str, party: Party, actor_id: str) -> dict[str, Any]:
+def _public_reports(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    reports = []
+    for item in value:
+        if not isinstance(item, dict) or item.get("party") not in {"buyer", "seller"}:
+            continue
+        reports.append({
+            "party": item.get("party"),
+            "text": item.get("text") or "",
+            "images": [str(src) for src in item.get("images") or [] if src],
+            "created_at": item.get("created_at"),
+        })
+    return reports
+
+
+def _clean_report_images(images: list[str]) -> list[str]:
+    clean = []
+    for raw in images:
+        src = str(raw or "").strip()
+        if not src or ".." in src.split("/"):
+            raise HTTPException(status_code=400, detail="La imagen del motivo no es válida.")
+        parsed = urlparse(src)
+        allowed = src.startswith("/uploads/dispute-reports/") or parsed.hostname == "res.cloudinary.com"
+        if not allowed:
+            raise HTTPException(status_code=400, detail="La imagen del motivo no es válida.")
+        clean.append(src)
+    if len(clean) > 6:
+        raise HTTPException(status_code=400, detail="Puedes adjuntar hasta 6 imágenes.")
+    return clean
+
+
+def _party_report(party: Party, text: str, images: list[str], now) -> dict[str, Any]:
+    return {"party": party, "text": text, "images": images, "created_at": now}
+
+
+def _party_has_report(dispute: dict[str, Any] | None, party: Party) -> bool:
+    reports = dispute.get("reports") if isinstance(dispute, dict) else None
+    return any(isinstance(item, dict) and item.get("party") == party for item in reports or [])
+
+
+def _with_existing_report(dispute: dict[str, Any], party: Party) -> dict[str, Any]:
+    public = _public(dispute)
+    public["already_reported"] = _party_has_report(dispute, party)
+    return public
+
+
+async def _mark_support_reported(order_id: ObjectId, party: Party, now) -> None:
+    field = "qvapay.buyer_support_reported" if party == "buyer" else "qvapay.seller_support_reported"
+    await get_orders_collection().update_one({"_id": order_id}, {"$set": {field: True, "updated_at": now}})
+
+
+async def _save_party_report(order: dict[str, Any], dispute: dict[str, Any], party: Party, report: dict[str, Any], now) -> None:
+    reports = [item for item in dispute.get("reports") or [] if isinstance(item, dict)]
+    reports.append(report)
+    await get_disputes_collection().update_one(
+        {"_id": dispute["_id"], "status": "open"},
+        {"$addToSet": {"opened_by": party}, "$set": {"reports": reports, "updated_at": now}},
+    )
+    await _mark_support_reported(order["_id"], party, now)
+
+
+async def upload_dispute_image(order_id: str, party: Party, actor_id: str, file) -> dict[str, str]:
+    from app.catalogs.media_storage import read_image_upload, store_image
+
+    order = await _order_for_party(order_id, party, actor_id)
+    existing = await get_disputes_collection().find_one({"order_id": order["_id"]})
+    if _party_has_report(existing, party):
+        raise HTTPException(status_code=409, detail="Ya enviaste el motivo de esta disputa.")
+    if not (existing and existing.get("status") == "open") and not _eligible(order):
+        raise HTTPException(status_code=409, detail="No hay una evidencia rechazada con el pago retenido.")
+    content, content_type = await read_image_upload(file)
+    stored = await store_image(content, content_type, scope="dispute-reports", owner_id=actor_id)
+    return {"url": stored.url}
+
+
+async def open_dispute(order_id: str, party: Party, actor_id: str, *, text: str, images: list[str]) -> dict[str, Any]:
     order = await _order_for_party(order_id, party, actor_id)
     collection = get_disputes_collection()
     existing = await collection.find_one({"order_id": order["_id"]})
     now = to_utc_naive(utc_now())
+    if existing and (_party_has_report(existing, party) or existing.get("status") != "open"):
+        return _with_existing_report(existing, party)
+    report = _party_report(party, text, _clean_report_images(images), now)
     if existing:
-        if existing.get("status") == "open" and party not in (existing.get("opened_by") or []):
-            await collection.update_one(
-                {"_id": existing["_id"], "status": "open"},
-                {"$addToSet": {"opened_by": party}, "$set": {"updated_at": now}},
-            )
-            existing = await collection.find_one({"_id": existing["_id"]})
-        return _public(existing)
+        await _save_party_report(order, existing, party, report, now)
+        saved = await collection.find_one({"_id": existing["_id"]})
+        return _public(saved or existing)
     if not _eligible(order):
         raise HTTPException(status_code=409, detail="No hay una evidencia rechazada con el pago retenido.")
     document = {
@@ -100,6 +177,7 @@ async def open_dispute(order_id: str, party: Party, actor_id: str) -> dict[str, 
         "status": "open",
         "winner": None,
         "reason": None,
+        "reports": [report],
         "resolution": None,
         "created_at": now,
         "updated_at": now,
@@ -107,13 +185,11 @@ async def open_dispute(order_id: str, party: Party, actor_id: str) -> dict[str, 
     }
     try:
         await collection.insert_one(document)
+        await _mark_support_reported(order["_id"], party, now)
     except DuplicateKeyError:
         existing = await collection.find_one({"order_id": order["_id"]})
-        if existing and existing.get("status") == "open" and party not in (existing.get("opened_by") or []):
-            await collection.update_one(
-                {"_id": existing["_id"], "status": "open"},
-                {"$addToSet": {"opened_by": party}, "$set": {"updated_at": now}},
-            )
+        if existing and existing.get("status") == "open" and not _party_has_report(existing, party):
+            await _save_party_report(order, existing, party, report, now)
             existing = await collection.find_one({"_id": existing["_id"]})
         if not existing:
             raise HTTPException(status_code=409, detail="No se pudo abrir la disputa.")

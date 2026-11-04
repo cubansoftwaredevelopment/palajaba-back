@@ -446,11 +446,16 @@ async def submit_evidence(seller_id: str, order_id: str, content: dict[str, Any]
     clean = _safe_evidence_content(content)
     now = to_utc_naive(utc_now())
     evidence = {"content": clean, "status": "pending", "sent_at": now, "deadline": now + EVIDENCE_WINDOW}
+    stored = qv.get("evidence")
+    previous = stored if isinstance(stored, dict) and stored.get("content") else None
+    update: dict[str, Any] = {"$set": {"qvapay.evidence": evidence, "updated_at": now}}
+    if previous:
+        update["$push"] = {"qvapay.evidence_history": previous}
     result = await get_orders_collection().update_one(
         {"_id": doc["_id"], "status": "pending_confirmation", "qvapay.payment_status": "paid",
          "qvapay.release_status": "held",
          "qvapay.evidence.status": {"$ne": "pending"}},
-        {"$set": {"qvapay.evidence": evidence, "updated_at": now}},
+        update,
     )
     if result.modified_count != 1:
         raise HTTPException(status_code=409, detail="El cliente debe responder la evidencia anterior.")

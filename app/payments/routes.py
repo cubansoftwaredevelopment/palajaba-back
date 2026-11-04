@@ -12,6 +12,7 @@ from app.payments import disputes as dispute_service
 from app.payments.schema import (
     CustomerDeviceDelete,
     CustomerDeviceRequest,
+    DisputeOpenRequest,
     DisputeRulingRequest,
     EvidenceSubmitRequest,
     QvaPayAccountRequest,
@@ -157,14 +158,24 @@ async def dismiss_customer_qvapay_prompt(customer: dict = Depends(require_custom
     await service.dismiss_customer_qvapay_prompt(customer["customer_id"])
 
 
+@account_router.post("/api/customers/me/orders/{order_id}/disputes/images")
+async def upload_customer_dispute_image(order_id: str, photo: UploadFile = File(...), customer: dict = Depends(require_customer)):
+    return await dispute_service.upload_dispute_image(order_id, "buyer", customer["customer_id"], photo)
+
+
 @account_router.post("/api/customers/me/orders/{order_id}/disputes")
-async def open_customer_order_dispute(order_id: str, customer: dict = Depends(require_customer)):
-    return await dispute_service.open_dispute(order_id, "buyer", customer["customer_id"])
+async def open_customer_order_dispute(order_id: str, payload: DisputeOpenRequest, customer: dict = Depends(require_customer)):
+    return await dispute_service.open_dispute(order_id, "buyer", customer["customer_id"], text=payload.text, images=payload.images)
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/disputes/images")
+async def upload_seller_dispute_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+    return await dispute_service.upload_dispute_image(order_id, "seller", seller["seller_id"], photo)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/disputes")
-async def open_seller_order_dispute(order_id: str, seller: dict = Depends(require_seller)):
-    return await dispute_service.open_dispute(order_id, "seller", seller["seller_id"])
+async def open_seller_order_dispute(order_id: str, payload: DisputeOpenRequest, seller: dict = Depends(require_seller)):
+    return await dispute_service.open_dispute(order_id, "seller", seller["seller_id"], text=payload.text, images=payload.images)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/accept")

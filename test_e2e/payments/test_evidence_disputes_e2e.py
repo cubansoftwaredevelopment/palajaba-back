@@ -89,21 +89,51 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
              patch("app.live.hub.publish_customer_notification", new_callable=AsyncMock), \
              api_client() as client:
             customer_headers, seller_headers, content = self._reject_paid_order(client, seller, seeded)
-            buyer = client.post(f"/api/customers/me/orders/{seeded['order_id']}/disputes", headers=customer_headers)
-            store = client.post(f"/api/auth/me/orders/{seeded['order_id']}/disputes", headers=seller_headers)
+            buyer = client.post(
+                f"/api/customers/me/orders/{seeded['order_id']}/disputes",
+                headers=customer_headers,
+                json={"text": "No recibí el pedido."},
+            )
+            store = client.post(
+                f"/api/auth/me/orders/{seeded['order_id']}/disputes",
+                headers=seller_headers,
+                json={"text": "Sí entregué el pedido."},
+            )
             self.assertEqual(buyer.status_code, 200, buyer.text)
             self.assertEqual(store.status_code, 200, store.text)
             self.assertEqual(buyer.json()["id"], store.json()["id"])
             self.assertEqual(sorted(store.json()["opened_by"]), ["buyer", "seller"])
+            detail = client.get(f"/api/admin/disputes/{buyer.json()['id']}", headers=admin_auth_headers())
+            self.assertEqual(detail.status_code, 200, detail.text)
+            reports = {item["party"]: item["text"] for item in detail.json()["reports"]}
+            self.assertEqual(reports["buyer"], "No recibí el pedido.")
+            self.assertEqual(reports["seller"], "Sí entregué el pedido.")
+            repeat = client.post(
+                f"/api/customers/me/orders/{seeded['order_id']}/disputes",
+                headers=customer_headers,
+                json={"text": "Otro motivo que no debe reemplazar el primero."},
+            )
+            self.assertEqual(repeat.status_code, 200, repeat.text)
+            self.assertTrue(repeat.json()["already_reported"])
+            buyer_report = next(item for item in repeat.json()["reports"] if item["party"] == "buyer")
+            self.assertEqual(buyer_report["text"], "No recibí el pedido.")
             count = client.get("/api/admin/disputes/open-count", headers=admin_auth_headers())
             self.assertEqual(count.status_code, 200, count.text)
             self.assertGreaterEqual(count.json()["count"], 1)
-            resent = client.post(f"/api/auth/me/orders/{seeded['order_id']}/evidence", headers=seller_headers, json={"content": content})
+            resent = client.post(
+                f"/api/auth/me/orders/{seeded['order_id']}/evidence",
+                headers=seller_headers,
+                json={"content": {"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Segunda entrega"}]}]}},
+            )
             self.assertEqual(resent.status_code, 200, resent.text)
             accepted = client.post(f"/api/customers/me/orders/{seeded['order_id']}/qvapay/evidence/accept", headers=customer_headers)
             self.assertEqual(accepted.status_code, 200, accepted.text)
             transfer.assert_awaited_once()
-            again = client.post(f"/api/customers/me/orders/{seeded['order_id']}/disputes", headers=customer_headers)
+            again = client.post(
+                f"/api/customers/me/orders/{seeded['order_id']}/disputes",
+                headers=customer_headers,
+                json={"text": "Sigue sin llegarme."},
+            )
             self.assertEqual(again.status_code, 200, again.text)
             self.assertEqual(again.json()["id"], buyer.json()["id"])
             self.assertEqual(again.json()["status"], "resolved")
@@ -111,6 +141,15 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
             self.assertEqual(sum(1 for item in listed.json() if item["order_id"] == seeded["order_id"]), 1)
             closed = client.get("/api/admin/disputes/open-count", headers=admin_auth_headers())
             self.assertEqual(closed.json()["count"], count.json()["count"] - 1)
+
+        stored = run_db(lambda: get_orders_collection().find_one({"_id": ObjectId(seeded["order_id"])}))
+        history = stored["qvapay"]["evidence_history"]
+        self.assertEqual(len(history), 1)
+        self.assertEqual(history[0]["status"], "rejected")
+        self.assertEqual(history[0]["content"], content)
+        self.assertEqual(stored["qvapay"]["evidence"]["content"]["content"][0]["content"][0]["text"], "Segunda entrega")
+        self.assertTrue(stored["qvapay"]["buyer_support_reported"])
+        self.assertTrue(stored["qvapay"]["seller_support_reported"])
 
     def test_admin_ruling_transfers_once(self) -> None:
         seller = seed_seller(plan_tier="basic")
@@ -134,7 +173,11 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
              patch("app.live.hub.publish_customer_notification", new_callable=AsyncMock), \
              api_client() as client:
             customer_headers, seller_headers, _content = self._reject_paid_order(client, seller, seeded)
-            opened = client.post(f"/api/customers/me/orders/{seeded['order_id']}/disputes", headers=customer_headers)
+            opened = client.post(
+                f"/api/customers/me/orders/{seeded['order_id']}/disputes",
+                headers=customer_headers,
+                json={"text": "No recibí el pedido."},
+            )
             self.assertEqual(opened.status_code, 200, opened.text)
             dispute_id = opened.json()["id"]
             ruled = client.post(
@@ -155,7 +198,11 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
             )
             self.assertEqual(duplicate.status_code, 409, duplicate.text)
             transfer.assert_awaited_once()
-            later = client.post(f"/api/auth/me/orders/{seeded['order_id']}/disputes", headers=seller_headers)
+            later = client.post(
+                f"/api/auth/me/orders/{seeded['order_id']}/disputes",
+                headers=seller_headers,
+                json={"text": "La entrega está hecha."},
+            )
             self.assertEqual(later.json()["id"], dispute_id)
             self.assertEqual(later.json()["status"], "resolved")
             listed = client.get("/api/admin/disputes", headers=admin_auth_headers())
