@@ -223,7 +223,13 @@ class MarketplaceStorePagePublic(BaseModel):
     page: StorePageKey
     title: str
     content: dict[str, Any]
+    catalog_theme: str = "default"
+    catalog_palette: CatalogPalette | None = None
     store_pages: StorePageAvailabilityPublic = Field(default_factory=StorePageAvailabilityPublic)
+    profile_photo_url: str | None = None
+    province_name: str | None = None
+    phone: str | None = None
+    offers_delivery: bool | None = None
 
 
 class MarketplaceStoreCategoryProductsPublic(BaseModel):

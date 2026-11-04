@@ -2397,13 +2397,30 @@ async def get_store_page(store_ref: str, page_slug: str) -> MarketplaceStorePage
     except HTTPException as exc:
         raise ValueError("Página no encontrada.") from exc
 
+    customized = seller_has_full_store_customization(seller)
+    area = _parse_business_area(seller.get("business_area"))
+    phone_digits = seller.get("phone")
     return MarketplaceStorePagePublic(
         store_name=seller["store_name"],
         store_slug=seller.get("store_slug") or store_name_to_slug(seller["store_name"]),
         page=key,
         title=STORE_PAGE_TITLES[key],
         content=content,
+        catalog_theme=(
+            normalize_catalog_theme(seller.get("catalog_theme"))
+            if customized
+            else DEFAULT_CATALOG_THEME
+        ),
+        catalog_palette=(
+            public_catalog_palette(seller.get("catalog_palette"), seller.get("catalog_theme"))
+            if customized
+            else None
+        ),
         store_pages=store_page_flags(seller),
+        profile_photo_url=seller.get("profile_photo_url"),
+        province_name=area.province_name if area else None,
+        phone=phone_display(phone_digits) if phone_digits else None,
+        offers_delivery=bool(seller.get("offers_delivery")),
     )
 
 

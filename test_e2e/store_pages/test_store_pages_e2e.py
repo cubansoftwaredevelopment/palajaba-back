@@ -66,6 +66,11 @@ class StorePagesE2ETests(unittest.TestCase):
             self.assertEqual(body["content"]["content"][1]["attrs"]["width"], 40)
             self.assertTrue(body["store_pages"]["faq"])
             self.assertFalse(body["store_pages"]["about"])
+            self.assertEqual(body["catalog_theme"], "default")
+            self.assertEqual(body["province_name"], "La Habana")
+            self.assertEqual(body["profile_photo_url"], "https://example.com/photo.jpg")
+            self.assertFalse(body["offers_delivery"])
+            self.assertTrue(body["phone"])
 
             catalog = client.get(
                 f"/api/marketplace/stores/{seller['store_slug']}/catalog",
