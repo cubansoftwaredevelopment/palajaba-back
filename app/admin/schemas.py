@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -186,3 +187,18 @@ class AdvertisingPlanPublic(BaseModel):
 
 class AdvertisingPlansPublic(BaseModel):
     plans: list[AdvertisingPlanPublic]
+
+
+class AdminCustomerPublic(BaseModel):
+    id: str
+    full_name: str
+    email: str
+    phone: str
+    identity_card: str
+    created_at: datetime | None = None
+    order_count: int = 0
+    purchase_revoked: bool = False
+
+
+class AdminCustomerAccessUpdate(BaseModel):
+    purchase_revoked: bool

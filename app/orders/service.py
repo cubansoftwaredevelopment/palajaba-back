@@ -356,7 +356,6 @@ async def _decrement_product_stock(
 
 
 async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> OrderPublic:
-    seller = await _get_seller_doc(payload.store_id)
     try:
         customer_oid = ObjectId(customer_id)
     except Exception as exc:
@@ -364,6 +363,11 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
     customer = await get_customers_collection().find_one({"_id": customer_oid})
     if customer is None:
         raise ValueError("Cuenta de cliente no encontrada.")
+    if customer.get("purchase_revoked"):
+        raise ValueError(
+            "Tu acceso para comprar está revocado. Puedes entrar a tu cuenta, pero no puedes hacer pedidos."
+        )
+    seller = await _get_seller_doc(payload.store_id)
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
     now = to_utc_naive(utc_now())

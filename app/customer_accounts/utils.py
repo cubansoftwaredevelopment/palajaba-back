@@ -17,6 +17,7 @@ def customer_public(doc: dict[str, Any]) -> CustomerPublic:
         qvapay_username=doc.get("qvapay_username"),
         qvapay_verified=bool(doc.get("qvapay_username") and doc.get("qvapay_verified_at")),
         qvapay_prompt_dismissed=bool(doc.get("qvapay_prompt_dismissed")),
+        purchase_revoked=bool(doc.get("purchase_revoked")),
     )
 
 

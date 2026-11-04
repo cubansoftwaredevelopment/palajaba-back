@@ -89,6 +89,7 @@ class CustomerPublic(BaseModel):
     qvapay_username: str | None = None
     qvapay_verified: bool = False
     qvapay_prompt_dismissed: bool = False
+    purchase_revoked: bool = False
 
 
 class CustomerLoginResponse(BaseModel):

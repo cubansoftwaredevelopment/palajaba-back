@@ -3,7 +3,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
+from app.admin.customers import list_admin_customers, set_customer_purchase_access
 from app.admin.schemas import (
+    AdminCustomerAccessUpdate,
+    AdminCustomerPublic,
     AdminLoginRequest,
     AdminLoginResponse,
     PlatformPlanPricesPublic,
@@ -44,6 +47,16 @@ async def admin_login(payload: AdminLoginRequest):
     if admin is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales incorrectas")
     return AdminLoginResponse(access_token=create_admin_token(username=admin["username"], admin_id=str(admin["_id"])))
+
+
+@panel_router.get("/customers", response_model=list[AdminCustomerPublic])
+async def list_customers(_: dict = Depends(require_admin)):
+    return await list_admin_customers()
+
+
+@panel_router.patch("/customers/{customer_id}/access", response_model=AdminCustomerPublic)
+async def update_customer_access(customer_id: str, payload: AdminCustomerAccessUpdate, _: dict = Depends(require_admin)):
+    return await set_customer_purchase_access(customer_id, purchase_revoked=payload.purchase_revoked)
 
 
 @panel_router.get("/registrations", response_model=list[RegistrationPublic])
