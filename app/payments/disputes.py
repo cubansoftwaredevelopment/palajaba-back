@@ -240,6 +240,32 @@ async def list_disputes() -> list[dict[str, Any]]:
     return rows
 
 
+async def agreement_pdf(dispute_id: str, kind: str) -> tuple[bytes, str]:
+    import asyncio
+
+    from app.payments.dispute_report import AGREEMENT_DOCUMENTS, build_agreement_pdf
+
+    if kind not in AGREEMENT_DOCUMENTS:
+        raise HTTPException(status_code=404, detail="Documento no encontrado.")
+    dispute = await get_disputes_collection().find_one({"_id": _oid(dispute_id, "Disputa no encontrada.")})
+    if not dispute:
+        raise HTTPException(status_code=404, detail="Disputa no encontrada.")
+    order = await get_orders_collection().find_one({"_id": dispute["order_id"]})
+    if not order:
+        raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+    seller = None
+    try:
+        seller = await get_registrations_collection().find_one({"_id": ObjectId(str(order.get("seller_id") or ""))})
+    except Exception:
+        seller = None
+    return await asyncio.to_thread(
+        build_agreement_pdf,
+        order,
+        kind,
+        store_name=(seller or {}).get("store_name") or order.get("store_name") or "",
+    )
+
+
 async def get_dispute_detail(dispute_id: str) -> dict[str, Any]:
     dispute = await get_disputes_collection().find_one({"_id": _oid(dispute_id, "Disputa no encontrada.")})
     if not dispute:

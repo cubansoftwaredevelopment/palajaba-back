@@ -117,6 +117,8 @@ class CreateOrderRequest(BaseModel):
     gestor_id: str | None = Field(default=None, min_length=1, max_length=64)
     gestor_username: str | None = Field(default=None, min_length=2, max_length=32)
     payment_method: OrderPaymentMethod = "contact"
+    accepted_delivery_policy: bool = False
+    accepted_terms: bool = False
 
     @field_validator("payment_currency")
     @classmethod
@@ -176,6 +178,17 @@ class OrderSubtotalPublic(BaseModel):
     amount: float
 
 
+class OrderAgreementPublic(BaseModel):
+    title: str
+    content: dict
+    accepted_at: UtcDateTime
+
+
+class OrderAgreementsPublic(BaseModel):
+    delivery_policy: OrderAgreementPublic | None = None
+    terms: OrderAgreementPublic | None = None
+
+
 class OrderPublic(BaseModel):
     id: str
     store_id: str
@@ -201,6 +214,7 @@ class OrderPublic(BaseModel):
     completed_at: UtcDateTime | None = None
     payment_method: OrderPaymentMethod = "contact"
     qvapay: dict | None = None
+    store_agreements: OrderAgreementsPublic | None = None
 
 
 class UpdateOrderRequest(BaseModel):

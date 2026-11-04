@@ -33,6 +33,7 @@ class MarketplaceStorePublic(BaseModel):
     profile_photo_url: str | None = None
     business_area: BusinessArea | None = None
     checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)
+    store_pages: StorePageAvailabilityPublic = Field(default_factory=StorePageAvailabilityPublic)
 
 
 class MarketplaceBusinessPublic(BaseModel):

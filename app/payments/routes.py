@@ -128,6 +128,11 @@ async def delete_seller_qvapay_account(seller: dict = Depends(require_seller)):
     await service.delete_qvapay_account(seller["seller_id"])
 
 
+@account_router.post("/api/auth/me/payment-methods/qvapay/dismiss", status_code=204)
+async def dismiss_seller_qvapay_prompt(seller: dict = Depends(require_seller)):
+    await service.dismiss_qvapay_prompt(seller["seller_id"])
+
+
 @account_router.get("/api/customers/me/payment-methods/qvapay")
 async def get_customer_qvapay_account(customer: dict = Depends(require_customer)):
     return await service.get_customer_qvapay_account(customer["customer_id"])

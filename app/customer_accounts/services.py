@@ -453,6 +453,7 @@ async def list_customer_orders(customer_id: str):
             "updated_at": doc["updated_at"], "completed_at": doc.get("completed_at"),
             "payment_method": doc.get("payment_method") or "contact",
             "qvapay": _customer_order_qvapay_public(doc.get("qvapay")),
+            "store_agreements": doc.get("store_agreements") if isinstance(doc.get("store_agreements"), dict) else None,
         }
         for doc in docs
     ]

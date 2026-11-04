@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 
 from app.admin.schemas import (
     AdminLoginRequest,
@@ -180,6 +181,16 @@ async def list_disputes(_: dict = Depends(require_admin)):
 @panel_router.get("/disputes/{dispute_id}")
 async def get_dispute(dispute_id: str, _: dict = Depends(require_admin)):
     return await dispute_service.get_dispute_detail(dispute_id)
+
+
+@panel_router.get("/disputes/{dispute_id}/agreements/{kind}.pdf")
+async def download_dispute_agreement(dispute_id: str, kind: Literal["terms", "delivery_policy"], _: dict = Depends(require_admin)):
+    pdf_bytes, filename = await dispute_service.agreement_pdf(dispute_id, kind)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @panel_router.post("/disputes/{dispute_id}/ruling")

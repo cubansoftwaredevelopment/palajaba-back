@@ -249,6 +249,7 @@ def _store_to_public(seller: dict[str, Any]) -> MarketplaceStorePublic:
         qvapay_enabled=bool(seller.get("qvapay_username")) and qvapay_escrow_configured(),
         profile_photo_url=seller.get("profile_photo_url"),
         business_area=_parse_business_area(seller.get("business_area")),
+        store_pages=store_page_flags(seller),
     )
 
 

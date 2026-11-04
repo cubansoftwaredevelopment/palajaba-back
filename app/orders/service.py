@@ -7,10 +7,13 @@ from bson.errors import InvalidId
 from app.database import get_catalog_products_collection, get_customers_collection, get_orders_collection, get_registrations_collection
 from app.notifications import service as notification_service
 from app.orders.constants import InvoiceType
+from fastapi import HTTPException
+
 from app.orders.schemas import (
     CreateOrderRequest,
     CreateSellerManualOrderRequest,
     DeliveryInfo,
+    OrderAgreementsPublic,
     OrderItemPublic,
     OrderPublic,
     OrderSubtotalPublic,
@@ -18,6 +21,12 @@ from app.orders.schemas import (
 )
 from app.orders.utils import compute_order_products_revenue
 from app.products.utils import bump_products_on_order_completed
+from app.services.store_pages import (
+    STORE_PAGE_TITLES,
+    sanitize_store_page_content,
+    store_page_has_content,
+    store_pages_from_document,
+)
 from app.subscriptions.service import is_subscription_active
 from app.utils.currency_conversion import VALID_CURRENCIES
 from app.utils.datetime import to_utc_naive, utc_now
@@ -84,7 +93,54 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         completed_at=doc.get("completed_at"),
         payment_method=doc.get("payment_method") or "contact",
         qvapay=_public_qvapay(doc.get("qvapay")),
+        store_agreements=_public_store_agreements(doc.get("store_agreements")),
     )
+
+
+_AGREEMENT_REQUIRED = {
+    "delivery_policy": "Debes aceptar la política de entrega de la tienda.",
+    "terms": "Debes aceptar los términos y condiciones de la tienda.",
+}
+
+
+def _public_store_agreements(value: Any) -> OrderAgreementsPublic | None:
+    if not isinstance(value, dict) or not value:
+        return None
+    return OrderAgreementsPublic(**value)
+
+
+def _store_agreements_snapshot(
+    seller: dict[str, Any],
+    *,
+    accepted_delivery_policy: bool,
+    accepted_terms: bool,
+    now,
+    required: bool,
+) -> dict[str, Any] | None:
+    pages = store_pages_from_document(seller)
+    accepted = {
+        "delivery_policy": accepted_delivery_policy,
+        "terms": accepted_terms,
+    }
+    recorded: dict[str, Any] = {}
+    for key, was_accepted in accepted.items():
+        content = pages.get(key)
+        if not store_page_has_content(content):
+            continue
+        if not was_accepted:
+            if required:
+                raise ValueError(_AGREEMENT_REQUIRED[key])
+            continue
+        try:
+            clean = sanitize_store_page_content(content)
+        except HTTPException as exc:
+            raise ValueError("La tienda tiene una página que no se puede registrar en el pedido.") from exc
+        recorded[key] = {
+            "title": STORE_PAGE_TITLES[key],
+            "content": clean,
+            "accepted_at": now,
+        }
+    return recorded or None
 
 
 def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -319,6 +375,13 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
         gestor_id=payload.gestor_id,
         gestor_username=payload.gestor_username,
         buyer=customer,
+    )
+    doc["store_agreements"] = _store_agreements_snapshot(
+        seller,
+        accepted_delivery_policy=payload.accepted_delivery_policy,
+        accepted_terms=payload.accepted_terms,
+        now=now,
+        required=payload.payment_method == "qvapay",
     )
     doc["payment_method"] = payload.payment_method
     if payload.payment_method == "qvapay":

@@ -47,13 +47,14 @@ def _oid(value: str, message: str) -> ObjectId:
 async def get_qvapay_account(seller_id: str) -> dict[str, Any]:
     seller = await get_registrations_collection().find_one(
         {"_id": _oid(seller_id, "Tienda no encontrada.")},
-        {"qvapay_username": 1, "qvapay_verified_at": 1},
+        {"qvapay_username": 1, "qvapay_verified_at": 1, "qvapay_prompt_dismissed": 1},
     )
     if seller is None:
         raise HTTPException(status_code=404, detail="Tienda no encontrada.")
     return {
         "username": seller.get("qvapay_username"),
         "verified": bool(seller.get("qvapay_username") and seller.get("qvapay_verified_at")),
+        "prompt_dismissed": bool(seller.get("qvapay_prompt_dismissed")),
     }
 
 
@@ -146,6 +147,15 @@ async def dismiss_customer_qvapay_prompt(customer_id: str) -> None:
     )
     if result.matched_count != 1:
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+
+async def dismiss_qvapay_prompt(seller_id: str) -> None:
+    result = await get_registrations_collection().update_one(
+        {"_id": _oid(seller_id, "Tienda no encontrada.")},
+        {"$set": {"qvapay_prompt_dismissed": True}},
+    )
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.")
 
 
 async def delete_qvapay_account(seller_id: str) -> None:
