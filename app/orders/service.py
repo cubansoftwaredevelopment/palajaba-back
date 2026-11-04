@@ -158,6 +158,7 @@ def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
         "evidence_history": value.get("evidence_history") if isinstance(value.get("evidence_history"), list) else [],
         "buyer_support_reported": bool(value.get("buyer_support_reported")),
         "seller_support_reported": bool(value.get("seller_support_reported")),
+        "dispute_winner": value.get("dispute_winner") if value.get("dispute_winner") in {"buyer", "seller"} else None,
         "release_status": value.get("release_status"),
     }
 
@@ -465,7 +466,13 @@ async def create_seller_manual_order(
 
 async def list_seller_orders(seller_id: str, *, offset: int = 0, limit: int = 25) -> dict[str, Any]:
     collection = get_orders_collection()
-    base_query = {"seller_id": seller_id, "status": {"$ne": "cancelled"}}
+    base_query = {
+        "seller_id": seller_id,
+        "$or": [
+            {"status": {"$ne": "cancelled"}},
+            {"status": "cancelled", "payment_method": "qvapay"},
+        ],
+    }
     docs = await (
         collection.find(base_query)
         .sort([("created_at", -1), ("_id", -1)])

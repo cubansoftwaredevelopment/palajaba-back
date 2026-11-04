@@ -188,6 +188,15 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
             self.assertEqual(ruled.status_code, 200, ruled.text)
             self.assertEqual(ruled.json()["status"], "resolved")
             self.assertEqual(ruled.json()["winner"], "seller")
+            seller_orders = client.get("/api/auth/me/orders", headers=seller_headers)
+            self.assertEqual(seller_orders.status_code, 200, seller_orders.text)
+            settled = next(item for item in seller_orders.json()["items"] if item["id"] == seeded["order_id"])
+            self.assertEqual(settled["status"], "completed")
+            self.assertEqual(settled["qvapay"]["dispute_winner"], "seller")
+            customer_notes = client.get("/api/customers/me/notifications", headers=customer_headers)
+            seller_notes = client.get("/api/auth/me/notifications", headers=seller_headers)
+            self.assertTrue(any("a favor de la tienda" in item["content"] and "realizado" in item["content"] for item in customer_notes.json()))
+            self.assertTrue(any("a favor de la tienda" in item["content"] and "realizado" in item["content"] for item in seller_notes.json()))
             transfer.assert_awaited_once()
             self.assertEqual(transfer.await_args.kwargs["amount"], 2.0)
             self.assertEqual(transfer.await_args.kwargs["idempotency_key"], f"store-order-{seeded['order_id']}-release")
@@ -207,3 +216,48 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
             self.assertEqual(later.json()["status"], "resolved")
             listed = client.get("/api/admin/disputes", headers=admin_auth_headers())
             self.assertEqual(sum(1 for item in listed.json() if item["order_id"] == seeded["order_id"]), 1)
+
+    def test_buyer_ruling_cancels_the_order_and_notifies_both(self) -> None:
+        seller = seed_seller(plan_tier="basic")
+        seeded = run_db(lambda: seed_order(seller["seller_id"]))
+        run_db(lambda: get_orders_collection().update_one(
+            {"_id": ObjectId(seeded["order_id"])},
+            {"$set": {"qvapay.buyer_username": "cliente2e"}},
+        ))
+
+        async def fake_invoice(**kwargs):
+            return QvaPayInvoice("https://qvapay.com/pay/refund", "tx-dispute", 3.41, kwargs["remote_id"], {})
+
+        with patch.multiple(settings, qvapay_app_secret=SECRET, qvapay_app_id="app-e2e"), \
+             patch("app.payments.service.get_cup_per_unit", return_value={"CUP": 1, "USD": 400}), \
+             patch("app.payments.service.create_invoice", new_callable=AsyncMock, side_effect=fake_invoice), \
+             patch("app.payments.service.verify_qvapay_username", new_callable=AsyncMock, return_value="tiendae2e"), \
+             patch("app.payments.service.qvapay_escrow_configured", return_value=True), \
+             patch("app.payments.disputes.transfer_to_user", new_callable=AsyncMock, return_value="transfer-refund") as transfer, \
+             patch("app.payments.service.send_custom_sms", new_callable=AsyncMock), \
+             patch("app.payments.service.publish_seller_notification", new_callable=AsyncMock), \
+             patch("app.live.hub.publish_customer_notification", new_callable=AsyncMock), \
+             api_client() as client:
+            customer_headers, seller_headers, _content = self._reject_paid_order(client, seller, seeded)
+            opened = client.post(
+                f"/api/customers/me/orders/{seeded['order_id']}/disputes",
+                headers=customer_headers,
+                json={"text": "No recibí el pedido."},
+            )
+            self.assertEqual(opened.status_code, 200, opened.text)
+            ruled = client.post(
+                f"/api/admin/disputes/{opened.json()['id']}/ruling",
+                headers=admin_auth_headers(),
+                json={"winner": "buyer", "reason": "La tienda no demostró la entrega."},
+            )
+            self.assertEqual(ruled.status_code, 200, ruled.text)
+            self.assertEqual(ruled.json()["winner"], "buyer")
+            self.assertEqual(transfer.await_args.kwargs["idempotency_key"], f"store-order-{seeded['order_id']}-refund")
+            seller_orders = client.get("/api/auth/me/orders", headers=seller_headers)
+            settled = next(item for item in seller_orders.json()["items"] if item["id"] == seeded["order_id"])
+            self.assertEqual(settled["status"], "cancelled")
+            self.assertEqual(settled["qvapay"]["dispute_winner"], "buyer")
+            customer_notes = client.get("/api/customers/me/notifications", headers=customer_headers)
+            seller_notes = client.get("/api/auth/me/notifications", headers=seller_headers)
+            self.assertTrue(any("a favor del cliente" in item["content"] and "cancelado" in item["content"] for item in customer_notes.json()))
+            self.assertTrue(any("a favor del cliente" in item["content"] and "cancelado" in item["content"] for item in seller_notes.json()))

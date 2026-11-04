@@ -203,7 +203,7 @@ async def close_dispute_on_acceptance(order_id: str) -> None:
         order_oid = ObjectId(str(order_id))
     except Exception:
         return
-    await get_disputes_collection().update_one(
+    result = await get_disputes_collection().update_one(
         {"order_id": order_oid, "status": "open"},
         {"$set": {
             "status": "resolved",
@@ -214,6 +214,15 @@ async def close_dispute_on_acceptance(order_id: str) -> None:
             "updated_at": now,
         }},
     )
+    if result.modified_count != 1:
+        return
+    order = await get_orders_collection().find_one({"_id": order_oid})
+    if not order:
+        return
+    await _apply_resolved_order_status(order_oid, "seller")
+    await _notify_resolution(order, "seller", ACCEPTANCE_REASON)
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(str(order.get("seller_id") or ""), "orders")
 
 
 async def count_open_disputes() -> int:
@@ -428,13 +437,56 @@ def _money(order: dict[str, Any], *, refund: bool) -> tuple[float, str]:
     return amount, username
 
 
-async def _notify_resolution(order: dict[str, Any], reason: str) -> None:
+def _resolution_message(order: dict[str, Any], winner: Winner, reason: str) -> str:
+    code = str(order["_id"])[-6:].upper()
+    if winner == "seller":
+        outcome = f"La disputa del pedido #{code} se resolvió a favor de la tienda. El pedido quedó realizado."
+    else:
+        outcome = f"La disputa del pedido #{code} se resolvió a favor del cliente. El pedido quedó cancelado."
+    detail = " ".join(str(reason or "").split())
+    if detail and detail not in outcome:
+        return f"{outcome} {detail}"
+    return outcome
+
+
+async def _apply_resolved_order_status(order_id: ObjectId, winner: Winner) -> None:
+    now = to_utc_naive(utc_now())
+    marker = {"qvapay.dispute_winner": winner, "updated_at": now}
+    if winner == "seller":
+        result = await get_orders_collection().update_one(
+            {"_id": order_id, "status": {"$ne": "completed"}},
+            {"$set": {**marker, "status": "completed", "completed_at": now}},
+        )
+        if result.matched_count == 0:
+            await get_orders_collection().update_one({"_id": order_id}, {"$set": marker})
+        return
+    result = await get_orders_collection().update_one(
+        {"_id": order_id, "status": {"$ne": "cancelled"}},
+        {"$set": {**marker, "status": "cancelled", "cancelled_at": now}},
+    )
+    if result.matched_count == 0:
+        await get_orders_collection().update_one({"_id": order_id}, {"$set": marker})
+
+
+async def _notify_resolution(order: dict[str, Any], winner: Winner, reason: str) -> None:
     from app.payments.service import _notify_customer, _notify_seller
 
     order_id = str(order["_id"])
+    content = _resolution_message(order, winner, reason)
     title = "Resolución de tu disputa"
-    await _notify_seller(order["seller_id"], order_id, title, reason, "dispute_resolved")
-    await _notify_customer(order["buyer_id"], order_id, title, reason, "dispute_resolved")
+    await _notify_seller(order["seller_id"], order_id, title, content, "dispute_resolved")
+    await _notify_customer(order["buyer_id"], order_id, title, content, "dispute_resolved")
+
+
+async def _finish_resolution(dispute_id: ObjectId, order: dict[str, Any], winner: Winner, reason: str) -> dict[str, Any]:
+    await _apply_resolved_order_status(order["_id"], winner)
+    await _resolve(dispute_id, winner=winner, reason=reason, resolution="admin")
+    latest = await get_orders_collection().find_one({"_id": order["_id"]})
+    await _notify_resolution(latest or order, winner, reason)
+    from app.live.hub import publish_seller_data_update
+    await publish_seller_data_update(str(order["seller_id"]), "orders")
+    fresh = await get_disputes_collection().find_one({"_id": dispute_id})
+    return _public(fresh)
 
 
 async def _resolve(dispute_id: ObjectId, *, winner: Winner, reason: str, resolution: str) -> None:
@@ -464,15 +516,9 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[
     qvapay = order["qvapay"]
     release_status = qvapay.get("release_status")
     if winner == "seller" and release_status == "released":
-        await _resolve(dispute["_id"], winner="seller", reason=reason, resolution="admin")
-        await _notify_resolution(order, reason)
-        fresh = await get_disputes_collection().find_one({"_id": dispute["_id"]})
-        return _public(fresh)
+        return await _finish_resolution(dispute["_id"], order, "seller", reason)
     if winner == "buyer" and release_status == "refunded":
-        await _resolve(dispute["_id"], winner="buyer", reason=reason, resolution="admin")
-        await _notify_resolution(order, reason)
-        fresh = await get_disputes_collection().find_one({"_id": dispute["_id"]})
-        return _public(fresh)
+        return await _finish_resolution(dispute["_id"], order, "buyer", reason)
     if release_status == "released":
         raise HTTPException(status_code=409, detail="El pago ya fue liberado a la tienda.")
     if release_status == "refunded":
@@ -553,10 +599,4 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[
                 "updated_at": finished,
             }},
         )
-    await _resolve(dispute["_id"], winner=winner, reason=reason, resolution="admin")
-    latest = await get_orders_collection().find_one({"_id": order["_id"]})
-    await _notify_resolution(latest or order, reason)
-    from app.live.hub import publish_seller_data_update
-    await publish_seller_data_update(str(order["seller_id"]), "orders")
-    fresh = await get_disputes_collection().find_one({"_id": dispute["_id"]})
-    return _public(fresh)
+    return await _finish_resolution(dispute["_id"], order, winner, reason)
