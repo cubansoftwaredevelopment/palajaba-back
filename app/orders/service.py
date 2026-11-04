@@ -649,3 +649,64 @@ async def generate_order_invoice_pdf(
     suffix = "tienda" if invoice_type == "store" else "transportista"
     filename = f"pedido-{order_code}-{suffix}.pdf"
     return pdf_bytes, filename
+
+
+async def _seller_store_name(seller_id: str) -> str:
+    seller = await get_registrations_collection().find_one({"_id": ObjectId(seller_id)}, {"store_name": 1})
+    if seller is None:
+        raise ValueError("Tienda no encontrada.")
+    return str(seller.get("store_name") or "")
+
+
+async def generate_order_agreement_pdf(seller_id: str, order_id: str, kind: str) -> tuple[bytes, str]:
+    doc = await _get_order_doc(seller_id, order_id)
+    agreements = doc.get("store_agreements") if isinstance(doc.get("store_agreements"), dict) else {}
+    page = agreements.get(kind) if isinstance(agreements, dict) else None
+    if not isinstance(page, dict) or not page.get("content"):
+        raise ValueError("Este pedido no tiene ese documento.")
+    store_name = await _seller_store_name(seller_id)
+    from app.payments.dispute_report import build_agreement_pdf
+
+    return await asyncio.to_thread(build_agreement_pdf, doc, kind, store_name=store_name)
+
+
+async def generate_order_evidence_pdf(seller_id: str, order_id: str) -> tuple[bytes, str]:
+    doc = await _get_order_doc(seller_id, order_id)
+    return await _evidence_pdf(doc, await _seller_store_name(seller_id))
+
+
+async def _get_customer_order_doc(customer_id: str, order_id: str) -> dict[str, Any]:
+    try:
+        order_oid = ObjectId(order_id.strip())
+    except InvalidId as exc:
+        raise ValueError("Pedido no válido.") from exc
+    doc = await get_orders_collection().find_one({"_id": order_oid, "buyer_id": customer_id})
+    if doc is None:
+        raise ValueError("Pedido no encontrado.")
+    return doc
+
+
+async def generate_customer_order_agreement_pdf(customer_id: str, order_id: str, kind: str) -> tuple[bytes, str]:
+    doc = await _get_customer_order_doc(customer_id, order_id)
+    agreements = doc.get("store_agreements") if isinstance(doc.get("store_agreements"), dict) else {}
+    page = agreements.get(kind) if isinstance(agreements, dict) else None
+    if not isinstance(page, dict) or not page.get("content"):
+        raise ValueError("Este pedido no tiene ese documento.")
+    from app.payments.dispute_report import build_agreement_pdf
+
+    return await asyncio.to_thread(build_agreement_pdf, doc, kind, store_name=str(doc.get("store_name") or ""))
+
+
+async def generate_customer_order_evidence_pdf(customer_id: str, order_id: str) -> tuple[bytes, str]:
+    doc = await _get_customer_order_doc(customer_id, order_id)
+    return await _evidence_pdf(doc, str(doc.get("store_name") or ""))
+
+
+async def _evidence_pdf(doc: dict[str, Any], store_name: str) -> tuple[bytes, str]:
+    qvapay = doc.get("qvapay") if isinstance(doc.get("qvapay"), dict) else {}
+    evidence = qvapay.get("evidence") if isinstance(qvapay.get("evidence"), dict) else {}
+    if not isinstance(evidence.get("content"), dict):
+        raise ValueError("Este pedido no tiene evidencia.")
+    from app.payments.dispute_report import build_evidence_pdf
+
+    return await asyncio.to_thread(build_evidence_pdf, doc, store_name=store_name)

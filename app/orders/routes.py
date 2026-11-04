@@ -1,3 +1,5 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
@@ -77,6 +79,46 @@ async def download_my_order_invoice(
             seller_payload["seller_id"],
             order_id,
             type,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@seller_router.get("/me/orders/{order_id}/agreements/{kind}.pdf")
+async def download_my_order_agreement(
+    order_id: str,
+    kind: Literal["terms", "delivery_policy"],
+    seller_payload: dict = Depends(require_seller),
+):
+    try:
+        pdf_bytes, filename = await orders_service.generate_order_agreement_pdf(
+            seller_payload["seller_id"],
+            order_id,
+            kind,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@seller_router.get("/me/orders/{order_id}/evidence.pdf")
+async def download_my_order_evidence(
+    order_id: str,
+    seller_payload: dict = Depends(require_seller),
+):
+    try:
+        pdf_bytes, filename = await orders_service.generate_order_evidence_pdf(
+            seller_payload["seller_id"],
+            order_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

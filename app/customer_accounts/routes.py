@@ -1,9 +1,11 @@
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 
 from app.auth.utils import require_customer, require_seller
+from app.orders import service as orders_service
 
 from . import services
 from .schema import (
@@ -164,6 +166,46 @@ async def remove_customer_favorite(product_id: str, customer_payload: dict = Dep
 @router.get("/me/orders")
 async def list_customer_orders(customer_payload: dict = Depends(require_customer)):
     return await services.list_customer_orders(customer_payload["customer_id"])
+
+
+@router.get("/me/orders/{order_id}/agreements/{kind}.pdf")
+async def download_customer_order_agreement(
+    order_id: str,
+    kind: Literal["terms", "delivery_policy"],
+    customer_payload: dict = Depends(require_customer),
+):
+    try:
+        pdf_bytes, filename = await orders_service.generate_customer_order_agreement_pdf(
+            customer_payload["customer_id"],
+            order_id,
+            kind,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/me/orders/{order_id}/evidence.pdf")
+async def download_customer_order_evidence(
+    order_id: str,
+    customer_payload: dict = Depends(require_customer),
+):
+    try:
+        pdf_bytes, filename = await orders_service.generate_customer_order_evidence_pdf(
+            customer_payload["customer_id"],
+            order_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/store/customers")

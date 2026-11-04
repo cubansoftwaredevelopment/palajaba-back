@@ -7,7 +7,7 @@ from datetime import datetime
 
 from bson import ObjectId
 
-from app.payments.dispute_report import build_agreement_pdf
+from app.payments.dispute_report import build_agreement_pdf, build_evidence_pdf
 
 
 class DisputeReportPdfTests(unittest.TestCase):
@@ -43,3 +43,24 @@ class DisputeReportPdfTests(unittest.TestCase):
         self.assertNotIn(b"El pago se acuerda con la tienda.", policy_pdf)
         self.assertTrue(terms_name.startswith("terminos-"))
         self.assertTrue(policy_name.startswith("politica-de-entrega-"))
+
+    def test_evidence_pdf_contains_the_delivery_note(self) -> None:
+        order_id = ObjectId()
+        order = {
+            "_id": order_id,
+            "qvapay": {
+                "evidence": {
+                    "sent_at": datetime(2026, 11, 3, 18, 0),
+                    "content": {
+                        "type": "doc",
+                        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Dejé el pedido en recepción."}]}],
+                    },
+                },
+            },
+        }
+
+        pdf, name = build_evidence_pdf(order, store_name="startup")
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"Dej\\351 el pedido en recepci\\363n.", pdf)
+        self.assertEqual(name, f"evidencia-{str(order_id)[-6:].upper()}.pdf")
