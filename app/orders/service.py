@@ -154,6 +154,8 @@ def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
         "products_amount_usd": value.get("products_amount_usd"),
         "delivery_amount_usd": value.get("delivery_amount_usd"),
         "fee_usd": value.get("fee_usd"),
+        "refund_amount_usd": value.get("refund_amount_usd"),
+        "store_payout_usd": value.get("store_payout_usd"),
         "evidence": value.get("evidence"),
         "evidence_history": value.get("evidence_history") if isinstance(value.get("evidence_history"), list) else [],
         "buyer_support_reported": bool(value.get("buyer_support_reported")),

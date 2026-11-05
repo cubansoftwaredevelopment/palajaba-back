@@ -250,6 +250,7 @@ def _order_summary(doc: dict[str, Any], disputed_id: ObjectId) -> dict[str, Any]
         if not isinstance(item, dict):
             continue
         items.append({
+            "product_id": str(item.get("product_id") or ""),
             "name": item.get("name") or "",
             "quantity": item.get("quantity") or 0,
             "unit_price": item.get("unit_price"),
@@ -277,6 +278,10 @@ def _order_summary(doc: dict[str, Any], disputed_id: ObjectId) -> dict[str, Any]
         "delivery_currency": doc.get("delivery_currency") or "",
         "evidence_status": evidence.get("status"),
         "release_status": qvapay.get("release_status"),
+        "products_amount_usd": qvapay.get("products_amount_usd"),
+        "delivery_amount_usd": qvapay.get("delivery_amount_usd"),
+        "fee_usd": qvapay.get("fee_usd"),
+        "invoice_amount_usd": qvapay.get("invoice_amount_usd"),
         "disputed": doc["_id"] == disputed_id,
     }
 
@@ -504,7 +509,69 @@ async def _resolve(dispute_id: ObjectId, *, winner: Winner, reason: str, resolut
     )
 
 
-async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[str, Any]:
+def _quantity_map(items: list[dict[str, Any]] | None) -> dict[str, int] | None:
+    if items is None:
+        return None
+    return {str(item["product_id"]): int(item["quantity"]) for item in items}
+
+
+async def _finish_pending_store_payout(dispute_id: ObjectId, order: dict[str, Any], reason: str) -> dict[str, Any]:
+    from app.payments.refunds import store_payout_username
+
+    qvapay = order["qvapay"]
+    amount = round(float(qvapay.get("pending_store_payout_usd") or 0), 2)
+    username = await store_payout_username(order)
+    if amount <= 0 or not username:
+        raise HTTPException(status_code=409, detail="No hay un pago pendiente para la tienda.")
+    if qvapay.get("release_status") == "transferring":
+        raise HTTPException(status_code=409, detail="El pago se está transfiriendo.")
+    now = to_utc_naive(utc_now())
+    claim = await get_orders_collection().update_one(
+        {"_id": order["_id"], "qvapay.release_status": {"$in": ["held", "retry"]}},
+        {"$set": {"qvapay.release_status": "transferring", "updated_at": now}},
+    )
+    if claim.modified_count != 1:
+        raise HTTPException(status_code=409, detail="El pago ya no está retenido.")
+    try:
+        transaction = await transfer_to_user(
+            amount=amount,
+            username=username,
+            description=f"Liquidación pedido {str(order['_id'])[-6:].upper()}",
+            idempotency_key=f"store-order-{order['_id']}-release",
+        )
+    except Exception:
+        logger.exception("No se pudo completar el pago a la tienda de la disputa %s", dispute_id)
+        await get_orders_collection().update_one(
+            {"_id": order["_id"], "qvapay.release_status": "transferring"},
+            {"$set": {"qvapay.release_status": "retry", "updated_at": to_utc_naive(utc_now())}},
+        )
+        raise HTTPException(status_code=503, detail="No pudimos pagar a la tienda. Reintenta el fallo.")
+    finished = to_utc_naive(utc_now())
+    finished_set = {
+        "qvapay.release_status": "released",
+        "qvapay.transfer_id": transaction,
+        "qvapay.store_payout_usd": amount,
+        "status": "cancelled",
+        "cancelled_at": order.get("cancelled_at") or finished,
+        "updated_at": finished,
+    }
+    if isinstance(qvapay.get("evidence"), dict):
+        finished_set["qvapay.evidence.status"] = "closed"
+    await get_orders_collection().update_one(
+        {"_id": order["_id"]},
+        {"$set": finished_set, "$unset": {"qvapay.pending_store_payout_usd": ""}},
+    )
+    return await _finish_resolution(dispute_id, order, "buyer", reason)
+
+
+async def rule_dispute(
+    dispute_id: str,
+    *,
+    winner: Winner,
+    reason: str,
+    items: list[dict[str, Any]] | None = None,
+    refund_delivery: bool = False,
+) -> dict[str, Any]:
     dispute = await get_disputes_collection().find_one({"_id": _oid(dispute_id, "Disputa no encontrada.")})
     if not dispute:
         raise HTTPException(status_code=404, detail="Disputa no encontrada.")
@@ -525,14 +592,27 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[
         raise HTTPException(status_code=409, detail="El pago ya fue devuelto al comprador.")
     if release_status == "transferring":
         raise HTTPException(status_code=409, detail="El pago se está transfiriendo.")
+    if winner == "buyer" and float(qvapay.get("pending_store_payout_usd") or 0) > 0:
+        return await _finish_pending_store_payout(dispute["_id"], order, reason)
+    if winner == "seller" and qvapay.get("refund_transfer_id"):
+        raise HTTPException(status_code=409, detail="El comprador ya recibió una devolución.")
 
     previous_evidence = (qvapay.get("evidence") or {}).get("status") if isinstance(qvapay.get("evidence"), dict) else None
-    amount, username = _money(order, refund=winner == "buyer")
+    plan = None
     if winner == "buyer":
-        username = await _buyer_qvapay_username(order) or username
-    if winner == "seller" and not username:
-        seller = await get_registrations_collection().find_one({"_id": _oid(order["seller_id"], "Tienda no encontrada.")})
-        username = str((seller or {}).get("qvapay_username") or "").strip()
+        from app.payments.refunds import plan_adjustment
+
+        plan = plan_adjustment(order, _quantity_map(items), refund_delivery)
+        amount = plan["buyer_amount_usd"]
+        username = await _buyer_qvapay_username(order) or str(qvapay.get("buyer_username") or "").strip()
+        sequence = int(qvapay.get("refund_count") or 0) + 1
+        idempotency = f"store-order-{order['_id']}-refund-{sequence}"
+    else:
+        amount, username = _money(order, refund=False)
+        if not username:
+            seller = await get_registrations_collection().find_one({"_id": _oid(order["seller_id"], "Tienda no encontrada.")})
+            username = str((seller or {}).get("qvapay_username") or "").strip()
+        idempotency = f"store-order-{order['_id']}-release"
     if winner == "buyer" and not username:
         raise HTTPException(status_code=409, detail="El comprador no tiene un usuario QvaPay.")
     if not username or amount <= 0:
@@ -550,7 +630,6 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[
     )
     if claim.modified_count != 1:
         raise HTTPException(status_code=409, detail="El pago ya no está retenido.")
-    idempotency = f"store-order-{order['_id']}-{'refund' if winner == 'buyer' else 'release'}"
     description = f"{'Devolución' if winner == 'buyer' else 'Liquidación'} pedido {str(order['_id'])[-6:].upper()}"
     try:
         transaction = await transfer_to_user(
@@ -586,17 +665,70 @@ async def rule_dispute(dispute_id: str, *, winner: Winner, reason: str) -> dict[
         )
         from app.products.utils import bump_products_on_order_completed
         await bump_products_on_order_completed(order.get("items") or [])
-    else:
+        return await _finish_resolution(dispute["_id"], order, winner, reason)
+
+    assert plan is not None
+    buyer_update: dict[str, Any] = {
+        "items": plan["items"],
+        "qvapay.products_amount_usd": plan["products_amount_usd"],
+        "qvapay.delivery_amount_usd": plan["delivery_amount_usd"],
+        "qvapay.fee_usd": plan["fee_usd"],
+        "qvapay.invoice_amount_usd": plan["invoice_amount_usd"],
+        "qvapay.refund_amount_usd": plan["buyer_amount_usd"],
+        "qvapay.refund_transfer_id": transaction,
+            "qvapay.refund_count": int(qvapay.get("refund_count") or 0) + 1,
+            "status": "cancelled",
+        "cancelled_at": finished,
+        "updated_at": finished,
+    }
+    if plan["refund_delivery"]:
+        buyer_update["delivery_price"] = 0
+    if isinstance(qvapay.get("evidence"), dict):
+        buyer_update["qvapay.evidence.status"] = "closed"
+    from app.payments.refunds import _subtotals
+    buyer_update["subtotals"] = _subtotals(plan["items"])
+    store_amount = float(plan["store_payout_usd"])
+    if store_amount <= 0:
+        buyer_update.update({
+            "qvapay.release_status": "refunded",
+            "qvapay.payment_status": "refunded",
+            "qvapay.store_payout_usd": 0,
+            "qvapay.invoice_amount_usd": 0,
+        })
         await get_orders_collection().update_one(
             {"_id": order["_id"], "qvapay.release_status": "transferring"},
-            {"$set": {
-                "qvapay.release_status": "refunded",
-                "qvapay.payment_status": "refunded",
-                "qvapay.refund_transfer_id": transaction,
-                "qvapay.evidence.status": "closed",
-                "status": "cancelled",
-                "cancelled_at": finished,
-                "updated_at": finished,
-            }},
+            {"$set": buyer_update},
         )
+        return await _finish_resolution(dispute["_id"], order, winner, reason)
+
+    from app.payments.refunds import store_payout_username
+    store_username = await store_payout_username(order)
+    if not store_username:
+        buyer_update["qvapay.release_status"] = "retry"
+        buyer_update["qvapay.pending_store_payout_usd"] = store_amount
+        await get_orders_collection().update_one({"_id": order["_id"]}, {"$set": buyer_update})
+        raise HTTPException(status_code=503, detail="El comprador ya recibió la devolución. La tienda no tiene usuario QvaPay.")
+    try:
+        store_transaction = await transfer_to_user(
+            amount=store_amount,
+            username=store_username,
+            description=f"Liquidación pedido {str(order['_id'])[-6:].upper()}",
+            idempotency_key=f"store-order-{order['_id']}-release",
+        )
+    except Exception:
+        logger.exception("La devolución del comprador salió, pero falló el pago a la tienda %s", dispute_id)
+        buyer_update["qvapay.release_status"] = "retry"
+        buyer_update["qvapay.pending_store_payout_usd"] = store_amount
+        await get_orders_collection().update_one({"_id": order["_id"]}, {"$set": buyer_update})
+        raise HTTPException(status_code=503, detail="El comprador ya recibió la devolución. Reintenta para pagar a la tienda.")
+    buyer_update.update({
+        "qvapay.release_status": "released",
+        "qvapay.payment_status": "paid",
+        "qvapay.transfer_id": store_transaction,
+        "qvapay.store_payout_usd": store_amount,
+    })
+    await get_orders_collection().update_one(
+        {"_id": order["_id"]},
+        {"$set": buyer_update, "$unset": {"qvapay.pending_store_payout_usd": ""}},
+    )
     return await _finish_resolution(dispute["_id"], order, winner, reason)

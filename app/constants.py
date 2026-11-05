@@ -34,8 +34,6 @@ ADVERTISING_PLAN_CATALOG = (
     },
 )
 
-QVAPAY_EXCHANGE_FEE_RATE = 0.005
-
 DEFAULT_PLAN_PRICES = {
     "standard": {
         "monthly": {"amount": 2, "currency": "USD"},

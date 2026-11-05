@@ -71,8 +71,8 @@ class AdvertisingE2ETests(unittest.TestCase):
     def test_invoice_includes_exchange_fee(self) -> None:
         plan, fee, total = invoice_amounts(15)
         self.assertEqual(plan, 15.0)
-        self.assertEqual(fee, 0.08)
-        self.assertEqual(total, 15.08)
+        self.assertEqual(fee, 0.0)
+        self.assertEqual(total, 15.0)
 
     def test_checkout_webhook_ledger_and_idempotent_sms(self) -> None:
         seller = seed_seller()
@@ -89,7 +89,8 @@ class AdvertisingE2ETests(unittest.TestCase):
             public = client.get("/api/platform/advertising-plans")
             self.assertEqual(public.status_code, 200, public.text)
             ads10 = next(item for item in public.json()["plans"] if item["id"] == "ads-10")
-            self.assertEqual(ads10["invoice_amount_usd"], 15.08)
+            self.assertEqual(ads10["exchange_fee_usd"], 0.0)
+            self.assertEqual(ads10["invoice_amount_usd"], ads10["amount_usd"])
 
             started = client.post(
                 "/api/advertising/checkout",
@@ -98,8 +99,9 @@ class AdvertisingE2ETests(unittest.TestCase):
             )
             self.assertEqual(started.status_code, 200, started.text)
             body = started.json()
-            self.assertEqual(body["invoice_amount_usd"], 15.08)
-            self.assertEqual(body["exchange_fee_usd"], 0.08)
+            self.assertEqual(body["invoice_amount_usd"], ads10["amount_usd"])
+            self.assertEqual(body["exchange_fee_usd"], 0.0)
+            expected_invoice = body["invoice_amount_usd"]
             self.assertTrue(body["payment_url"].startswith("https://qvapay.com/pay/"))
             self.assertIn("Plan 1 10 días", fake_invoice.last_description)
             self.assertEqual(
@@ -107,7 +109,7 @@ class AdvertisingE2ETests(unittest.TestCase):
                 [
                     {
                         "name": "Publicidad Plan 1 10 días",
-                        "price": 15.08,
+                        "price": ads10["amount_usd"],
                     },
                 ],
             )
@@ -148,4 +150,4 @@ class AdvertisingE2ETests(unittest.TestCase):
         self.assertEqual(len(docs), 1)
         self.assertEqual(docs[0]["kind"], "income")
         self.assertEqual(docs[0]["currency"], "USD")
-        self.assertEqual(float(docs[0]["amount"]), 15.08)
+        self.assertEqual(float(docs[0]["amount"]), expected_invoice)

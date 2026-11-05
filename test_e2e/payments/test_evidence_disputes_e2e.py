@@ -252,7 +252,7 @@ class EvidenceDisputeE2ETests(unittest.TestCase):
             )
             self.assertEqual(ruled.status_code, 200, ruled.text)
             self.assertEqual(ruled.json()["winner"], "buyer")
-            self.assertEqual(transfer.await_args.kwargs["idempotency_key"], f"store-order-{seeded['order_id']}-refund")
+            self.assertEqual(transfer.await_args.kwargs["idempotency_key"], f"store-order-{seeded['order_id']}-refund-1")
             seller_orders = client.get("/api/auth/me/orders", headers=seller_headers)
             settled = next(item for item in seller_orders.json()["items"] if item["id"] == seeded["order_id"])
             self.assertEqual(settled["status"], "cancelled")

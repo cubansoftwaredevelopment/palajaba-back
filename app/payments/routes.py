@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 
 from app.advertising.service import mark_advertising_paid
 from app.payments.qvapay import verify_webhook_signature
+from app.payments import refunds as refund_service
 from app.payments import service
 from app.payments import subscription_service
 from app.payments import disputes as dispute_service
@@ -16,6 +17,7 @@ from app.payments.schema import (
     DisputeRulingRequest,
     EvidenceSubmitRequest,
     QvaPayAccountRequest,
+    StoreRefundRequest,
     SellerAcceptPaymentRequest,
     SubscriptionPlanCheckoutRequest,
 )
@@ -176,6 +178,23 @@ async def upload_seller_dispute_image(order_id: str, photo: UploadFile = File(..
 @account_router.post("/api/auth/me/orders/{order_id}/disputes")
 async def open_seller_order_dispute(order_id: str, payload: DisputeOpenRequest, seller: dict = Depends(require_seller)):
     return await dispute_service.open_dispute(order_id, "seller", seller["seller_id"], text=payload.text, images=payload.images)
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/qvapay/refund/images")
+async def upload_seller_refund_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+    return await refund_service.upload_refund_image(seller["seller_id"], order_id, photo)
+
+
+@account_router.post("/api/auth/me/orders/{order_id}/qvapay/refund")
+async def refund_seller_qvapay_order(order_id: str, payload: StoreRefundRequest, seller: dict = Depends(require_seller)):
+    return await refund_service.refund_order_for_store(
+        seller["seller_id"],
+        order_id,
+        quantities={item.product_id: item.quantity for item in payload.items},
+        refund_delivery=payload.refund_delivery,
+        text=payload.text,
+        images=payload.images,
+    )
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/accept")

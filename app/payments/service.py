@@ -176,7 +176,13 @@ def _usd(amount: float, currency: str, rates: dict[str, float]) -> float:
     return round(float(amount) * float(from_rate) / float(usd_rate), 2)
 
 
-def payment_quote(order: dict[str, Any], delivery_price: float | None, delivery_currency: str | None) -> dict[str, Any]:
+def payment_quote(
+    order: dict[str, Any],
+    delivery_price: float | None,
+    delivery_currency: str | None,
+    *,
+    fee_percent: float = 0,
+) -> dict[str, Any]:
     rates = get_cup_per_unit()
     products_usd = round(sum(
         _usd(float(item.get("line_total") or float(item["unit_price"]) * int(item["quantity"])), item["currency"], rates)
@@ -186,11 +192,10 @@ def payment_quote(order: dict[str, Any], delivery_price: float | None, delivery_
         raise HTTPException(status_code=400, detail="Indica el costo del domicilio antes de crear la factura.")
     delivery_usd = _usd(float(delivery_price), delivery_currency or "CUP", rates) if delivery_price is not None else 0.0
     base = Decimal(str(products_usd + delivery_usd))
-    fee_decimal = (
-        Decimal("0.01")
-        if base < Decimal("1")
-        else base.sqrt().quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    )
+    percent = Decimal(str(fee_percent or 0))
+    if percent < 0:
+        percent = Decimal("0")
+    fee_decimal = (base * percent / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     fee = float(fee_decimal)
     total = round(products_usd + delivery_usd + fee, 2)
     return {
@@ -253,19 +258,31 @@ async def _notify_seller(seller_id: str, order_id: str, title: str, content: str
             logger.exception("No se pudo enviar SMS de pago QvaPay a la tienda")
 
 
-async def _notify_customer(customer_id: str, order_id: str, title: str, content: str, kind: str) -> None:
+async def _notify_customer(
+    customer_id: str,
+    order_id: str,
+    title: str,
+    content: str,
+    kind: str,
+    *,
+    images: list[str] | None = None,
+    sms: bool = True,
+) -> None:
     customer_oid = _oid(customer_id, "Cliente no encontrado.")
     created_at = to_utc_naive(utc_now())
+    stored_images = [image for image in images or [] if isinstance(image, str) and image.strip()]
     document = {
         "_id": ObjectId(), "customer_id": customer_oid, "order_id": str(order_id), "title": title,
-        "content": content, "kind": kind, "created_at": created_at, "read_at": None,
+        "content": content, "kind": kind, "images": stored_images, "created_at": created_at, "read_at": None,
     }
     await get_customer_notifications_collection().insert_one(document)
     from app.live.hub import publish_customer_notification
     await publish_customer_notification(str(customer_oid), {
         "id": str(document["_id"]), "order_id": str(order_id), "title": title,
-        "content": content, "kind": kind, "created_at": created_at, "read_at": None,
+        "content": content, "kind": kind, "images": stored_images, "created_at": created_at, "read_at": None,
     })
+    if not sms:
+        return
     customer = await get_customers_collection().find_one({"_id": customer_oid}, {"phone": 1})
     phone = "".join(ch for ch in str((customer or {}).get("phone") or "") if ch.isdigit())
     if phone.startswith("53") and len(phone) == 10:
@@ -286,7 +303,15 @@ async def accept_payment_request(seller_id: str, order_id: str, *, delivery_pric
         return {"order_id": str(doc["_id"]), "invoice_url": qv["invoice_url"], "invoice_amount_usd": qv["invoice_amount_usd"]}
     if qv.get("request_status") != "pending_seller":
         raise HTTPException(status_code=409, detail="La solicitud ya fue respondida.")
-    quote = payment_quote(doc, delivery_price, delivery_currency)
+    from app.admin.service import get_platform_settings
+
+    platform = await get_platform_settings()
+    quote = payment_quote(
+        doc,
+        delivery_price,
+        delivery_currency,
+        fee_percent=platform.transaction_fee_percent,
+    )
     seller = await get_registrations_collection().find_one({"_id": _oid(seller_id, "Tienda no encontrada.")})
     if not seller or not seller.get("qvapay_username"):
         raise HTTPException(status_code=409, detail="Configura primero tu usuario QvaPay.")
@@ -635,6 +660,7 @@ async def stop_expiry_task() -> None:
 async def list_customer_notifications(customer_id: str) -> list[dict[str, Any]]:
     docs = await get_customer_notifications_collection().find({"customer_id": _oid(customer_id, "Cliente no encontrado.")}).sort("created_at", -1).limit(50).to_list(length=50)
     return [{"id": str(doc["_id"]), "title": doc["title"], "content": doc["content"], "kind": doc["kind"],
+             "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
              "order_id": doc["order_id"], "created_at": doc["created_at"], "read_at": doc.get("read_at")} for doc in docs]
 
 
@@ -646,4 +672,5 @@ async def mark_customer_notification_read(customer_id: str, notification_id: str
     if not doc:
         raise HTTPException(status_code=404, detail="Notificación no encontrada.")
     return {"id": str(doc["_id"]), "title": doc["title"], "content": doc["content"], "kind": doc["kind"],
+            "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
             "order_id": doc["order_id"], "created_at": doc["created_at"], "read_at": doc.get("read_at")}

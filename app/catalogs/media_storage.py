@@ -19,7 +19,7 @@ IMAGE_TOO_LARGE_MESSAGE = (
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
 LOCAL_UPLOADS_ROOT = Path(__file__).resolve().parents[2] / "uploads"
-ImageScope = Literal["products", "profiles", "banners", "store-banners", "order-evidence", "store-pages", "dispute-reports"]
+ImageScope = Literal["products", "profiles", "banners", "store-banners", "order-evidence", "store-pages", "dispute-reports", "refund-reasons"]
 CLOUDINARY_FOLDER_PREFIX = "pala-jaba/"
 
 # Incoming transformation al subir: limita tamaño y comprime antes de guardar.
@@ -31,6 +31,7 @@ _MAX_CLOUDINARY_EDGE: dict[ImageScope, int] = {
     "order-evidence": 1920,
     "store-pages": 1920,
     "dispute-reports": 1920,
+    "refund-reasons": 1920,
 }
 
 _EXTENSION_BY_TYPE = {
@@ -62,7 +63,7 @@ def _extension_for(content_type: str) -> str:
 
 
 def _public_id_from_url(url: str) -> str | None:
-    for scope in ("products", "profiles", "banners", "store-banners", "order-evidence", "store-pages", "dispute-reports"):
+    for scope in ("products", "profiles", "banners", "store-banners", "order-evidence", "store-pages", "dispute-reports", "refund-reasons"):
         marker = f"{CLOUDINARY_FOLDER_PREFIX}{scope}/"
         start = url.find(marker)
         if start == -1:

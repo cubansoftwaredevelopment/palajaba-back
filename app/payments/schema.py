@@ -77,11 +77,40 @@ class DisputeOpenRequest(BaseModel):
         return [item.strip() for item in value if str(item or "").strip()]
 
 
+class RefundLineRequest(BaseModel):
+    product_id: str = Field(..., min_length=1, max_length=64)
+    quantity: int = Field(..., ge=0, le=99)
+
+
+class StoreRefundRequest(BaseModel):
+    items: list[RefundLineRequest] = Field(..., min_length=1)
+    refund_delivery: bool = False
+    text: str = Field(..., min_length=3, max_length=2000)
+    images: list[str] = Field(..., min_length=1, max_length=6)
+
+    @field_validator("text")
+    @classmethod
+    def normalize_refund_text(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if len(cleaned) < 3:
+            raise ValueError("Escribe el motivo del reembolso.")
+        return cleaned
+
+    @field_validator("images")
+    @classmethod
+    def normalize_refund_images(cls, value: list[str]) -> list[str]:
+        cleaned = [item.strip() for item in value if str(item or "").strip()]
+        if not cleaned:
+            raise ValueError("Adjunta al menos una imagen del motivo.")
+        return cleaned
+
+
 class CustomerOrderNotificationPublic(BaseModel):
     id: str
     title: str
     content: str
     kind: str
+    images: list[str] = Field(default_factory=list)
     order_id: str
     created_at: datetime
     read_at: datetime | None = None
@@ -99,6 +128,8 @@ class CustomerDeviceDelete(BaseModel):
 class DisputeRulingRequest(BaseModel):
     winner: Literal["buyer", "seller"]
     reason: str = Field(..., min_length=3, max_length=500)
+    items: list[RefundLineRequest] | None = None
+    refund_delivery: bool = False
 
     @field_validator("reason")
     @classmethod

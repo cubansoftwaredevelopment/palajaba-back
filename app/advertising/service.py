@@ -8,7 +8,7 @@ from bson import ObjectId
 from fastapi import HTTPException, status
 
 from app.advertising.schemas import AdvertisingCheckoutPublic
-from app.constants import ADVERTISING_PLAN_CATALOG, QVAPAY_EXCHANGE_FEE_RATE
+from app.constants import ADVERTISING_PLAN_CATALOG
 from app.database import (
     get_advertising_purchases_collection,
     get_finance_ledger_collection,
@@ -34,9 +34,7 @@ def _usd(value: float | Decimal) -> float:
 
 def invoice_amounts(plan_amount_usd: float) -> tuple[float, float, float]:
     plan = _usd(plan_amount_usd)
-    fee = _usd(Decimal(str(plan)) * Decimal(str(QVAPAY_EXCHANGE_FEE_RATE)))
-    total = _usd(Decimal(str(plan)) + Decimal(str(fee)))
-    return plan, fee, total
+    return plan, 0.0, plan
 
 
 def catalog_by_id() -> dict[str, dict[str, Any]]:
@@ -174,12 +172,7 @@ async def _notify_admins_payment(purchase: dict[str, Any]) -> None:
     store = str(purchase.get("store_name") or "una tienda")
     plan = str(purchase.get("plan_name") or "publicidad")
     total = purchase.get("invoice_amount_usd")
-    fee = purchase.get("exchange_fee_usd")
-    plan_amount = purchase.get("plan_amount_usd")
-    message = (
-        f"Pa' La Jaba: {store} pagó publicidad {plan}. "
-        f"Plan {plan_amount} USD + exchange {fee} USD = {total} USD."
-    )
+    message = f"Pa' La Jaba: {store} pagó publicidad {plan} por {total} USD."
     sent: set[str] = set()
     for admin in settings.admins:
         phone = to_e164(admin.phone)

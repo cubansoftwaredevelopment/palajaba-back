@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import unittest
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from bson import ObjectId
@@ -40,6 +41,7 @@ class QvaPayEscrowE2ETests(unittest.TestCase):
                                 f"store-order-{seeded['order_id']}", {})
         settings_patch = patch.multiple(settings, qvapay_app_secret=SECRET, qvapay_app_id="app-e2e")
         with settings_patch, patch("app.payments.service.get_cup_per_unit", return_value={"CUP": 1, "USD": 400}), \
+             patch("app.admin.service.get_platform_settings", new_callable=AsyncMock, return_value=SimpleNamespace(transaction_fee_percent=10)), \
              patch("app.payments.service.create_invoice", new_callable=AsyncMock, return_value=invoice) as create_invoice, \
              patch("app.payments.service.verify_qvapay_username", new_callable=AsyncMock, return_value="tiendae2e"), \
              patch("app.payments.service.qvapay_escrow_configured", return_value=True), \
@@ -55,17 +57,17 @@ class QvaPayEscrowE2ETests(unittest.TestCase):
             accepted = client.post(f"/api/auth/me/orders/{seeded['order_id']}/qvapay/accept",
                                    headers=seller_headers, json={"delivery_price": 400, "delivery_currency": "CUP"})
             self.assertEqual(accepted.status_code, 200, accepted.text)
-            self.assertEqual(accepted.json()["invoice_amount_usd"], 3.41)
+            self.assertEqual(accepted.json()["invoice_amount_usd"], 2.2)
             create_invoice.assert_awaited_once()
             invoice_products = create_invoice.await_args.kwargs["products"]
             self.assertEqual([(item["name"], item["price"]) for item in invoice_products], [
-                ("Arroz", 1.0), ("Domicilio", 1.0), ("fee", 1.41),
+                ("Arroz", 1.0), ("Domicilio", 1.0), ("fee", 0.2),
             ])
             seller_orders = client.get("/api/auth/me/orders?limit=100", headers=seller_headers)
             self.assertEqual(seller_orders.status_code, 200)
             stored = next(item for item in seller_orders.json()["items"] if item["id"] == seeded["order_id"])
             self.assertEqual(stored["qvapay"]["release_status"], "held")
-            self.assertEqual(stored["qvapay"]["invoice_amount_usd"], 3.41)
+            self.assertEqual(stored["qvapay"]["invoice_amount_usd"], 2.2)
 
             webhook = json.dumps({"remote_id": invoice.remote_id, "transaction_uuid": invoice.transaction_uuid,
                                   "status": "paid"}).encode()

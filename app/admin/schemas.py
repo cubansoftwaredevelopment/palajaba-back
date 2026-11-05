@@ -126,6 +126,7 @@ class PlatformAdminContact(BaseModel):
 
 class PlatformSettingsPublic(BaseModel):
     renewal_contact_phone: str | None = None
+    transaction_fee_percent: float = 0
     plan_prices: PlanPricesSettings = Field(default_factory=default_plan_prices)
     advertising_prices: AdvertisingPricesSettings = Field(
         default_factory=default_advertising_prices
@@ -137,6 +138,7 @@ class PlatformSettingsPublic(BaseModel):
 
 class PlatformSettingsUpdate(BaseModel):
     renewal_contact_phone: str | None = None
+    transaction_fee_percent: float | None = Field(default=None, ge=0, le=100)
     plan_prices: PlanPricesSettings | None = None
     advertising_prices: AdvertisingPricesSettings | None = None
     admins: list[PlatformAdminContact] | None = None

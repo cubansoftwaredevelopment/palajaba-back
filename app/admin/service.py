@@ -163,8 +163,15 @@ def _document_to_public(doc: dict[str, Any] | None) -> PlatformSettingsPublic:
     phone = doc.get("renewal_contact_phone")
     admins = parse_admins(doc.get("admins"), doc.get("admin_email"), doc.get("admin_phone"))
     first = admins[0] if admins else None
+    raw_percent = doc.get("transaction_fee_percent")
+    try:
+        fee_percent = float(raw_percent) if raw_percent is not None else 0.0
+    except (TypeError, ValueError):
+        fee_percent = 0.0
+    fee_percent = min(100.0, max(0.0, fee_percent))
     return PlatformSettingsPublic(
         renewal_contact_phone=phone if isinstance(phone, str) and phone else None,
+        transaction_fee_percent=fee_percent,
         plan_prices=parse_plan_prices(doc.get("plan_prices")),
         advertising_prices=parse_advertising_prices(doc.get("advertising_prices")),
         admins=admins,
@@ -204,6 +211,8 @@ async def update_platform_settings(payload: PlatformSettingsUpdate) -> PlatformS
     updates: dict[str, Any] = {"updated_at": now}
     if payload.renewal_contact_phone is not None:
         updates["renewal_contact_phone"] = payload.renewal_contact_phone
+    if payload.transaction_fee_percent is not None:
+        updates["transaction_fee_percent"] = float(payload.transaction_fee_percent)
     if payload.plan_prices is not None:
         updates["plan_prices"] = payload.plan_prices.model_dump()
     if payload.advertising_prices is not None:

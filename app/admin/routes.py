@@ -212,6 +212,8 @@ async def rule_dispute(dispute_id: str, payload: DisputeRulingRequest, _: dict =
         dispute_id,
         winner=payload.winner,
         reason=payload.reason,
+        items=[item.model_dump() for item in payload.items] if payload.items is not None else None,
+        refund_delivery=payload.refund_delivery,
     )
 
 
