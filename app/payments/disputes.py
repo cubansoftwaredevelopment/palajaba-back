@@ -50,6 +50,7 @@ def _public(doc: dict[str, Any]) -> dict[str, Any]:
         "winner": doc.get("winner"),
         "reason": doc.get("reason"),
         "reports": _public_reports(doc.get("reports")),
+        "rulings": _public_rulings(doc.get("rulings")),
         "resolution": doc.get("resolution"),
         "created_at": doc.get("created_at"),
         "resolved_at": doc.get("resolved_at"),
@@ -412,6 +413,7 @@ async def get_dispute_detail(dispute_id: str) -> dict[str, Any]:
         "order": _order_summary(order, order["_id"]),
         "evidence_status": (qvapay.get("evidence") or {}).get("status") if isinstance(qvapay.get("evidence"), dict) else None,
         "release_status": qvapay.get("release_status"),
+        "pending_store_payout_usd": qvapay.get("pending_store_payout_usd"),
     }
 
 
@@ -515,14 +517,138 @@ def _quantity_map(items: list[dict[str, Any]] | None) -> dict[str, int] | None:
     return {str(item["product_id"]): int(item["quantity"]) for item in items}
 
 
+def _public_rulings(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    rulings = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        row: dict[str, Any] = {
+            "at": item.get("at"),
+            "kind": item.get("kind") or "ruling",
+            "winner": item.get("winner"),
+            "reason": item.get("reason") or "",
+            "outcome": item.get("outcome") or "",
+        }
+        for key in (
+            "buyer_amount_usd",
+            "store_payout_usd",
+            "products_amount_usd",
+            "delivery_amount_usd",
+            "fee_usd",
+            "invoice_amount_usd",
+            "buyer_transfer_id",
+            "store_transfer_id",
+            "error",
+        ):
+            if item.get(key) not in (None, ""):
+                row[key] = item.get(key)
+        if "refund_delivery" in item:
+            row["refund_delivery"] = bool(item.get("refund_delivery"))
+        lines = []
+        for line in item.get("items") or []:
+            if not isinstance(line, dict):
+                continue
+            lines.append({
+                "product_id": str(line.get("product_id") or ""),
+                "name": line.get("name") or "",
+                "quantity_before": int(line.get("quantity_before") or 0),
+                "quantity_after": int(line.get("quantity_after") or 0),
+            })
+        if lines:
+            row["items"] = lines
+        rulings.append(row)
+    return rulings
+
+
+def _adjustment_lines(order: dict[str, Any], plan: dict[str, Any]) -> list[dict[str, Any]]:
+    kept = {str(item.get("product_id") or ""): item for item in plan.get("items") or [] if isinstance(item, dict)}
+    lines = []
+    for item in order.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        product_id = str(item.get("product_id") or "")
+        after = kept.get(product_id)
+        lines.append({
+            "product_id": product_id,
+            "name": item.get("name") or "",
+            "quantity_before": int(item.get("quantity") or 0),
+            "quantity_after": int(after.get("quantity") or 0) if after else 0,
+        })
+    return lines
+
+
+def _buyer_ruling(
+    order: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    reason: str,
+    outcome: str,
+    error: str | None = None,
+    buyer_transfer_id: str | None = None,
+    store_transfer_id: str | None = None,
+) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "kind": "ruling",
+        "winner": "buyer",
+        "reason": reason,
+        "outcome": outcome,
+        "refund_delivery": bool(plan.get("refund_delivery")),
+        "buyer_amount_usd": plan.get("buyer_amount_usd"),
+        "store_payout_usd": plan.get("store_payout_usd"),
+        "products_amount_usd": plan.get("products_amount_usd"),
+        "delivery_amount_usd": plan.get("delivery_amount_usd"),
+        "fee_usd": plan.get("fee_usd"),
+        "invoice_amount_usd": plan.get("invoice_amount_usd"),
+        "items": _adjustment_lines(order, plan),
+    }
+    if error:
+        entry["error"] = error
+    if buyer_transfer_id:
+        entry["buyer_transfer_id"] = buyer_transfer_id
+    if store_transfer_id:
+        entry["store_transfer_id"] = store_transfer_id
+    return entry
+
+
+async def _append_ruling(dispute_id: ObjectId, entry: dict[str, Any], *, reason: str | None = None) -> None:
+    now = to_utc_naive(utc_now())
+    entry["at"] = now
+    updates: dict[str, Any] = {"updated_at": now}
+    if reason:
+        updates["reason"] = reason
+    await get_disputes_collection().update_one(
+        {"_id": dispute_id},
+        {"$push": {"rulings": entry}, "$set": updates},
+    )
+
+
+async def _stored_reason(dispute_id: ObjectId, fallback: str) -> str:
+    dispute = await get_disputes_collection().find_one({"_id": dispute_id}, {"reason": 1})
+    stored = " ".join(str((dispute or {}).get("reason") or "").split())
+    return stored or fallback
+
+
 async def _finish_pending_store_payout(dispute_id: ObjectId, order: dict[str, Any], reason: str) -> dict[str, Any]:
     from app.payments.refunds import store_payout_username
 
     qvapay = order["qvapay"]
     amount = round(float(qvapay.get("pending_store_payout_usd") or 0), 2)
     username = await store_payout_username(order)
-    if amount <= 0 or not username:
+    stored_reason = await _stored_reason(dispute_id, reason)
+    if amount <= 0:
         raise HTTPException(status_code=409, detail="No hay un pago pendiente para la tienda.")
+    if not username:
+        await _append_ruling(dispute_id, {
+            "kind": "store_payout_retry",
+            "winner": "buyer",
+            "reason": stored_reason,
+            "outcome": "failed",
+            "store_payout_usd": amount,
+            "error": "La tienda no tiene usuario QvaPay.",
+        })
+        raise HTTPException(status_code=503, detail="El comprador ya recibió la devolución. La tienda no tiene usuario QvaPay.")
     if qvapay.get("release_status") == "transferring":
         raise HTTPException(status_code=409, detail="El pago se está transfiriendo.")
     now = to_utc_naive(utc_now())
@@ -545,6 +671,14 @@ async def _finish_pending_store_payout(dispute_id: ObjectId, order: dict[str, An
             {"_id": order["_id"], "qvapay.release_status": "transferring"},
             {"$set": {"qvapay.release_status": "retry", "updated_at": to_utc_naive(utc_now())}},
         )
+        await _append_ruling(dispute_id, {
+            "kind": "store_payout_retry",
+            "winner": "buyer",
+            "reason": stored_reason,
+            "outcome": "failed",
+            "store_payout_usd": amount,
+            "error": "No pudimos pagar a la tienda. Reintenta el fallo.",
+        })
         raise HTTPException(status_code=503, detail="No pudimos pagar a la tienda. Reintenta el fallo.")
     finished = to_utc_naive(utc_now())
     finished_set = {
@@ -561,7 +695,15 @@ async def _finish_pending_store_payout(dispute_id: ObjectId, order: dict[str, An
         {"_id": order["_id"]},
         {"$set": finished_set, "$unset": {"qvapay.pending_store_payout_usd": ""}},
     )
-    return await _finish_resolution(dispute_id, order, "buyer", reason)
+    await _append_ruling(dispute_id, {
+        "kind": "store_payout_retry",
+        "winner": "buyer",
+        "reason": stored_reason,
+        "outcome": "completed",
+        "store_payout_usd": amount,
+        "store_transfer_id": transaction,
+    })
+    return await _finish_resolution(dispute_id, order, "buyer", stored_reason)
 
 
 async def rule_dispute(
@@ -647,6 +789,24 @@ async def rule_dispute(
             {"_id": order["_id"], "qvapay.release_status": "transferring"},
             {"$set": restore},
         )
+        failed: dict[str, Any] = {
+            "kind": "ruling",
+            "winner": winner,
+            "reason": reason,
+            "outcome": "failed",
+            "error": "No pudimos mover el pago. La disputa sigue abierta.",
+        }
+        if winner == "seller":
+            failed["store_payout_usd"] = amount
+        elif plan is not None:
+            failed = _buyer_ruling(
+                order,
+                plan,
+                reason=reason,
+                outcome="failed",
+                error="No pudimos mover el pago. La disputa sigue abierta.",
+            )
+        await _append_ruling(dispute["_id"], failed, reason=reason)
         raise HTTPException(status_code=503, detail="No pudimos mover el pago. La disputa sigue abierta.")
 
     finished = to_utc_naive(utc_now())
@@ -665,6 +825,14 @@ async def rule_dispute(
         )
         from app.products.utils import bump_products_on_order_completed
         await bump_products_on_order_completed(order.get("items") or [])
+        await _append_ruling(dispute["_id"], {
+            "kind": "ruling",
+            "winner": "seller",
+            "reason": reason,
+            "outcome": "completed",
+            "store_payout_usd": amount,
+            "store_transfer_id": transaction,
+        }, reason=reason)
         return await _finish_resolution(dispute["_id"], order, winner, reason)
 
     assert plan is not None
@@ -699,6 +867,11 @@ async def rule_dispute(
             {"_id": order["_id"], "qvapay.release_status": "transferring"},
             {"$set": buyer_update},
         )
+        await _append_ruling(
+            dispute["_id"],
+            _buyer_ruling(order, plan, reason=reason, outcome="completed", buyer_transfer_id=transaction),
+            reason=reason,
+        )
         return await _finish_resolution(dispute["_id"], order, winner, reason)
 
     from app.payments.refunds import store_payout_username
@@ -707,6 +880,18 @@ async def rule_dispute(
         buyer_update["qvapay.release_status"] = "retry"
         buyer_update["qvapay.pending_store_payout_usd"] = store_amount
         await get_orders_collection().update_one({"_id": order["_id"]}, {"$set": buyer_update})
+        await _append_ruling(
+            dispute["_id"],
+            _buyer_ruling(
+                order,
+                plan,
+                reason=reason,
+                outcome="buyer_paid_store_pending",
+                error="El comprador ya recibió la devolución. La tienda no tiene usuario QvaPay.",
+                buyer_transfer_id=transaction,
+            ),
+            reason=reason,
+        )
         raise HTTPException(status_code=503, detail="El comprador ya recibió la devolución. La tienda no tiene usuario QvaPay.")
     try:
         store_transaction = await transfer_to_user(
@@ -720,6 +905,18 @@ async def rule_dispute(
         buyer_update["qvapay.release_status"] = "retry"
         buyer_update["qvapay.pending_store_payout_usd"] = store_amount
         await get_orders_collection().update_one({"_id": order["_id"]}, {"$set": buyer_update})
+        await _append_ruling(
+            dispute["_id"],
+            _buyer_ruling(
+                order,
+                plan,
+                reason=reason,
+                outcome="buyer_paid_store_pending",
+                error="El comprador ya recibió la devolución. Reintenta para pagar a la tienda.",
+                buyer_transfer_id=transaction,
+            ),
+            reason=reason,
+        )
         raise HTTPException(status_code=503, detail="El comprador ya recibió la devolución. Reintenta para pagar a la tienda.")
     buyer_update.update({
         "qvapay.release_status": "released",
@@ -730,5 +927,17 @@ async def rule_dispute(
     await get_orders_collection().update_one(
         {"_id": order["_id"]},
         {"$set": buyer_update, "$unset": {"qvapay.pending_store_payout_usd": ""}},
+    )
+    await _append_ruling(
+        dispute["_id"],
+        _buyer_ruling(
+            order,
+            plan,
+            reason=reason,
+            outcome="completed",
+            buyer_transfer_id=transaction,
+            store_transfer_id=store_transaction,
+        ),
+        reason=reason,
     )
     return await _finish_resolution(dispute["_id"], order, winner, reason)
