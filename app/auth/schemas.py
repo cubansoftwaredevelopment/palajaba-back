@@ -327,6 +327,7 @@ class RegistrationPublic(BaseModel):
     store_name: str
     email: str | None = None
     phone: str
+    qvapay_username: str | None = None
     is_trial: bool = False
     billing_period: BillingPeriod
     plan_tier: PlanTier = "standard"

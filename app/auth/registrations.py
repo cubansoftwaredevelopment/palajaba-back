@@ -69,6 +69,7 @@ def document_to_public(
         store_name=doc["store_name"],
         email=doc.get("email") or None,
         phone=phone_display(doc["phone"]),
+        qvapay_username=str(doc.get("qvapay_username") or "").strip() or None,
         is_trial=bool(doc.get("is_trial")),
         billing_period=(
             normalize_billing_period(doc["billing_period"])

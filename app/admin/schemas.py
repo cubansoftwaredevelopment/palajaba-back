@@ -127,6 +127,7 @@ class PlatformAdminContact(BaseModel):
 class PlatformSettingsPublic(BaseModel):
     renewal_contact_phone: str | None = None
     transaction_fee_percent: float = 0
+    qvapay_plan_discount_percent: float = 0
     plan_prices: PlanPricesSettings = Field(default_factory=default_plan_prices)
     advertising_prices: AdvertisingPricesSettings = Field(
         default_factory=default_advertising_prices
@@ -139,6 +140,7 @@ class PlatformSettingsPublic(BaseModel):
 class PlatformSettingsUpdate(BaseModel):
     renewal_contact_phone: str | None = None
     transaction_fee_percent: float | None = Field(default=None, ge=0, le=100)
+    qvapay_plan_discount_percent: float | None = Field(default=None, ge=0, le=100)
     plan_prices: PlanPricesSettings | None = None
     advertising_prices: AdvertisingPricesSettings | None = None
     admins: list[PlatformAdminContact] | None = None
@@ -174,6 +176,7 @@ class PlatformRenewalContactPublic(BaseModel):
 
 class PlatformPlanPricesPublic(BaseModel):
     plan_prices: PlanPricesSettings
+    qvapay_plan_discount_percent: float = 0
 
 
 class AdvertisingPlanPublic(BaseModel):
@@ -197,6 +200,7 @@ class AdminCustomerPublic(BaseModel):
     email: str
     phone: str
     identity_card: str
+    qvapay_username: str | None = None
     created_at: datetime | None = None
     order_count: int = 0
     purchase_revoked: bool = False

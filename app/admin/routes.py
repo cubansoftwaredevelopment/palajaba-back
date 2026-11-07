@@ -153,7 +153,11 @@ async def get_renewal_contact():
 
 @platform_router.get("/plan-prices", response_model=PlatformPlanPricesPublic)
 async def get_plan_prices():
-    return PlatformPlanPricesPublic(plan_prices=await admin_service.get_plan_prices())
+    stored = await admin_service.get_platform_settings()
+    return PlatformPlanPricesPublic(
+        plan_prices=stored.plan_prices,
+        qvapay_plan_discount_percent=stored.qvapay_plan_discount_percent,
+    )
 
 
 @panel_router.get("/banners", response_model=list[BannerAdminPublic])

@@ -33,6 +33,7 @@ def _public(doc: dict, order_count: int) -> AdminCustomerPublic:
         email=str(doc.get("email") or ""),
         phone=_phone(doc.get("phone") or ""),
         identity_card=str(doc.get("identity_card") or ""),
+        qvapay_username=str(doc.get("qvapay_username") or "").strip() or None,
         created_at=created_at if isinstance(created_at, datetime) else None,
         order_count=order_count,
         purchase_revoked=bool(doc.get("purchase_revoked")),

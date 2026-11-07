@@ -32,6 +32,7 @@ async def seed_customer() -> dict[str, str]:
         "email": f"cliente-{customer_id}@admin-customers-e2e.test",
         "phone": phone,
         "identity_card": f"CI{str(customer_id)[-10:]}",
+        "qvapay_username": "cliente-qva",
         "password_hash": hash_password(PASSWORD),
         "addresses": [],
         "favorite_product_ids": [],
@@ -79,6 +80,7 @@ class AdminCustomersE2ETests(unittest.TestCase):
             self.assertEqual(listed.status_code, 200, listed.text)
             row = next(item for item in listed.json() if item["id"] == self.customer["customer_id"])
             self.assertEqual(row["full_name"], "Cliente Admin E2E")
+            self.assertEqual(row["qvapay_username"], "cliente-qva")
             self.assertEqual(row["order_count"], 1)
             self.assertFalse(row["purchase_revoked"])
 

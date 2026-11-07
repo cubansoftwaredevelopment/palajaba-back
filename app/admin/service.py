@@ -169,9 +169,16 @@ def _document_to_public(doc: dict[str, Any] | None) -> PlatformSettingsPublic:
     except (TypeError, ValueError):
         fee_percent = 0.0
     fee_percent = min(100.0, max(0.0, fee_percent))
+    raw_discount = doc.get("qvapay_plan_discount_percent")
+    try:
+        plan_discount = float(raw_discount) if raw_discount is not None else 0.0
+    except (TypeError, ValueError):
+        plan_discount = 0.0
+    plan_discount = min(100.0, max(0.0, plan_discount))
     return PlatformSettingsPublic(
         renewal_contact_phone=phone if isinstance(phone, str) and phone else None,
         transaction_fee_percent=fee_percent,
+        qvapay_plan_discount_percent=plan_discount,
         plan_prices=parse_plan_prices(doc.get("plan_prices")),
         advertising_prices=parse_advertising_prices(doc.get("advertising_prices")),
         admins=admins,
@@ -213,6 +220,8 @@ async def update_platform_settings(payload: PlatformSettingsUpdate) -> PlatformS
         updates["renewal_contact_phone"] = payload.renewal_contact_phone
     if payload.transaction_fee_percent is not None:
         updates["transaction_fee_percent"] = float(payload.transaction_fee_percent)
+    if payload.qvapay_plan_discount_percent is not None:
+        updates["qvapay_plan_discount_percent"] = float(payload.qvapay_plan_discount_percent)
     if payload.plan_prices is not None:
         updates["plan_prices"] = payload.plan_prices.model_dump()
     if payload.advertising_prices is not None:

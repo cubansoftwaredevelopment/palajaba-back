@@ -34,6 +34,28 @@ def _oid(value: str, message: str) -> ObjectId:
         raise HTTPException(status_code=404, detail=message) from exc
 
 
+def _discounted_usd(amount_usd: float, percent: float) -> float:
+    rate = Decimal(str(percent or 0))
+    if rate <= 0:
+        return amount_usd
+    if rate > 100:
+        rate = Decimal("100")
+    discounted = (Decimal(str(amount_usd)) * (Decimal("100") - rate) / Decimal("100")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    if discounted <= 0:
+        raise HTTPException(status_code=400, detail="El descuento deja el plan en cero.")
+    return float(discounted)
+
+
+async def _qvapay_plan_discount_percent() -> float:
+    from app.admin.service import get_platform_settings
+
+    settings = await get_platform_settings()
+    return float(getattr(settings, "qvapay_plan_discount_percent", 0) or 0)
+
+
 def _usd_amount(amount: float, currency: str, rates: dict[str, float]) -> float:
     if currency == "USD":
         raw = float(amount)
@@ -96,6 +118,8 @@ async def create_subscription_plan_checkout(
     rates = snapshot_cup_per_unit()
     configured_price = (await get_plan_prices()).get_price(tier, period)
     plan_amount_usd = _usd_amount(configured_price.amount, configured_price.currency, rates)
+    discount_percent = await _qvapay_plan_discount_percent()
+    invoice_amount_usd = _discounted_usd(plan_amount_usd, discount_percent)
     now = to_utc_naive(utc_now())
     purchase_id = ObjectId()
     remote_id = f"subscription-plan-{purchase_id}"
@@ -107,7 +131,8 @@ async def create_subscription_plan_checkout(
         "plan_tier": tier,
         "billing_period": period,
         "plan_amount_usd": plan_amount_usd,
-        "invoice_amount_usd": plan_amount_usd,
+        "discount_percent": discount_percent,
+        "invoice_amount_usd": invoice_amount_usd,
         "currency": "USD",
         "exchange_rates_cup_per_unit": rates,
         "status": "creating_invoice",
@@ -118,7 +143,7 @@ async def create_subscription_plan_checkout(
 
     try:
         invoice = await create_invoice(
-            amount=plan_amount_usd,
+            amount=invoice_amount_usd,
             description=f"Plan {tier.title()} {period}, {document['store_name']}",
             remote_id=remote_id,
         )
@@ -156,6 +181,8 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
     rates = snapshot_cup_per_unit()
     configured_price = (await get_plan_prices()).get_price(tier, period)
     amount_usd = _usd_amount(configured_price.amount, configured_price.currency, rates)
+    discount_percent = await _qvapay_plan_discount_percent()
+    invoice_amount_usd = _discounted_usd(amount_usd, discount_percent)
     now = to_utc_naive(utc_now())
     purchase_id = ObjectId()
     remote_id = f"subscription-plan-{purchase_id}"
@@ -167,7 +194,8 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
         "plan_tier": tier,
         "billing_period": period,
         "plan_amount_usd": amount_usd,
-        "invoice_amount_usd": amount_usd,
+        "discount_percent": discount_percent,
+        "invoice_amount_usd": invoice_amount_usd,
         "currency": "USD",
         "exchange_rates_cup_per_unit": rates,
         "status": "creating_invoice",
@@ -178,7 +206,7 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
     await purchases.insert_one(document)
     try:
         invoice = await create_invoice(
-            amount=amount_usd,
+            amount=invoice_amount_usd,
             description=f"Plan {tier.title()} {period}, Alta de tienda",
             remote_id=remote_id,
         )
