@@ -8,6 +8,7 @@ RESERVED_STORE_SLUGS = frozenset(
         "configuracion",
         "aplicacion",
         "terminos",
+        "preguntas",
         "g",
     }
 )
