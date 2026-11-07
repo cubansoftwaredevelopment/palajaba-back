@@ -215,6 +215,7 @@ class OrderPublic(BaseModel):
     payment_method: OrderPaymentMethod = "contact"
     qvapay: dict | None = None
     store_agreements: OrderAgreementsPublic | None = None
+    platform_terms: dict | None = None
 
 
 class UpdateOrderRequest(BaseModel):

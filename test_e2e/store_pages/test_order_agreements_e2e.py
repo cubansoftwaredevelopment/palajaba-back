@@ -92,6 +92,10 @@ class OrderAgreementsE2ETests(unittest.TestCase):
             contact = client.post("/api/marketplace/orders", headers=headers, json=order_body)
             self.assertEqual(contact.status_code, 201, contact.text)
             self.assertIsNone(contact.json()["store_agreements"])
+            attached = contact.json()["platform_terms"]
+            self.assertEqual(attached["version"], "2026-11-07")
+            self.assertEqual(attached["sections"][0]["title"], "1. Identificación, objeto y aceptación")
+            self.assertTrue(attached["attached_at"])
 
             qvapay_body = {**order_body, "payment_method": "qvapay"}
             missing = client.post("/api/marketplace/orders", headers=headers, json=qvapay_body)

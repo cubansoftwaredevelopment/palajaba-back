@@ -154,6 +154,7 @@ class QvaPaySubscriptionE2ETests(unittest.TestCase):
                 "email": f"signup-{checkout['purchase_id']}@qvapay-plan-e2e.test",
                 "phone": f"{(int(checkout['purchase_id'], 16) % 90000000) + 10000000:08d}",
                 "password": "clave123",
+                "accepted_terms": True,
             }
             unpaid = client.post("/api/register/otp/start", json=registration)
             self.assertEqual(unpaid.status_code, 409, unpaid.text)

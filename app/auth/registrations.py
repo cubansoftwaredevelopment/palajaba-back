@@ -200,6 +200,8 @@ async def create_registration(
     discount_code: str | None = None,
     is_trial: bool = False,
     is_account: bool = False,
+    terms_accepted_at=None,
+    terms_version: str | None = None,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     now = to_utc_naive(utc_now())
@@ -279,6 +281,8 @@ async def create_registration(
         },
         "checkout_gestor_ids": [],
         "checkout_include_store_phone": True,
+        "terms_accepted_at": terms_accepted_at,
+        "terms_version": terms_version,
     }
 
     if discount_code:

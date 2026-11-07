@@ -17,6 +17,7 @@ from app.database import (
     get_registrations_collection,
 )
 from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
+from app.platform_terms import acceptance_record, stored_acceptance
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
 from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
@@ -75,6 +76,8 @@ async def _get_registration_challenge(challenge_id: str) -> dict[str, Any]:
 
 
 async def start_customer_registration(payload: CustomerRegisterRequest) -> CustomerOtpStartResponse:
+    now = to_utc_naive(utc_now())
+    accepted = acceptance_record(payload.accepted_terms, now)
     customers = get_customers_collection()
     for field, value in (("email", payload.email), ("phone", payload.phone), ("identity_card", payload.identity_card)):
         if await customers.find_one({field: value}):
@@ -83,13 +86,13 @@ async def start_customer_registration(payload: CustomerRegisterRequest) -> Custo
 
     email_result = await send_otp(email=payload.email)
     phone_result = await send_otp(phone_e164=f"+53{payload.phone}")
-    now = to_utc_naive(utc_now())
     document = {
         "full_name": payload.full_name,
         "email": payload.email,
         "phone": payload.phone,
         "identity_card": payload.identity_card,
         "password_hash": hash_password(payload.password),
+        **accepted,
         "email_hash": email_result.hash,
         "phone_hash": phone_result.hash,
         "email_verified": False,
@@ -144,6 +147,7 @@ async def confirm_customer_registration(payload: CustomerOtpConfirmRequest) -> C
         "phone": doc["phone"],
         "identity_card": doc["identity_card"],
         "password_hash": doc["password_hash"],
+        **stored_acceptance(doc),
         "profile_photo_url": None,
         "addresses": [],
         "favorite_product_ids": [],
@@ -454,6 +458,7 @@ async def list_customer_orders(customer_id: str):
             "payment_method": doc.get("payment_method") or "contact",
             "qvapay": _customer_order_qvapay_public(doc.get("qvapay")),
             "store_agreements": doc.get("store_agreements") if isinstance(doc.get("store_agreements"), dict) else None,
+            "platform_terms": doc.get("platform_terms") if isinstance(doc.get("platform_terms"), dict) else None,
         }
         for doc in docs
     ]

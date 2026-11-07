@@ -284,6 +284,7 @@ def _order_summary(doc: dict[str, Any], disputed_id: ObjectId) -> dict[str, Any]
         "fee_usd": qvapay.get("fee_usd"),
         "invoice_amount_usd": qvapay.get("invoice_amount_usd"),
         "disputed": doc["_id"] == disputed_id,
+        "platform_terms": doc.get("platform_terms") if isinstance(doc.get("platform_terms"), dict) else None,
     }
 
 

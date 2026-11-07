@@ -209,6 +209,7 @@ class RegisterRequest(BaseModel):
     discount_code: str | None = None
     qvapay_purchase_id: str | None = Field(default=None, max_length=40)
     kind: RegisterKind = "paid"
+    accepted_terms: bool = False
 
     @field_validator("transfer_id")
     @classmethod

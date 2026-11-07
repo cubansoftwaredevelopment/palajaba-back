@@ -18,6 +18,7 @@ class CustomerRegisterRequest(BaseModel):
     phone: str
     identity_card: str
     password: str = Field(..., min_length=6, max_length=128)
+    accepted_terms: bool = False
 
     @field_validator("full_name")
     @classmethod

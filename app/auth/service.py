@@ -116,6 +116,7 @@ from app.auth.schemas import (
     RegisterOtpStartResponse,
     RegisterRequest,
 )
+from app.platform_terms import acceptance_record, stored_acceptance
 from app.auth.registrations import (
     assert_contact_available,
     create_registration,
@@ -165,6 +166,8 @@ async def _get_challenge(challenge_id: str) -> dict:
 
 
 async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartResponse:
+    now = to_utc_naive(utc_now())
+    accepted = acceptance_record(payload.accepted_terms, now)
     if payload.kind == "account":
         if not payload.qvapay_purchase_id:
             raise HTTPException(status_code=400, detail="Debes pagar el plan QvaPay antes de crear la tienda.")
@@ -178,13 +181,13 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
         email=payload.email,
         store_name=payload.store_name,
     )
-    now = to_utc_naive(utc_now())
     collection = get_registration_otp_challenges_collection()
     phone_result = await send_otp(phone_e164=phone_e164(payload.phone))
     email_result = await send_otp(email=payload.email)
     document = {
         "kind": payload.kind,
         "transfer_id": payload.transfer_id,
+        **accepted,
         "store_name": payload.store_name,
         "email": payload.email,
         "phone": payload.phone,
@@ -281,6 +284,7 @@ async def confirm_registration_otp(
 
     is_trial = doc.get("kind") == "trial"
     is_account = doc.get("kind") == "account"
+    acceptance = stored_acceptance(doc)
     registration = await create_registration(
         transfer_id=doc.get("transfer_id"),
         store_name=doc["store_name"],
@@ -292,6 +296,8 @@ async def confirm_registration_otp(
         discount_code=doc.get("discount_code"),
         is_trial=is_trial,
         is_account=is_account,
+        terms_accepted_at=acceptance["terms_accepted_at"],
+        terms_version=acceptance["terms_version"],
     )
     if is_account:
         await subscription_service.attach_paid_subscription_checkout(
@@ -346,6 +352,7 @@ async def complete_registration_payment(
     elif not payload.transfer_id:
         raise HTTPException(status_code=400, detail="El ID de la transferencia es obligatorio.")
 
+    acceptance = stored_acceptance(doc)
     registration = await create_registration(
         transfer_id=payload.transfer_id,
         store_name=doc["store_name"],
@@ -356,6 +363,8 @@ async def complete_registration_payment(
         plan_tier=doc["plan_tier"],
         discount_code=doc.get("discount_code"),
         is_account=is_qvapay,
+        terms_accepted_at=acceptance["terms_accepted_at"],
+        terms_version=acceptance["terms_version"],
     )
     if is_qvapay:
         await subscription_service.attach_paid_subscription_checkout(

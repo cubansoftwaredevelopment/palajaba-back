@@ -20,6 +20,7 @@ from app.orders.schemas import (
     UpdateOrderRequest,
 )
 from app.orders.utils import compute_order_products_revenue
+from app.platform_terms import platform_terms_snapshot
 from app.products.utils import bump_products_on_order_completed
 from app.services.store_pages import (
     STORE_PAGE_TITLES,
@@ -94,6 +95,7 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         payment_method=doc.get("payment_method") or "contact",
         qvapay=_public_qvapay(doc.get("qvapay")),
         store_agreements=_public_store_agreements(doc.get("store_agreements")),
+        platform_terms=_public_platform_terms(doc.get("platform_terms")),
     )
 
 
@@ -141,6 +143,12 @@ def _store_agreements_snapshot(
             "accepted_at": now,
         }
     return recorded or None
+
+
+def _public_platform_terms(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or not isinstance(value.get("sections"), list) or not value.get("version"):
+        return None
+    return value
 
 
 def _public_qvapay(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -393,6 +401,7 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
         now=now,
         required=payload.payment_method == "qvapay",
     )
+    doc["platform_terms"] = platform_terms_snapshot(now)
     doc["payment_method"] = payload.payment_method
     if payload.payment_method == "qvapay":
         if not seller.get("qvapay_username"):
@@ -457,6 +466,7 @@ async def create_seller_manual_order(
         origin="manual",
         now=now,
     )
+    doc["platform_terms"] = platform_terms_snapshot(now)
 
     try:
         result = await get_orders_collection().insert_one(doc)

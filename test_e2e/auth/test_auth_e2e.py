@@ -6,6 +6,7 @@ import unittest
 
 from bson import ObjectId
 
+from app.database import get_registrations_collection
 from test_e2e.auth.utils.fixtures import (
     EMAIL_CODE,
     PHONE_CODE,
@@ -17,7 +18,7 @@ from test_e2e.auth.utils.fixtures import (
     unique_phone,
 )
 from test_e2e.utils.api import api_client
-from test_e2e.utils.database import mongo_configured
+from test_e2e.utils.database import mongo_configured, run_db
 
 
 @unittest.skipUnless(mongo_configured(), "MONGODB_URL no configurada")
@@ -89,6 +90,22 @@ class AuthE2ETests(unittest.TestCase):
         self.assertEqual(body["subscription_expired"]["code"], "subscription_expired")
         self.assertEqual(body["subscription_expired"]["store_name"], seller["store_name"])
 
+    def test_register_without_terms_is_rejected(self) -> None:
+        seller_id = ObjectId()
+        with api_client() as client:
+            started = client.post(
+                "/api/register/otp/start",
+                json={
+                    "kind": "trial",
+                    "store_name": store_name(str(seller_id)),
+                    "email": unique_email(str(seller_id)),
+                    "phone": unique_phone(seller_id),
+                    "password": "nueva123",
+                },
+            )
+        self.assertEqual(started.status_code, 400, started.text)
+        self.assertEqual(started.json()["detail"], "Debes aceptar los términos y condiciones.")
+
     def test_trial_register_otp_creates_store_and_allows_login(self) -> None:
         seller_id = ObjectId()
         payload = {
@@ -97,6 +114,7 @@ class AuthE2ETests(unittest.TestCase):
             "email": unique_email(str(seller_id)),
             "phone": unique_phone(seller_id),
             "password": "nueva123",
+            "accepted_terms": True,
         }
 
         with patch_otp(), api_client() as client:
@@ -144,6 +162,13 @@ class AuthE2ETests(unittest.TestCase):
         self.assertTrue(seller["has_product_discounts"])
         self.assertTrue(seller["has_statistics"])
         self.assertFalse(seller["has_full_store_customization"])
+
+        async def stored_terms():
+            return await get_registrations_collection().find_one({"email": payload["email"]}, {"terms_version": 1, "terms_accepted_at": 1})
+
+        stored = run_db(stored_terms)
+        self.assertEqual(stored["terms_version"], "2026-11-07")
+        self.assertIsNotNone(stored["terms_accepted_at"])
 
     def test_password_reset_otp_then_login_with_new_password(self) -> None:
         seller = seed_seller()
