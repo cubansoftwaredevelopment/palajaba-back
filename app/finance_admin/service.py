@@ -60,11 +60,33 @@ async def ensure_finance_indexes() -> None:
     await debts.create_index([("created_at", DESCENDING)])
     await debts.create_index([("deleted", ASCENDING), ("liquidated", ASCENDING)])
     await ledger.create_index([("at", DESCENDING)])
+    await _ensure_ledger_source_index(ledger)
+
+
+async def _ensure_ledger_source_index(ledger) -> None:
+    """Crea el índice de origen sin borrarlo en cada arranque.
+
+    Borrarlo mientras Mongo lo está construyendo aborta el build (código 276)
+    y tumba el proceso.
+    """
+    keys = [("source", ASCENDING), ("source_id", ASCENDING)]
+    name = "source_1_source_id_1"
     try:
-        await ledger.drop_index("source_1_source_id_1")
-    except OperationFailure:
-        pass
-    await ledger.create_index([("source", ASCENDING), ("source_id", ASCENDING)], unique=False)
+        await ledger.create_index(keys, name=name, unique=False)
+    except OperationFailure as exc:
+        if getattr(exc, "code", None) not in {85, 86}:
+            if getattr(exc, "code", None) == 276:
+                return
+            raise
+        try:
+            await ledger.drop_index(name)
+        except OperationFailure:
+            return
+        try:
+            await ledger.create_index(keys, name=name, unique=False)
+        except OperationFailure as retry_exc:
+            if getattr(retry_exc, "code", None) != 276:
+                raise
 
 
 def _oid(value: str) -> ObjectId:
