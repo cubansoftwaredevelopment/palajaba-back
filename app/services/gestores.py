@@ -757,6 +757,13 @@ async def update_gestor_selected_products(
     seller_id: str,
     payload: GestorSelectedProductsUpdate,
 ) -> GestorPublic:
+    from app.auth.utils import INACTIVE_SUBSCRIPTION_DETAIL
+    from app.subscriptions.service import is_subscription_active
+
+    seller = await get_registrations_collection().find_one({"_id": ObjectId(seller_id)})
+    if seller is None or not is_subscription_active(seller):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=INACTIVE_SUBSCRIPTION_DETAIL)
+
     access = await get_seller_gestor_catalog_access(seller_id)
     gestor = await _get_gestor_for_seller(seller_id, gestor_id)
 

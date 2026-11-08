@@ -86,9 +86,10 @@ class AuthE2ETests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         body = response.json()
-        self.assertIsNone(body["access_token"])
-        self.assertEqual(body["subscription_expired"]["code"], "subscription_expired")
-        self.assertEqual(body["subscription_expired"]["store_name"], seller["store_name"])
+        self.assertTrue(body["access_token"])
+        self.assertIsNone(body.get("subscription_expired"))
+        self.assertEqual(body["seller"]["store_name"], seller["store_name"])
+        self.assertFalse(body["seller"]["subscription_active"])
 
     def test_register_without_terms_is_rejected(self) -> None:
         seller_id = ObjectId()

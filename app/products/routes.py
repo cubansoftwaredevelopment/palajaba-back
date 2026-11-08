@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 
-from app.auth.utils import require_admin, require_seller
+from app.auth.utils import require_active_seller, require_admin, require_seller
 from app.products.schemas import (
     AdminProductList,
     CatalogCategoryCreate,
@@ -32,7 +32,7 @@ async def get_my_catalog(seller_payload: dict = Depends(require_seller)):
 @seller_router.post("/me/catalog/categories", response_model=CatalogCategoryPublic, status_code=201)
 async def create_my_catalog_category(
     payload: CatalogCategoryCreate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await products_service.create_catalog_category(
         seller_payload["seller_id"],
@@ -43,7 +43,7 @@ async def create_my_catalog_category(
 @seller_router.delete("/me/catalog/categories/{category_id}", status_code=204)
 async def delete_my_catalog_category(
     category_id: str,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     await products_service.delete_catalog_category(
         seller_payload["seller_id"],
@@ -54,7 +54,7 @@ async def delete_my_catalog_category(
 @seller_router.put("/me/catalog/categories/order", response_model=CatalogSummaryPublic)
 async def reorder_my_catalog_categories(
     payload: CatalogCategoryReorder,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await products_service.reorder_catalog_categories(
         seller_payload["seller_id"],
@@ -69,7 +69,7 @@ async def reorder_my_catalog_categories(
 async def update_my_catalog_category_product_sort(
     category_id: str,
     payload: CatalogCategoryProductSortUpdate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await products_service.update_category_product_sort_mode(
         seller_payload["seller_id"],
@@ -85,7 +85,7 @@ async def update_my_catalog_category_product_sort(
 async def reorder_my_catalog_products(
     category_id: str,
     payload: CatalogProductReorder,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await products_service.reorder_catalog_products(
         seller_payload["seller_id"],
@@ -97,7 +97,7 @@ async def reorder_my_catalog_products(
 @seller_router.patch("/me/catalog/theme", response_model=CatalogThemePublic)
 async def update_my_catalog_theme(
     payload: CatalogThemeUpdate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     saved = await catalog_theme_service.update_seller_catalog_theme(
         seller_payload["seller_id"],
@@ -131,7 +131,7 @@ async def create_my_catalog_product(
     base_price: float = Form(...),
     base_currency: str = Form(...),
     offers_delivery: bool = Form(...),
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
     description: str | None = Form(None),
     accepted_currencies: str = Form("[]"),
     view_only: bool = Form(False),
@@ -174,7 +174,7 @@ async def update_my_catalog_product(
     base_price: float = Form(...),
     base_currency: str = Form(...),
     offers_delivery: bool = Form(...),
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
     description: str | None = Form(None),
     accepted_currencies: str = Form("[]"),
     view_only: bool = Form(False),
@@ -216,7 +216,7 @@ async def update_my_catalog_product(
 @seller_router.delete("/me/catalog/products/{product_id}", status_code=204)
 async def delete_my_catalog_product(
     product_id: str,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     await products_service.delete_catalog_product(
         seller_payload["seller_id"],

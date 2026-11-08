@@ -21,7 +21,7 @@ from app.payments.schema import (
     SellerAcceptPaymentRequest,
     SubscriptionPlanCheckoutRequest,
 )
-from app.auth.utils import require_customer, require_seller
+from app.auth.utils import require_active_seller, require_customer, require_seller
 from app.live.devices import delete_customer_device, register_customer_device
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,7 @@ async def get_seller_qvapay_account(seller: dict = Depends(require_seller)):
 
 
 @account_router.put("/api/auth/me/payment-methods/qvapay")
-async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict = Depends(require_seller)):
+async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict = Depends(require_active_seller)):
     return await service.save_qvapay_account(
         seller["seller_id"],
         payload.username,
@@ -127,12 +127,12 @@ async def put_seller_qvapay_account(payload: QvaPayAccountRequest, seller: dict 
 
 
 @account_router.delete("/api/auth/me/payment-methods/qvapay", status_code=204)
-async def delete_seller_qvapay_account(seller: dict = Depends(require_seller)):
+async def delete_seller_qvapay_account(seller: dict = Depends(require_active_seller)):
     await service.delete_qvapay_account(seller["seller_id"])
 
 
 @account_router.post("/api/auth/me/payment-methods/qvapay/dismiss", status_code=204)
-async def dismiss_seller_qvapay_prompt(seller: dict = Depends(require_seller)):
+async def dismiss_seller_qvapay_prompt(seller: dict = Depends(require_active_seller)):
     await service.dismiss_qvapay_prompt(seller["seller_id"])
 
 
@@ -171,22 +171,22 @@ async def open_customer_order_dispute(order_id: str, payload: DisputeOpenRequest
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/disputes/images")
-async def upload_seller_dispute_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+async def upload_seller_dispute_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_active_seller)):
     return await dispute_service.upload_dispute_image(order_id, "seller", seller["seller_id"], photo)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/disputes")
-async def open_seller_order_dispute(order_id: str, payload: DisputeOpenRequest, seller: dict = Depends(require_seller)):
+async def open_seller_order_dispute(order_id: str, payload: DisputeOpenRequest, seller: dict = Depends(require_active_seller)):
     return await dispute_service.open_dispute(order_id, "seller", seller["seller_id"], text=payload.text, images=payload.images)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/refund/images")
-async def upload_seller_refund_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+async def upload_seller_refund_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_active_seller)):
     return await refund_service.upload_refund_image(seller["seller_id"], order_id, photo)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/refund")
-async def refund_seller_qvapay_order(order_id: str, payload: StoreRefundRequest, seller: dict = Depends(require_seller)):
+async def refund_seller_qvapay_order(order_id: str, payload: StoreRefundRequest, seller: dict = Depends(require_active_seller)):
     return await refund_service.refund_order_for_store(
         seller["seller_id"],
         order_id,
@@ -198,7 +198,7 @@ async def refund_seller_qvapay_order(order_id: str, payload: StoreRefundRequest,
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/accept")
-async def accept_seller_qvapay_order(order_id: str, payload: SellerAcceptPaymentRequest, seller: dict = Depends(require_seller)):
+async def accept_seller_qvapay_order(order_id: str, payload: SellerAcceptPaymentRequest, seller: dict = Depends(require_active_seller)):
     try:
         return await service.accept_payment_request(
             seller["seller_id"], order_id,
@@ -210,17 +210,17 @@ async def accept_seller_qvapay_order(order_id: str, payload: SellerAcceptPayment
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/qvapay/reject", status_code=204)
-async def reject_seller_qvapay_order(order_id: str, seller: dict = Depends(require_seller)):
+async def reject_seller_qvapay_order(order_id: str, seller: dict = Depends(require_active_seller)):
     await service.reject_payment_request(seller["seller_id"], order_id)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/evidence/images")
-async def upload_seller_order_evidence_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_seller)):
+async def upload_seller_order_evidence_image(order_id: str, photo: UploadFile = File(...), seller: dict = Depends(require_active_seller)):
     return await service.upload_evidence_image(seller["seller_id"], order_id, photo)
 
 
 @account_router.post("/api/auth/me/orders/{order_id}/evidence")
-async def submit_seller_order_evidence(order_id: str, payload: EvidenceSubmitRequest, seller: dict = Depends(require_seller)):
+async def submit_seller_order_evidence(order_id: str, payload: EvidenceSubmitRequest, seller: dict = Depends(require_active_seller)):
     return await service.submit_evidence(seller["seller_id"], order_id, payload.content)
 
 

@@ -214,6 +214,38 @@ async def require_seller(
     return payload
 
 
+INACTIVE_SUBSCRIPTION_DETAIL = "Tu suscripción está inactiva. Renueva el plan para volver a operar."
+
+
+async def require_active_seller(
+    seller_payload: dict = Depends(require_seller),
+) -> dict:
+    from bson import ObjectId
+
+    from app.auth.registrations import mark_registration_expired_if_needed
+    from app.database import get_registrations_collection
+    from app.subscriptions.service import is_subscription_active
+
+    try:
+        seller_oid = ObjectId(str(seller_payload.get("seller_id") or ""))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    doc = await get_registrations_collection().find_one({"_id": seller_oid})
+    if doc is None or not is_subscription_active(doc):
+        if doc is not None:
+            await mark_registration_expired_if_needed(doc)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=INACTIVE_SUBSCRIPTION_DETAIL,
+        )
+    return seller_payload
+
+
 async def require_customer(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:

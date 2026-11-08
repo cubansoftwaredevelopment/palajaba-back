@@ -27,7 +27,7 @@ from app.auth.schemas import (
     SubscriptionExpiredPublic,
 )
 from app.auth import service as auth_service
-from app.auth.utils import create_seller_token, require_seller
+from app.auth.utils import create_seller_token, require_active_seller, require_seller
 from app.schemas.seller_profile import (
     SellerContactOtpConfirmRequest,
     SellerContactOtpResendRequest,
@@ -103,7 +103,7 @@ async def seller_me(seller_payload: dict = Depends(require_seller)):
 @auth_router.patch("/me/phone", response_model=SellerPublic)
 async def update_seller_phone(
     _payload: SellerPhoneUpdate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     raise HTTPException(
         status_code=status.HTTP_410_GONE,
@@ -114,7 +114,7 @@ async def update_seller_phone(
 @auth_router.post("/me/phone/otp/start", response_model=SellerContactOtpStartResponse)
 async def start_seller_phone_otp(
     payload: SellerPhoneUpdate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await start_phone_change(
         seller_id=seller_payload["seller_id"],
@@ -125,7 +125,7 @@ async def start_seller_phone_otp(
 @auth_router.post("/me/email/otp/start", response_model=SellerContactOtpStartResponse)
 async def start_seller_email_otp(
     payload: SellerEmailUpdate,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await start_email_change(
         seller_id=seller_payload["seller_id"],
@@ -136,7 +136,7 @@ async def start_seller_email_otp(
 @auth_router.post("/me/contact-otp/resend", response_model=SellerContactOtpStartResponse)
 async def resend_seller_contact_otp(
     payload: SellerContactOtpResendRequest,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await resend_contact_change(
         seller_id=seller_payload["seller_id"],
@@ -147,7 +147,7 @@ async def resend_seller_contact_otp(
 @auth_router.post("/me/contact-otp/confirm", response_model=SellerPublic)
 async def confirm_seller_contact_otp(
     payload: SellerContactOtpConfirmRequest,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     return await confirm_contact_change(
         seller_id=seller_payload["seller_id"],

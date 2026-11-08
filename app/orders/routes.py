@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 
-from app.auth.utils import require_customer, require_seller
+from app.auth.utils import require_active_seller, require_customer, require_seller
 from app.orders.constants import InvoiceType
 from app.orders.schemas import CreateOrderRequest, CreateSellerManualOrderRequest, OrderPublic, UpdateOrderRequest
 from app.orders import service as orders_service
@@ -27,7 +27,7 @@ async def list_my_orders(
 @seller_router.post("/me/orders", response_model=OrderPublic, status_code=201)
 async def create_my_manual_order(
     payload: CreateSellerManualOrderRequest,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     try:
         return await orders_service.create_seller_manual_order(
@@ -42,7 +42,7 @@ async def create_my_manual_order(
 async def update_my_order(
     order_id: str,
     payload: UpdateOrderRequest,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     try:
         return await orders_service.update_seller_order(
@@ -57,7 +57,7 @@ async def update_my_order(
 @seller_router.delete("/me/orders/{order_id}", status_code=204)
 async def delete_my_order(
     order_id: str,
-    seller_payload: dict = Depends(require_seller),
+    seller_payload: dict = Depends(require_active_seller),
 ):
     try:
         await orders_service.delete_seller_order(
