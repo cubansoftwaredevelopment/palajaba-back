@@ -39,8 +39,8 @@ def clean_refund_images(images: list[str]) -> list[str]:
         if not allowed:
             raise HTTPException(status_code=400, detail="La imagen del motivo no es válida.")
         clean.append(src)
-    if not clean or len(clean) > 6:
-        raise HTTPException(status_code=400, detail="Adjunta entre 1 y 6 imágenes del motivo.")
+    if len(clean) > 6:
+        raise HTTPException(status_code=400, detail="Puedes adjuntar hasta 6 imágenes del motivo.")
     return clean
 
 

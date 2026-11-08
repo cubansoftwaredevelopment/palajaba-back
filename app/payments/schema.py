@@ -86,7 +86,7 @@ class StoreRefundRequest(BaseModel):
     items: list[RefundLineRequest] = Field(..., min_length=1)
     refund_delivery: bool = False
     text: str = Field(..., min_length=3, max_length=2000)
-    images: list[str] = Field(..., min_length=1, max_length=6)
+    images: list[str] = Field(default_factory=list, max_length=6)
 
     @field_validator("text")
     @classmethod
@@ -99,10 +99,7 @@ class StoreRefundRequest(BaseModel):
     @field_validator("images")
     @classmethod
     def normalize_refund_images(cls, value: list[str]) -> list[str]:
-        cleaned = [item.strip() for item in value if str(item or "").strip()]
-        if not cleaned:
-            raise ValueError("Adjunta al menos una imagen del motivo.")
-        return cleaned
+        return [item.strip() for item in value if str(item or "").strip()]
 
 
 class CustomerOrderNotificationPublic(BaseModel):
