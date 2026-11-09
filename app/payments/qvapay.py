@@ -133,11 +133,65 @@ def _money(value: Any) -> float | None:
     return amount
 
 
+def _cents(amount: float) -> int:
+    return int((Decimal(str(amount)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _format_cents(cents: int) -> str:
+    return f"{(Decimal(cents) / Decimal(100)).quantize(Decimal('0.01')):.2f}"
+
+
+def _split_cents(total: int, weights: list[int]) -> list[int]:
+    count = len(weights)
+    if count == 0:
+        return []
+    weight_sum = sum(weights)
+    if total <= 0 or weight_sum <= 0:
+        return [0] * count
+    raw = [total * weight for weight in weights]
+    shares = [value // weight_sum for value in raw]
+    leftover = total - sum(shares)
+    order = sorted(
+        range(count),
+        key=lambda index: (raw[index] % weight_sum, weights[index]),
+        reverse=True,
+    )
+    for index in order[:leftover]:
+        shares[index] += 1
+    return shares
+
+
+def _is_delivery_name(name: str) -> bool:
+    return name.strip().lower() in {"domicilio", "envio", "envío"}
+
+
+def _absorb_fee(articles: list[dict[str, Any]], deliveries: list[dict[str, Any]], fee_cents: int) -> None:
+    if fee_cents <= 0 or not (articles or deliveries):
+        return
+    article_weight = sum(int(line["cents"]) for line in articles)
+    delivery_weight = sum(int(line["cents"]) for line in deliveries)
+    if article_weight <= 0 and delivery_weight <= 0:
+        return
+    if article_weight <= 0:
+        article_fee, delivery_fee = 0, fee_cents
+    elif delivery_weight <= 0:
+        article_fee, delivery_fee = fee_cents, 0
+    else:
+        article_fee, delivery_fee = _split_cents(fee_cents, [article_weight, delivery_weight])
+    if article_fee and articles:
+        for line, share in zip(articles, _split_cents(article_fee, [int(line["cents"]) for line in articles])):
+            line["cents"] = int(line["cents"]) + share
+    if delivery_fee and deliveries:
+        for line, share in zip(deliveries, _split_cents(delivery_fee, [int(line["cents"]) for line in deliveries])):
+            line["cents"] = int(line["cents"]) + share
+
+
 def _invoice_products(
     products: list[dict[str, Any]] | None, *, invoice_amount: float
 ) -> list[dict[str, Any]]:
-    details: list[str] = []
-    fee_total = 0.0
+    articles: list[dict[str, Any]] = []
+    deliveries: list[dict[str, Any]] = []
+    fee_cents = 0
     for raw in products or []:
         name = " ".join(
             "".join(char if char.isprintable() else " " for char in str(raw.get("name") or "")).split()
@@ -150,11 +204,18 @@ def _invoice_products(
         if not name or price is None or quantity < 1:
             continue
         if raw.get("is_fee") is True or name.strip().lower() == "fee":
-            fee_total += price
+            fee_cents += _cents(price)
+            continue
+        line = {"name": name, "quantity": quantity, "cents": _cents(price)}
+        if _is_delivery_name(name):
+            deliveries.append(line)
         else:
-            details.append(f"{name} x{quantity}: {price:.2f}")
-    if fee_total > 0:
-        details.append(f"fee: {fee_total:.2f}")
+            articles.append(line)
+    _absorb_fee(articles, deliveries, fee_cents)
+    details = [
+        f"{line['name']} x{line['quantity']}: {_format_cents(int(line['cents']))}"
+        for line in (*articles, *deliveries)
+    ]
     total = _money(invoice_amount)
     if not details or total is None:
         return []
