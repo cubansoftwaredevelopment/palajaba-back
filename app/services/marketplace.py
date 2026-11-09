@@ -574,8 +574,22 @@ def _normalize_display_currency(currency: str | list[str] | None) -> str | None:
     return codes[0] if codes else None
 
 
+# QUSD es el dólar de QvaPay y se cotiza 1 a 1 con el USD.
+_DOLLAR_CURRENCIES = frozenset({"USD", "QUSD"})
+
+
+def _equivalent_currencies(currencies: list[str] | None) -> list[str]:
+    expanded: list[str] = []
+    for code in currencies or []:
+        group = _DOLLAR_CURRENCIES if code in _DOLLAR_CURRENCIES else (code,)
+        for item in group:
+            if item not in expanded:
+                expanded.append(item)
+    return expanded
+
+
 def _currency_acceptance_clause(currency: str | list[str] | None) -> dict[str, Any] | None:
-    currencies = _normalize_display_currencies(currency)
+    currencies = _equivalent_currencies(_normalize_display_currencies(currency))
     if not currencies:
         return None
     if len(currencies) == 1:
@@ -940,7 +954,7 @@ async def list_availability_hints(
 ) -> MarketplaceAvailabilityHintsPublic:
     """Ejemplos de monedas y categorías con productos cuando la configuración actual no tiene."""
     currencies = _normalize_display_currencies(currency)
-    selected_currencies = set(currencies or [])
+    selected_currencies = set(_equivalent_currencies(currencies))
     normalized_category = (
         _normalize_marketplace_category_id(category_id) if category_id and category_id.strip() else None
     )
