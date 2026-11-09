@@ -57,7 +57,7 @@ async def _qvapay_plan_discount_percent() -> float:
 
 
 def _usd_amount(amount: float, currency: str, rates: dict[str, float]) -> float:
-    if currency == "USD":
+    if currency in {"USD", "QUSD"}:
         raw = float(amount)
     else:
         source_rate = rates.get(currency)

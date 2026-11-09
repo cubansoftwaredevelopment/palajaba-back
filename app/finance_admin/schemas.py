@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.constants import CURRENCY_CODES
 from app.utils.datetime import UtcDateTime
 
-FinanceCurrency = Literal["CUP", "USD", "EUR", "MLC"]
+FinanceCurrency = Literal["CUP", "USD", "EUR", "MLC", "QUSD"]
 LedgerKind = Literal["income", "extraction"]
 LedgerSource = Literal["subscription", "debt_liquidation", "manual"]
 

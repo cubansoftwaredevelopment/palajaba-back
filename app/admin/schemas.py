@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.constants import CURRENCY_CODES, DEFAULT_ADVERTISING_PRICES, DEFAULT_PLAN_PRICES
 from app.utils.phone import normalize_admin_phone, normalize_phone_digits
 
-PlanCurrency = Literal["CUP", "USD", "EUR", "MLC"]
+PlanCurrency = Literal["CUP", "USD", "EUR", "MLC", "QUSD"]
 PlanTierKey = Literal["standard", "pro", "premium"]
 BillingPeriodKey = Literal["monthly", "quarterly", "yearly"]
 AdvertisingPlanId = Literal["ads-10", "ads-20", "ads-30"]

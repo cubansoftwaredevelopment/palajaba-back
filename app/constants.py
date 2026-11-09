@@ -57,6 +57,7 @@ SUPPORTED_CURRENCIES = [
     {"code": "USD", "label": "Dólar (USD)", "symbol": "$"},
     {"code": "EUR", "label": "Euro (EUR)", "symbol": "€"},
     {"code": "MLC", "label": "MLC", "symbol": "$"},
+    {"code": "QUSD", "label": "QUSD (QvaPay)", "symbol": "$"},
 ]
 
 CURRENCY_CODES = {item["code"] for item in SUPPORTED_CURRENCIES}

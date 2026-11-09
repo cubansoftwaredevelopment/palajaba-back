@@ -168,7 +168,8 @@ async def delete_qvapay_account(seller_id: str) -> None:
 
 
 def _usd(amount: float, currency: str, rates: dict[str, float]) -> float:
-    if currency == "USD":
+    # QUSD es la moneda de QvaPay y vale 1 a 1 con el USD.
+    if currency in {"USD", "QUSD"}:
         return round(float(amount), 2)
     from_rate, usd_rate = rates.get(currency), rates.get("USD")
     if not from_rate or not usd_rate:

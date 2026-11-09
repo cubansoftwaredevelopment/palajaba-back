@@ -15,7 +15,8 @@ from app.utils.datetime import to_utc_naive, utc_now
 logger = logging.getLogger(__name__)
 
 CACHE_DOCUMENT_ID = "eltoque_trmi"
-SUPPORTED_CURRENCIES = ("CUP", "USD", "EUR", "MLC")
+ELTOQUE_CURRENCIES = ("USD", "EUR", "MLC")
+SUPPORTED_CURRENCIES = ("CUP", "USD", "EUR", "MLC", "QUSD")
 ELTOQUE_CURRENCY_MAP = {
     "USD": "USD",
     "ECU": "EUR",
@@ -34,8 +35,16 @@ _refresh_lock = asyncio.Lock()
 _refresh_task: asyncio.Task | None = None
 
 
+def _with_qusd(cup_per_unit: dict[str, float]) -> dict[str, float]:
+    """QUSD es la moneda de QvaPay y se cotiza 1 a 1 con el USD."""
+    usd = cup_per_unit.get("USD")
+    if usd:
+        cup_per_unit["QUSD"] = float(usd)
+    return cup_per_unit
+
+
 def get_cup_per_unit() -> dict[str, float]:
-    return dict(_cup_per_unit_cache)
+    return _with_qusd(dict(_cup_per_unit_cache))
 
 
 def snapshot_cup_per_unit() -> dict[str, float]:
@@ -73,13 +82,13 @@ def _normalize_eltoque_payload(payload: dict[str, Any]) -> tuple[dict[str, float
             continue
         cup_per_unit[target_code] = float(raw_value)
 
-    missing = [code for code in SUPPORTED_CURRENCIES if code not in cup_per_unit]
+    missing = [code for code in ELTOQUE_CURRENCIES if code not in cup_per_unit]
     if missing:
         raise ValueError(f"Faltan tasas requeridas de elTOQUE: {', '.join(missing)}")
 
     reference_date = str(payload.get("date") or "") or None
     reference_time = _format_reference_time(payload)
-    return cup_per_unit, reference_date, reference_time
+    return _with_qusd(cup_per_unit), reference_date, reference_time
 
 
 async def _fetch_eltoque_trmi(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -155,15 +164,13 @@ async def _load_persisted_rates() -> bool:
         return False
 
     cup_per_unit = {"CUP": 1.0}
-    for code in SUPPORTED_CURRENCIES:
-        if code == "CUP":
-            continue
+    for code in ELTOQUE_CURRENCIES:
         value = stored.get(code)
         if value is None:
             return False
         cup_per_unit[code] = float(value)
 
-    _cup_per_unit_cache = cup_per_unit
+    _cup_per_unit_cache = _with_qusd(cup_per_unit)
     _rates_available = True
     _cache_meta = {
         "updated_at": doc.get("updated_at"),
