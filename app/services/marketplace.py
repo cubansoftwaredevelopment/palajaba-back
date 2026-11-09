@@ -631,47 +631,115 @@ def _currency_acceptance_clause(currency: str | list[str] | None) -> dict[str, A
     }
 
 
+def _seller_has_qvapay(seller: dict[str, Any]) -> bool:
+    return bool(str(seller.get("qvapay_username") or "").strip())
+
+
+async def _qvapay_seller_ids(seller_ids: list[str]) -> list[str]:
+    object_ids: list[ObjectId] = []
+    for seller_id in seller_ids:
+        try:
+            object_ids.append(ObjectId(seller_id))
+        except InvalidId:
+            continue
+    if not object_ids:
+        return []
+    docs = await get_registrations_collection().find(
+        {"_id": {"$in": object_ids}},
+        {"qvapay_username": 1},
+    ).to_list(length=None)
+    return [str(doc["_id"]) for doc in docs if _seller_has_qvapay(doc)]
+
+
+def _display_currency_clause(
+    currency: str | list[str] | None,
+    qvapay_seller_ids: list[str],
+) -> dict[str, Any] | None:
+    """QUSD no es otra moneda del producto: deja solo tiendas con usuario QvaPay."""
+    codes = _normalize_display_currencies(currency)
+    if not codes:
+        return None
+    wants_qusd = "QUSD" in codes
+    others = [code for code in codes if code != "QUSD"]
+    parts: list[dict[str, Any]] = []
+    if others:
+        other_clause = _currency_acceptance_clause(others)
+        if other_clause:
+            parts.append(other_clause)
+    if wants_qusd:
+        parts.append({"seller_id": {"$in": qvapay_seller_ids}})
+    if not parts:
+        return None
+    if len(parts) == 1:
+        return parts[0]
+    return {"$or": parts}
+
+
 def _and_match(query: dict[str, Any], clause: dict[str, Any] | None) -> dict[str, Any]:
     if not clause or query.get("_id") == {"$exists": False}:
         return query
     return {"$and": [query, clause]}
 
 
-def _and_currency(query: dict[str, Any], currency: str | None) -> dict[str, Any]:
-    return _and_match(query, _currency_acceptance_clause(currency))
+def _and_currency(
+    query: dict[str, Any],
+    currency: str | list[str] | None,
+    qvapay_seller_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    return _and_match(query, _display_currency_clause(currency, qvapay_seller_ids or []))
 
 
-async def _seller_acceptance_counts(
+def _listable_product_match() -> dict[str, Any]:
+    return {
+        "$or": [
+            {"is_available": True, "view_only": {"$ne": True}},
+            {"view_only": True},
+        ]
+    }
+
+
+async def _count_products_by_seller(
     seller_ids: list[str],
-    currency: str | None,
-) -> dict[str, int] | None:
-    """None si no hay filtro. Si hay moneda, cuántos productos listables la aceptan."""
-    if not currency:
-        return None
+    extra_clause: dict[str, Any] | None = None,
+) -> dict[str, int]:
     if not seller_ids:
         return {}
-    clause = _currency_acceptance_clause(currency)
+    match_parts: list[dict[str, Any]] = [
+        {"seller_id": {"$in": seller_ids}},
+        _listable_product_match(),
+        {"deleted_at": None},
+    ]
+    if extra_clause:
+        match_parts.append(extra_clause)
     docs = await get_catalog_products_collection().aggregate(
         [
-            {
-                "$match": {
-                    "$and": [
-                        {"seller_id": {"$in": seller_ids}},
-                        {
-                            "$or": [
-                                {"is_available": True, "view_only": {"$ne": True}},
-                                {"view_only": True},
-                            ]
-                        },
-                        clause,
-                        {"deleted_at": None},
-                    ]
-                }
-            },
+            {"$match": {"$and": match_parts}},
             {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
         ]
     ).to_list(length=None)
     return {str(doc["_id"]): int(doc.get("count") or 0) for doc in docs if doc.get("_id")}
+
+
+async def _seller_acceptance_counts(
+    seller_ids: list[str],
+    currency: str | list[str] | None,
+) -> dict[str, int] | None:
+    """None si no hay filtro. QUSD cuenta las tiendas con usuario QvaPay."""
+    codes = _normalize_display_currencies(currency)
+    if not codes:
+        return None
+    if not seller_ids:
+        return {}
+    wants_qusd = "QUSD" in codes
+    others = [code for code in codes if code != "QUSD"]
+    counts: dict[str, int] = {}
+    if others:
+        counts.update(await _count_products_by_seller(seller_ids, _currency_acceptance_clause(others)))
+    if wants_qusd:
+        qvapay_ids = await _qvapay_seller_ids(seller_ids)
+        for seller_id, count in (await _count_products_by_seller(qvapay_ids)).items():
+            counts[seller_id] = count
+    return counts
 
 
 def _marketplace_product_query(
@@ -721,7 +789,6 @@ def _seller_store_product_query(
     municipios_adicionales: list[str] | None = None,
 ) -> dict[str, Any]:
     """Catálogo público de una tienda: incluye agotados; el marketplace usa otra query."""
-    _ = seller
     query: dict[str, Any] = {"seller_id": seller_id, "deleted_at": None}
     if extra:
         query.update(extra)
@@ -732,7 +799,8 @@ def _seller_store_product_query(
             municipios_adicionales,
         )
         query = _and_match(query, sales_area_match_clause(province_id, selected_ids))
-    return _and_currency(query, currency)
+    qvapay_ids = [seller_id] if _seller_has_qvapay(seller) else []
+    return _and_currency(query, currency, qvapay_ids)
 
 
 def _extra_buyer_municipality_ids(
@@ -820,7 +888,7 @@ def _search_text_filter(query_text: str) -> dict[str, Any] | None:
     }
 
 
-def _build_marketplace_products_query(
+async def _build_marketplace_products_query(
     local_seller_ids: list[str],
     delivery_seller_ids: list[str],
     *,
@@ -853,7 +921,14 @@ def _build_marketplace_products_query(
     text_filter = _search_text_filter(search_text or "")
     if text_filter:
         query = {"$and": [query, text_filter]}
-    return _and_currency(query, currency)
+    seller_ids = list(dict.fromkeys([
+        *local_seller_ids,
+        *delivery_seller_ids,
+        *(pickup_seller_ids or []),
+    ]))
+    codes = _normalize_display_currencies(currency) or []
+    qvapay_ids = await _qvapay_seller_ids(seller_ids) if "QUSD" in codes else []
+    return _and_currency(query, currency, qvapay_ids)
 
 
 def _base_product_filter(seller_ids: list[str]) -> dict[str, Any]:
@@ -874,6 +949,13 @@ async def _aggregate_category_stats(
     municipality_id: str | None = None,
     sales_area_municipality_ids: list[str] | None = None,
 ) -> dict[str, dict[str, int]]:
+    seller_ids = list(dict.fromkeys([
+        *local_seller_ids,
+        *delivery_seller_ids,
+        *(pickup_seller_ids or []),
+    ]))
+    codes = _normalize_display_currencies(currency) or []
+    qvapay_ids = await _qvapay_seller_ids(seller_ids) if "QUSD" in codes else []
     match_query = _and_currency(
         _marketplace_product_query(
             local_seller_ids,
@@ -884,6 +966,7 @@ async def _aggregate_category_stats(
             sales_area_municipality_ids=sales_area_municipality_ids,
         ),
         currency,
+        qvapay_ids,
     )
     if match_query.get("_id"):
         return {}
@@ -934,7 +1017,7 @@ async def _list_category_product_docs(
     sales_area_municipality_ids: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     products_col = get_catalog_products_collection()
-    query = _build_marketplace_products_query(
+    query = await _build_marketplace_products_query(
         local_seller_ids,
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids,
@@ -977,7 +1060,12 @@ async def list_availability_hints(
 ) -> MarketplaceAvailabilityHintsPublic:
     """Ejemplos de monedas y categorías con productos cuando la configuración actual no tiene."""
     currencies = _normalize_display_currencies(currency)
-    selected_currencies = set(_equivalent_currencies(currencies))
+    selected_codes = set(currencies or [])
+    wants_qusd = "QUSD" in selected_codes
+    other_codes = set(_equivalent_currencies([code for code in selected_codes if code != "QUSD"]))
+    excluded_hints = set(selected_codes)
+    if "USD" in excluded_hints:
+        excluded_hints.add("QUSD")
     normalized_category = (
         _normalize_marketplace_category_id(category_id) if category_id and category_id.strip() else None
     )
@@ -997,10 +1085,15 @@ async def list_availability_hints(
     category_any: dict[str, int] = {}
     products_col = get_catalog_products_collection()
     for municipality_id in seen_municipalities:
-        _seller_by_id, local_ids, delivery_ids, pickup_ids = await _build_marketplace_seller_context(
+        seller_by_id, local_ids, delivery_ids, pickup_ids = await _build_marketplace_seller_context(
             province_id,
             municipality_id,
         )
+        qvapay_ids = {
+            seller_id
+            for seller_id, seller in seller_by_id.items()
+            if _seller_has_qvapay(seller)
+        }
         query = _marketplace_product_query(
             local_ids,
             delivery_ids,
@@ -1012,13 +1105,20 @@ async def list_availability_hints(
             continue
         docs = await products_col.find(
             query,
-            {"base_currency": 1, "accepted_currencies": 1, "global_category_id": 1},
+            {"seller_id": 1, "base_currency": 1, "accepted_currencies": 1, "global_category_id": 1},
         ).to_list(length=400)
         for doc in docs:
             codes = _product_currency_codes(doc)
             category = normalize_business_category_id(str(doc.get("global_category_id") or "otros"))
             category_any[category] = category_any.get(category, 0) + 1
-            matches_currency = not selected_currencies or any(code in selected_currencies for code in codes)
+            matches_other = not other_codes or any(code in other_codes for code in codes)
+            matches_qusd = wants_qusd and str(doc.get("seller_id") or "") in qvapay_ids
+            if not selected_codes:
+                matches_currency = True
+            elif wants_qusd and not other_codes:
+                matches_currency = matches_qusd
+            else:
+                matches_currency = matches_other or matches_qusd
             in_scope = normalized_category is None or category == normalized_category
             if matches_currency:
                 category_in_currency[category] = category_in_currency.get(category, 0) + 1
@@ -1031,7 +1131,7 @@ async def list_availability_hints(
         return [
             code
             for code, _count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
-            if code not in selected_currencies
+            if code not in excluded_hints
         ][:3]
 
     def _top_categories(counts: dict[str, int]) -> list[str]:
@@ -1572,7 +1672,7 @@ async def search_products(
         )
     )
 
-    match_query = _build_marketplace_products_query(
+    match_query = await _build_marketplace_products_query(
         local_seller_ids,
         delivery_seller_ids,
         pickup_seller_ids=pickup_seller_ids or None,
