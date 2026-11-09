@@ -24,7 +24,18 @@ from app.services import banners as banners_service
 from app.services import marketplace as marketplace_service
 from app.services import seller_stats as seller_stats_service
 
-router = APIRouter(prefix="/api/marketplace", tags=["marketplace"])
+async def _load_marketplace_service_fee() -> None:
+    from app.admin.service import get_platform_settings
+
+    platform = await get_platform_settings()
+    marketplace_service.set_marketplace_service_fee_percent(platform.transaction_fee_percent)
+
+
+router = APIRouter(
+    prefix="/api/marketplace",
+    tags=["marketplace"],
+    dependencies=[Depends(_load_marketplace_service_fee)],
+)
 
 
 @router.get("/banners", response_model=list[BannerPublic])

@@ -73,6 +73,7 @@ class MarketplaceProductPublic(BaseModel):
     images: list[CatalogProductImagePublic] = Field(default_factory=list)
     base_price: float
     base_currency: str
+    service_fee_percent: float = 0
     discount_percent: int | None = None
     accepted_currencies: list[str] = Field(default_factory=list)
     offers_delivery: bool

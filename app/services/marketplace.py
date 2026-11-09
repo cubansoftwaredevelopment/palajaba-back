@@ -237,6 +237,28 @@ def _store_profile_fields(seller: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_service_fee_percent = 0.0
+
+
+def set_marketplace_service_fee_percent(percent: float) -> None:
+    global _service_fee_percent
+    try:
+        value = float(percent or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    _service_fee_percent = min(100.0, max(0.0, value))
+
+
+def _service_fee_for_seller(seller: dict[str, Any]) -> float:
+    from app.payments.qvapay import qvapay_escrow_configured
+
+    if _service_fee_percent <= 0:
+        return 0.0
+    if not seller.get("qvapay_username") or not qvapay_escrow_configured():
+        return 0.0
+    return _service_fee_percent
+
+
 def _store_to_public(seller: dict[str, Any]) -> MarketplaceStorePublic:
     from app.payments.qvapay import qvapay_escrow_configured
 
@@ -378,6 +400,7 @@ def _product_to_public(
         images=images,
         base_price=float(product["base_price"]),
         base_currency=product["base_currency"],
+        service_fee_percent=_service_fee_for_seller(seller),
         discount_percent=public_discount_percent(product, seller),
         accepted_currencies=list(product.get("accepted_currencies") or []),
         offers_delivery=bool(product.get("offers_delivery")),
