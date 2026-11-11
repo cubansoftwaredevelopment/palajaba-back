@@ -622,13 +622,10 @@ async def update_seller_order(
     if doc.get("buyer_id") and doc.get("payment_method") != "qvapay":
         from app.payments.service import _notify_customer
         order_code = str(doc["_id"])[-6:].upper()
-        if updated.get("status") == "completed" and doc.get("status") != "completed":
-            await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido completado",
-                                   f"La tienda marcó como completado el pedido #{order_code}.", "order_completed")
-        elif updated.get("status") == "cancelled" and doc.get("status") != "cancelled":
+        if updated.get("status") == "cancelled" and doc.get("status") != "cancelled":
             await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido cancelado",
                                    f"La tienda canceló el pedido #{order_code}.", "order_cancelled")
-        elif any(updated.get(field) != doc.get(field) for field in updates if field != "updated_at"):
+        elif updated.get("status") != "completed" and any(updated.get(field) != doc.get(field) for field in updates if field != "updated_at"):
             await _notify_customer(doc["buyer_id"], str(doc["_id"]), "Pedido actualizado",
                                    f"La tienda actualizó los detalles del pedido #{order_code}. Revisa los cambios en tu cuenta.", "order_updated")
     return _doc_to_public(updated)
