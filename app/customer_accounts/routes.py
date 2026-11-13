@@ -59,6 +59,12 @@ async def get_my_customer(customer_payload: dict = Depends(require_customer)):
     return await services.get_customer(customer_payload["customer_id"])
 
 
+@router.delete("/me", status_code=204)
+async def delete_my_customer(customer_payload: dict = Depends(require_customer)):
+    await services.delete_customer_account(customer_payload["customer_id"])
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.patch("/me", response_model=CustomerPublic)
 async def update_my_customer(payload: dict[str, Any], customer_payload: dict = Depends(require_customer)):
     return await services.update_customer(customer_payload["customer_id"], payload)

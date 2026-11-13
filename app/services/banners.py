@@ -45,6 +45,16 @@ def _document_to_admin(doc: dict[str, Any]) -> BannerAdminPublic:
     )
 
 
+def _is_servable_banner_image(image_url: Any) -> bool:
+    """Descarta URLs locales antiguas que ya no tienen endpoint (/api/catalog/banners/.../file)."""
+    value = str(image_url or "").strip()
+    if not value:
+        return False
+    if "/api/catalog/banners/" in value and value.rstrip("/").endswith("/file"):
+        return False
+    return True
+
+
 def _document_to_public(doc: dict[str, Any]) -> BannerPublic:
     return BannerPublic(
         id=str(doc["_id"]),
@@ -104,8 +114,17 @@ def _parse_deactivate_at(value: datetime | str | None) -> datetime | None:
 
 async def expire_due_banners() -> None:
     now = to_utc_naive(utc_now())
-    await get_marketplace_banners_collection().update_many(
+    collection = get_marketplace_banners_collection()
+    await collection.update_many(
         {"is_active": True, "deactivate_at": {"$lte": now}},
+        {"$set": {"is_active": False, "updated_at": now}},
+    )
+    # Banners migrados a Cloudinary: las rutas /api/catalog/banners/*/file ya no existen.
+    await collection.update_many(
+        {
+            "is_active": True,
+            "image_url": {"$regex": r"/api/catalog/banners/.+/file"},
+        },
         {"$set": {"is_active": False, "updated_at": now}},
     )
 
@@ -145,7 +164,11 @@ async def list_public_banners(province_id: str | None = None) -> list[BannerPubl
     docs = await collection.find(query).sort(
         [("sort_order", 1), ("created_at", -1)]
     ).to_list(length=None)
-    return [_document_to_public(doc) for doc in docs]
+    return [
+        _document_to_public(doc)
+        for doc in docs
+        if _is_servable_banner_image(doc.get("image_url"))
+    ]
 
 
 async def _get_banner_or_404(banner_id: str) -> dict[str, Any]:

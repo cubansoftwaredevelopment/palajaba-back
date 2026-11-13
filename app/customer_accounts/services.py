@@ -9,10 +9,13 @@ from app.auth.utils import create_customer_token, hash_password, verify_password
 from app.config import settings
 from app.database import (
     get_customer_contact_otp_challenges_collection,
+    get_customer_devices_collection,
+    get_customer_notifications_collection,
     get_customer_otp_challenges_collection,
     get_customer_password_reset_challenges_collection,
     get_customers_collection,
     get_catalog_products_collection,
+    get_disputes_collection,
     get_orders_collection,
     get_registrations_collection,
 )
@@ -174,6 +177,72 @@ async def customer_login(payload: CustomerLoginRequest) -> CustomerLoginResponse
         access_token=create_customer_token(customer_id=str(customer["_id"]), full_name=customer["full_name"]),
         customer=customer_public(customer),
     )
+
+
+async def _assert_customer_account_can_be_deleted(customer_id: str) -> None:
+    pending = await get_orders_collection().count_documents(
+        {"buyer_id": customer_id, "status": "pending_confirmation"}
+    )
+    if pending:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar la cuenta mientras tengas pedidos pendientes de confirmación.",
+        )
+
+    open_disputes = await get_disputes_collection().count_documents(
+        {"customer_id": customer_id, "status": "open"}
+    )
+    if open_disputes:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar la cuenta mientras tengas disputas abiertas.",
+        )
+
+    open_qvapay = await get_orders_collection().count_documents(
+        {
+            "buyer_id": customer_id,
+            "payment_method": "qvapay",
+            "status": {"$nin": ["completed", "cancelled"]},
+        }
+    )
+    if open_qvapay:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar la cuenta mientras tengas pagos QvaPay en curso.",
+        )
+
+
+async def delete_customer_account(customer_id: str) -> dict[str, str]:
+    await _assert_customer_account_can_be_deleted(customer_id)
+    try:
+        customer_oid = ObjectId(customer_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.") from exc
+
+    doc = await get_customers_collection().find_one({"_id": customer_oid})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado.")
+
+    photo_url = str(doc.get("profile_photo_url") or "").strip()
+    email = str(doc.get("email") or "").strip().lower()
+    phone = str(doc.get("phone") or "").strip()
+
+    await get_customer_notifications_collection().delete_many({"customer_id": customer_oid})
+    await get_customer_devices_collection().delete_many({"customer_id": customer_oid})
+    await get_customer_contact_otp_challenges_collection().delete_many({"customer_id": customer_id})
+    otp_filters = [{"customer_id": customer_id}]
+    if email:
+        otp_filters.append({"email": email})
+    if phone:
+        otp_filters.append({"phone": phone})
+    await get_customer_otp_challenges_collection().delete_many({"$or": otp_filters})
+    await get_customer_password_reset_challenges_collection().delete_many({"$or": otp_filters})
+
+    await get_customers_collection().delete_one({"_id": customer_oid})
+    if photo_url:
+        await remove_image(photo_url)
+
+    return {"id": customer_id, "message": "Cuenta eliminada."}
 
 
 async def get_customer(customer_id: str):

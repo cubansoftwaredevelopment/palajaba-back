@@ -8,7 +8,7 @@ from contextlib import contextmanager
 from starlette.testclient import TestClient
 
 from app.main import app
-from app.auth.utils import create_admin_token, create_seller_token
+from app.auth.utils import create_admin_token, create_customer_token, create_seller_token
 
 
 @contextmanager
@@ -19,6 +19,11 @@ def api_client() -> Iterator[TestClient]:
 
 def seller_auth_headers(*, seller_id: str, store_name: str) -> dict[str, str]:
     token = create_seller_token(seller_id=seller_id, store_name=store_name)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def customer_auth_headers(*, customer_id: str, full_name: str = "Cliente E2E") -> dict[str, str]:
+    token = create_customer_token(customer_id=customer_id, full_name=full_name)
     return {"Authorization": f"Bearer {token}"}
 
 

@@ -190,6 +190,11 @@ def resolve_profile_social_links(payload: SellerProfileUpdate) -> list[SellerSoc
     return links
 
 
+def _is_dead_local_banner_url(image_url: str) -> bool:
+    value = str(image_url or "").strip().split("?", 1)[0].rstrip("/")
+    return "/api/catalog/banners/" in value and value.endswith("/file")
+
+
 def store_banners_from_document(
     doc: dict[str, Any],
     *,
@@ -215,6 +220,9 @@ def store_banners_from_document(
         if not isinstance(is_active, bool):
             is_active = True
         if active_only and not is_active:
+            continue
+        # Público: no devolver URLs locales muertas (disparan ceRetry infinito en el browser).
+        if active_only and _is_dead_local_banner_url(image_url):
             continue
         banners.append(
             StoreBannerPublic(

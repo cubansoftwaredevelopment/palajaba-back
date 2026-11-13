@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
@@ -81,6 +82,25 @@ app.include_router(live_router)
 
 UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOADS_ROOT), name="uploads")
+
+
+# 1×1 PNG: rutas legacy de banners locales; evita 404 + reintentos infinitos del navegador (ceRetry).
+_LEGACY_BANNER_PIXEL = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f"
+    b"\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+@app.get("/api/catalog/banners/{banner_id}/file")
+async def legacy_catalog_banner_file(banner_id: str):
+    return Response(
+        content=_LEGACY_BANNER_PIXEL,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable",
+            "X-Legacy-Banner": banner_id,
+        },
+    )
 
 
 @app.get("/api/health")

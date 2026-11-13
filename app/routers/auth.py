@@ -21,10 +21,16 @@ from app.schemas.gestores import (
     GestorPublic,
 )
 from app.services import gestores as gestores_service
+from app.services import seller_deletion as seller_deletion_service
 from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_my_seller_account(seller_payload: dict = Depends(require_seller)):
+    await seller_deletion_service.hard_delete_seller_account(seller_payload["seller_id"])
 
 
 @router.get("/me/business-categories", response_model=list[CategoryPublic])
