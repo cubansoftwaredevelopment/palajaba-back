@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bson import ObjectId
@@ -30,7 +28,7 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
             "platform": "android",
             "version": "1.0.0",
             "is_main": True,
-            "file_path": "app-releases/android/x.apk",
+            "gridfs_id": ObjectId(),
         }
         with patch.object(service, "_get_release_or_404", AsyncMock(return_value=doc)):
             with self.assertRaises(HTTPException) as ctx:
@@ -98,10 +96,10 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
     async def test_trim_keeps_main_and_max_five(self):
         main_id = ObjectId()
         docs = [
-            {"_id": ObjectId(), "is_main": False, "file_path": f"a{i}.apk"}
-            for i in range(5)
+            {"_id": ObjectId(), "is_main": False, "gridfs_id": ObjectId()}
+            for _ in range(5)
         ]
-        docs.insert(0, {"_id": main_id, "is_main": True, "file_path": "main.apk"})
+        docs.insert(0, {"_id": main_id, "is_main": True, "gridfs_id": ObjectId()})
         remaining = list(docs)
 
         class Cursor:
@@ -125,22 +123,31 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch("app.app_releases.service.get_app_releases_collection", return_value=collection),
-            patch.object(service, "_delete_file", AsyncMock()),
+            patch.object(service, "_delete_release_binary", AsyncMock()),
         ):
             await service._trim_platform_history("android")
 
         self.assertEqual(len(remaining), 5)
         self.assertTrue(any(doc["_id"] == main_id for doc in remaining))
 
-    async def test_store_and_stream_roundtrip_path(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            content = b"fake-apk-bytes"
-            with patch.object(service, "UPLOADS_ROOT", root):
-                relative, path = service._store_app_file("android", content, "PaLaJaba.apk")
-            self.assertTrue(path.is_file())
-            self.assertEqual(path.read_bytes(), content)
-            self.assertTrue(relative.startswith("app-releases/android/"))
+    async def test_store_app_file_uses_gridfs(self):
+        content = b"fake-apk-bytes"
+        grid_id = ObjectId()
+        bucket = MagicMock()
+        bucket.upload_from_stream = AsyncMock(return_value=grid_id)
+        with patch("app.app_releases.service.get_app_release_gridfs", return_value=bucket):
+            result = await service._store_app_file(
+                "android",
+                content,
+                "PaLaJaba.apk",
+                "application/vnd.android.package-archive",
+            )
+        self.assertEqual(result, grid_id)
+        bucket.upload_from_stream.assert_awaited_once()
+        args, kwargs = bucket.upload_from_stream.await_args
+        self.assertTrue(str(args[0]).endswith(".apk"))
+        self.assertEqual(kwargs["metadata"]["platform"], "android")
+        self.assertEqual(kwargs["metadata"]["original_filename"], "PaLaJaba.apk")
 
     def test_platform_prompt_status_needs_download(self):
         main = {

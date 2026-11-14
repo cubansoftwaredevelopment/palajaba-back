@@ -1,4 +1,4 @@
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorGridFSBucket
 
 from app.config import settings
 
@@ -314,6 +314,13 @@ def get_app_releases_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["app_releases"]
+
+
+def get_app_release_gridfs() -> AsyncIOMotorGridFSBucket:
+    """Binarios APK/IPA en GridFS (sobreviven deploys en Render)."""
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return AsyncIOMotorGridFSBucket(db, bucket_name="app_release_files")
 
 
 def get_app_download_records_collection() -> AsyncIOMotorCollection:

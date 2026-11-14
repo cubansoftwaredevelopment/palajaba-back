@@ -3,13 +3,16 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
-from pathlib import Path
+from collections.abc import AsyncIterator
+from io import BytesIO
 from typing import Any, Literal
+from urllib.parse import quote
 
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
+from gridfs.errors import NoFile
 
 from app.app_releases.schemas import (
     AppDownloadRecordResult,
@@ -19,14 +22,18 @@ from app.app_releases.schemas import (
     AppReleasePromptStatus,
     AppReleasePublic,
 )
-from app.database import get_app_download_records_collection, get_app_releases_collection
+from app.database import (
+    get_app_download_records_collection,
+    get_app_release_gridfs,
+    get_app_releases_collection,
+)
 from app.utils.datetime import to_utc_naive, utc_now
 
 AppPlatform = Literal["android", "ios"]
 
 MAX_RELEASES_PER_PLATFORM = 5
 MAX_APP_BYTES = 200 * 1024 * 1024
-UPLOADS_ROOT = Path(__file__).resolve().parents[2] / "uploads" / "app-releases"
+GRIDFS_CHUNK_BYTES = 1024 * 1024
 
 _PLATFORM_EXTENSIONS: dict[str, str] = {
     "android": ".apk",
@@ -175,39 +182,45 @@ async def _read_app_upload(file: UploadFile, platform: AppPlatform) -> tuple[byt
     return content, safe_name, _CONTENT_TYPES[platform]
 
 
-def _store_app_file(platform: AppPlatform, content: bytes, original_filename: str) -> tuple[str, Path]:
-    folder = UPLOADS_ROOT / platform
-    folder.mkdir(parents=True, exist_ok=True)
+async def _store_app_file(
+    platform: AppPlatform,
+    content: bytes,
+    original_filename: str,
+    content_type: str,
+) -> ObjectId:
+    """Guarda el binario en GridFS (persiste en Mongo tras deploys en Render)."""
     ext = _PLATFORM_EXTENSIONS[platform]
     stored_name = f"{uuid.uuid4().hex}{ext}"
-    path = folder / stored_name
-    path.write_bytes(content)
-    relative = f"app-releases/{platform}/{stored_name}"
-    return relative, path
+    bucket = get_app_release_gridfs()
+    return await bucket.upload_from_stream(
+        stored_name,
+        BytesIO(content),
+        metadata={
+            "platform": platform,
+            "original_filename": original_filename,
+            "content_type": content_type,
+        },
+    )
 
 
-def _absolute_path(file_path: str) -> Path:
-    relative = str(file_path or "").replace("\\", "/").lstrip("/")
-    if relative.startswith("uploads/"):
-        relative = relative[len("uploads/") :]
-    path = (Path(__file__).resolve().parents[2] / "uploads" / relative).resolve()
-    root = (Path(__file__).resolve().parents[2] / "uploads").resolve()
-    if not str(path).startswith(str(root)):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Archivo no encontrado.",
-        )
-    return path
-
-
-async def _delete_file(file_path: str | None) -> None:
-    if not file_path:
-        return
-    path = _absolute_path(str(file_path))
+def _gridfs_id(value: Any) -> ObjectId | None:
+    if value is None:
+        return None
+    if isinstance(value, ObjectId):
+        return value
     try:
-        if path.is_file():
-            path.unlink()
-    except OSError:
+        return ObjectId(str(value))
+    except InvalidId:
+        return None
+
+
+async def _delete_release_binary(doc: dict[str, Any]) -> None:
+    grid_id = _gridfs_id(doc.get("gridfs_id"))
+    if grid_id is None:
+        return
+    try:
+        await get_app_release_gridfs().delete(grid_id)
+    except Exception:
         pass
 
 
@@ -222,7 +235,7 @@ async def _trim_platform_history(platform: AppPlatform) -> None:
         victim = next((doc for doc in reversed(docs) if not doc.get("is_main")), None)
         if victim is None:
             return
-        await _delete_file(victim.get("file_path"))
+        await _delete_release_binary(victim)
         await collection.delete_one({"_id": victim["_id"]})
 
 
@@ -246,7 +259,12 @@ async def create_release(
     normalized_platform = _normalize_platform(platform)
     normalized_version = _normalize_version(version)
     content, original_filename, content_type = await _read_app_upload(file, normalized_platform)
-    relative_path, _ = _store_app_file(normalized_platform, content, original_filename)
+    gridfs_id = await _store_app_file(
+        normalized_platform,
+        content,
+        original_filename,
+        content_type,
+    )
     now = to_utc_naive(utc_now())
     collection = get_app_releases_collection()
     existing_main = await collection.find_one(
@@ -256,8 +274,7 @@ async def create_release(
     doc = {
         "platform": normalized_platform,
         "version": normalized_version,
-        "file_path": relative_path,
-        "file_url": f"/uploads/{relative_path}",
+        "gridfs_id": gridfs_id,
         "original_filename": original_filename,
         "content_type": content_type,
         "size_bytes": len(content),
@@ -309,7 +326,7 @@ async def delete_release(release_id: str) -> AppReleaseDeleteResult:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No puedes eliminar el build principal. Marca otro como main primero.",
         )
-    await _delete_file(doc.get("file_path"))
+    await _delete_release_binary(doc)
     await get_app_releases_collection().delete_one({"_id": doc["_id"]})
     return AppReleaseDeleteResult(id=str(doc["_id"]))
 
@@ -367,21 +384,43 @@ async def get_prompt_status(
     )
 
 
-async def stream_release_file(release_id: str) -> FileResponse:
+async def _iter_gridfs_chunks(grid_out: Any) -> AsyncIterator[bytes]:
+    while True:
+        chunk = await grid_out.read(GRIDFS_CHUNK_BYTES)
+        if not chunk:
+            break
+        yield chunk
+
+
+async def stream_release_file(release_id: str) -> StreamingResponse:
     doc = await _get_release_or_404(release_id)
-    path = _absolute_path(str(doc.get("file_path") or ""))
-    if not path.is_file():
+    filename = str(doc.get("original_filename") or "app.bin")
+    media_type = str(doc.get("content_type") or "application/octet-stream")
+    disposition = f"attachment; filename*=UTF-8''{quote(filename)}"
+
+    grid_id = _gridfs_id(doc.get("gridfs_id"))
+    if grid_id is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Archivo no encontrado.",
         )
-    filename = str(doc.get("original_filename") or path.name)
-    media_type = str(doc.get("content_type") or "application/octet-stream")
-    return FileResponse(
-        path,
+    try:
+        grid_out = await get_app_release_gridfs().open_download_stream(grid_id)
+    except NoFile as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Archivo no encontrado.",
+        ) from exc
+    headers = {"Content-Disposition": disposition}
+    length = getattr(grid_out, "length", None)
+    if length is None:
+        length = doc.get("size_bytes")
+    if length is not None:
+        headers["Content-Length"] = str(int(length))
+    return StreamingResponse(
+        _iter_gridfs_chunks(grid_out),
         media_type=media_type,
-        filename=filename,
-        content_disposition_type="attachment",
+        headers=headers,
     )
 
 
