@@ -100,12 +100,38 @@ async def notify_device_tokens(tokens: list[str], title: str, body: str, data: d
         return
 
 
-async def notify_seller_devices(seller_id: str, title: str, body: str) -> None:
-    await notify_device_tokens(await list_seller_device_tokens(seller_id), title, body)
+async def notify_seller_devices(
+    seller_id: str,
+    title: str,
+    body: str,
+    *,
+    notification_id: str | None = None,
+    kind: str | None = None,
+) -> None:
+    data = {
+        "screen": "seller_notifications",
+        "notification_id": str(notification_id or ""),
+        "kind": str(kind or ""),
+    }
+    await notify_device_tokens(
+        await list_seller_device_tokens(seller_id), title, body, data=data
+    )
 
 
-async def notify_customer_devices(customer_id: str, title: str, body: str, *, order_id: str | None = None) -> None:
-    data = {"order_id": order_id} if order_id else None
+async def notify_customer_devices(
+    customer_id: str,
+    title: str,
+    body: str,
+    *,
+    order_id: str | None = None,
+    notification_id: str | None = None,
+) -> None:
+    data = {
+        "screen": "customer_avisos",
+        "notification_id": str(notification_id or ""),
+    }
+    if order_id:
+        data["order_id"] = str(order_id)
     await notify_device_tokens(
         await list_customer_device_tokens(customer_id), title, body, data=data
     )

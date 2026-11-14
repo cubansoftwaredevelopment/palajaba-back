@@ -61,7 +61,13 @@ async def publish_seller_notification(
     try:
         event = LiveNotificationEvent(notification=notification)
         await hub.send(str(seller_id), event.model_dump(mode="json"))
-        await notify_seller_devices(str(seller_id), notification.title, notification.content)
+        await notify_seller_devices(
+            str(seller_id),
+            notification.title,
+            notification.content,
+            notification_id=str(getattr(notification, "id", "") or ""),
+            kind=str(getattr(notification, "kind", "") or ""),
+        )
     except Exception:
         return
 
@@ -78,6 +84,7 @@ async def publish_customer_notification(customer_id: str, notification: dict) ->
             str(notification.get("title") or "Actualización de tu pedido"),
             str(notification.get("content") or "Tienes una novedad en Pa' La Jaba."),
             order_id=str(notification["order_id"]) if notification.get("order_id") else None,
+            notification_id=str(notification.get("id") or ""),
         )
     except Exception:
         return
