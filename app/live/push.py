@@ -68,7 +68,7 @@ async def _access_token(account: dict) -> str | None:
 
 
 # Canal Android (debe coincidir con PushNotifications.createChannel en el front).
-ANDROID_PUSH_CHANNEL_ID = "pala_jaba_push"
+ANDROID_PUSH_CHANNEL_ID = "pala_jaba_push_v2"
 
 
 def _fcm_message(token: str, title: str, body: str, data: dict | None = None) -> dict:
@@ -87,8 +87,7 @@ def _fcm_message(token: str, title: str, body: str, data: dict | None = None) ->
                 "channel_id": ANDROID_PUSH_CHANNEL_ID,
                 "title": clean_title,
                 "body": clean_body,
-                "sound": "default",
-                "default_sound": True,
+                # Sin sound custom: el canal usa el tono de notificación del usuario.
                 "default_vibrate_timings": True,
                 "notification_priority": "PRIORITY_HIGH",
             },
@@ -103,6 +102,7 @@ def _fcm_message(token: str, title: str, body: str, data: dict | None = None) ->
                         "title": clean_title,
                         "body": clean_body,
                     },
+                    # "default" en APNs = tono de notificación del sistema del usuario.
                     "sound": "default",
                 }
             },
