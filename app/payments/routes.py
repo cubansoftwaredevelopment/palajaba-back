@@ -244,6 +244,11 @@ async def read_customer_order_notification(notification_id: str, customer: dict 
     return await service.mark_customer_notification_read(customer["customer_id"], notification_id)
 
 
+@account_router.post("/api/customers/me/notifications/read-all")
+async def read_all_customer_order_notifications(customer: dict = Depends(require_customer)):
+    return await service.mark_all_customer_notifications_read(customer["customer_id"])
+
+
 @account_router.post("/api/live/customer-devices", status_code=201)
 async def register_customer_push_device(payload: CustomerDeviceRequest, customer: dict = Depends(require_customer)):
     await register_customer_device(customer["customer_id"], payload)

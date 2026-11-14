@@ -660,9 +660,20 @@ async def stop_expiry_task() -> None:
 
 async def list_customer_notifications(customer_id: str) -> list[dict[str, Any]]:
     docs = await get_customer_notifications_collection().find({"customer_id": _oid(customer_id, "Cliente no encontrado.")}).sort("created_at", -1).limit(50).to_list(length=50)
-    return [{"id": str(doc["_id"]), "title": doc["title"], "content": doc["content"], "kind": doc["kind"],
-             "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
-             "order_id": doc["order_id"], "created_at": doc["created_at"], "read_at": doc.get("read_at")} for doc in docs]
+    return [_customer_notification_public(doc) for doc in docs]
+
+
+def _customer_notification_public(doc: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": str(doc["_id"]),
+        "title": doc["title"],
+        "content": doc["content"],
+        "kind": doc["kind"],
+        "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
+        "order_id": doc.get("order_id"),
+        "created_at": doc["created_at"],
+        "read_at": doc.get("read_at"),
+    }
 
 
 async def mark_customer_notification_read(customer_id: str, notification_id: str) -> dict[str, Any]:
@@ -672,6 +683,13 @@ async def mark_customer_notification_read(customer_id: str, notification_id: str
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Notificación no encontrada.")
-    return {"id": str(doc["_id"]), "title": doc["title"], "content": doc["content"], "kind": doc["kind"],
-            "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
-            "order_id": doc["order_id"], "created_at": doc["created_at"], "read_at": doc.get("read_at")}
+    return _customer_notification_public(doc)
+
+
+async def mark_all_customer_notifications_read(customer_id: str) -> dict[str, Any]:
+    customer_oid = _oid(customer_id, "Cliente no encontrado.")
+    result = await get_customer_notifications_collection().update_many(
+        {"customer_id": customer_oid, "read_at": None},
+        {"$set": {"read_at": to_utc_naive(utc_now())}},
+    )
+    return {"marked_count": int(result.modified_count or 0)}
