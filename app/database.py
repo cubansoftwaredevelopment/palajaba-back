@@ -92,6 +92,8 @@ async def connect_to_mongo():
     await ensure_subscription_expiring_notifications()
     await get_customer_devices_collection().create_index("token", unique=True)
     await get_customer_devices_collection().create_index("customer_id")
+    await get_app_push_devices_collection().create_index("token", unique=True)
+    await get_app_push_devices_collection().create_index("platform")
     await get_customer_notifications_collection().create_index([("customer_id", 1), ("created_at", -1)])
     await ensure_exchange_rates_ready()
     ensure_uploads_dir()
@@ -269,6 +271,13 @@ def get_customer_devices_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["customer_devices"]
+
+
+def get_app_push_devices_collection() -> AsyncIOMotorCollection:
+    """Tokens FCM de la app nativa (con o sin cuenta)."""
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["app_push_devices"]
 
 
 def get_customer_notifications_collection() -> AsyncIOMotorCollection:

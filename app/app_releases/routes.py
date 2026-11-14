@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.app_releases import service as app_releases_service
 from app.app_releases.schemas import (
@@ -11,6 +11,8 @@ from app.app_releases.schemas import (
     AppReleasePublic,
 )
 from app.auth.utils import require_admin, require_customer_or_seller
+from app.live.devices import register_app_push_device
+from app.live.schemas.device import AppPushDevicePublic, AppPushDeviceRegister
 
 router = APIRouter()
 admin_router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -53,6 +55,19 @@ async def delete_app_release(release_id: str, _: dict = Depends(require_admin)):
 @marketplace_router.get("/app-releases/main", response_model=AppReleaseMainsPublic)
 async def get_main_app_releases():
     return await app_releases_service.list_main_releases()
+
+
+@marketplace_router.post(
+    "/app-push-devices",
+    response_model=AppPushDevicePublic,
+    status_code=201,
+)
+async def register_native_app_push_device(payload: AppPushDeviceRegister):
+    """Registra FCM de la app instalada sin exigir cuenta."""
+    try:
+        return await register_app_push_device(token=payload.token, platform=payload.platform)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @marketplace_router.get(

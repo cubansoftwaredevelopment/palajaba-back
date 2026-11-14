@@ -20,3 +20,13 @@ class SellerDevicePublic(BaseModel):
     token: str
     platform: DevicePlatform
     updated_at: UtcDateTime
+
+
+class AppPushDeviceRegister(BaseModel):
+    token: str = Field(..., min_length=8, max_length=4096)
+    platform: DevicePlatform
+
+
+class AppPushDevicePublic(BaseModel):
+    token: str
+    platform: DevicePlatform
