@@ -7,7 +7,7 @@ from fastapi import HTTPException, status
 
 from app.constants import REJECTION_REASON_UNCONFIRMED_PAYMENT
 from app.database import get_registrations_collection
-from app.auth.schemas import RegistrationPublic
+from app.auth.schemas import RegistrationAppDownload, RegistrationPublic
 from app.subscriptions.schemas import RegistrationSubscriptionReplace
 from app.auth.utils import hash_password
 from app.services.admin_registration_insights import (
@@ -137,7 +137,10 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
             sales_total_cup=sales_by_seller.get(str(doc["_id"]), 0),
             unconfirmed_orders_count=unconfirmed_by_seller.get(str(doc["_id"]), 0),
             completed_orders_count=completed_by_seller.get(str(doc["_id"]), 0),
-            app_downloads=downloads_by_seller.get(str(doc["_id"]), []),
+            app_downloads=[
+                RegistrationAppDownload(platform=item["platform"], version=item["version"])
+                for item in downloads_by_seller.get(str(doc["_id"]), [])
+            ],
         )
         for doc in documents
     ]
@@ -162,7 +165,10 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         sales_total_cup=sales_by_seller.get(seller_id, 0),
         unconfirmed_orders_count=unconfirmed_by_seller.get(seller_id, 0),
         completed_orders_count=completed_by_seller.get(seller_id, 0),
-        app_downloads=downloads_by_seller.get(seller_id, []),
+        app_downloads=[
+            RegistrationAppDownload(platform=item["platform"], version=item["version"])
+            for item in downloads_by_seller.get(seller_id, [])
+        ],
     )
 
 
