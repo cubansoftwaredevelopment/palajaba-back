@@ -6,7 +6,11 @@ import httpx
 from jose import jwt
 
 from app.config import settings
-from app.live.devices import list_customer_device_tokens, list_seller_device_tokens
+from app.live.devices import (
+    list_customer_device_tokens,
+    list_device_tokens_for_platform,
+    list_seller_device_tokens,
+)
 
 _FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
 _TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -134,4 +138,26 @@ async def notify_customer_devices(
         data["order_id"] = str(order_id)
     await notify_device_tokens(
         await list_customer_device_tokens(customer_id), title, body, data=data
+    )
+
+
+async def notify_app_update_devices(*, platform: str, version: str) -> None:
+    """Avisa a todos los dispositivos de la plataforma que hay un build main nuevo."""
+    normalized_platform = str(platform or "").strip().lower()
+    normalized_version = str(version or "").strip()
+    if normalized_platform not in ("android", "ios") or not normalized_version:
+        return
+    label = "Android" if normalized_platform == "android" else "Apple"
+    title = f"Actualización {label}"
+    body = f"Ya está disponible la versión {normalized_version}. Ábrela para actualizar Pa' La Jaba."
+    data = {
+        "screen": "app_update",
+        "platform": normalized_platform,
+        "version": normalized_version,
+    }
+    await notify_device_tokens(
+        await list_device_tokens_for_platform(normalized_platform),
+        title,
+        body,
+        data=data,
     )

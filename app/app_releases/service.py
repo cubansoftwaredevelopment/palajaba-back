@@ -250,14 +250,28 @@ async def set_main_release(release_id: str) -> AppReleasePublic:
     doc = await _get_release_or_404(release_id)
     collection = get_app_releases_collection()
     platform = doc["platform"]
-    await collection.update_many(
-        {"platform": platform, "is_main": True},
-        {"$set": {"is_main": False}},
-    )
-    await collection.update_one({"_id": doc["_id"]}, {"$set": {"is_main": True}})
+    already_main = bool(doc.get("is_main"))
+    if not already_main:
+        await collection.update_many(
+            {"platform": platform, "is_main": True},
+            {"$set": {"is_main": False}},
+        )
+        await collection.update_one({"_id": doc["_id"]}, {"$set": {"is_main": True}})
     updated = await collection.find_one({"_id": doc["_id"]})
     assert updated is not None
-    return _document_to_public(updated)
+    public = _document_to_public(updated)
+    if not already_main:
+        try:
+            from app.live.push import notify_app_update_devices
+
+            await notify_app_update_devices(
+                platform=str(public.platform),
+                version=str(public.version),
+            )
+        except Exception:
+            # El main ya quedó marcado aunque falle el push.
+            pass
+    return public
 
 
 async def delete_release(release_id: str) -> AppReleaseDeleteResult:

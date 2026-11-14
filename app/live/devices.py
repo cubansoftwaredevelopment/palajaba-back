@@ -66,3 +66,26 @@ async def list_customer_device_tokens(customer_id: str) -> list[str]:
         {"customer_id": ObjectId(customer_id)}, {"token": 1}
     ).to_list(length=50)
     return [str(doc["token"]) for doc in docs if doc.get("token")]
+
+
+async def list_device_tokens_for_platform(platform: str) -> list[str]:
+    """Tokens FCM de clientes y vendedores en una plataforma (android|ios)."""
+    normalized = str(platform or "").strip().lower()
+    if normalized not in ("android", "ios"):
+        return []
+    query = {"platform": normalized}
+    seller_docs = await get_seller_devices_collection().find(query, {"token": 1}).to_list(
+        length=5000
+    )
+    customer_docs = await get_customer_devices_collection().find(
+        query, {"token": 1}
+    ).to_list(length=5000)
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for doc in (*seller_docs, *customer_docs):
+        token = str(doc.get("token") or "").strip()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        tokens.append(token)
+    return tokens

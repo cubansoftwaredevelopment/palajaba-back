@@ -60,12 +60,40 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(service, "_get_release_or_404", AsyncMock(return_value=doc)),
             patch("app.app_releases.service.get_app_releases_collection", return_value=collection),
+            patch("app.live.push.notify_app_update_devices", AsyncMock()) as notify_mock,
         ):
             result = await service.set_main_release(str(release_id))
         collection.update_many.assert_awaited()
         collection.update_one.assert_awaited()
+        notify_mock.assert_awaited_once_with(platform="ios", version="2.0.0")
         self.assertTrue(result.is_main)
         self.assertEqual(result.version, "2.0.0")
+
+    async def test_set_main_skips_notify_when_already_main(self):
+        release_id = ObjectId()
+        doc = {
+            "_id": release_id,
+            "platform": "android",
+            "version": "1.0.1",
+            "is_main": True,
+            "original_filename": "app.apk",
+            "size_bytes": 10,
+            "uploaded_at": None,
+        }
+        collection = MagicMock()
+        collection.update_many = AsyncMock()
+        collection.update_one = AsyncMock()
+        collection.find_one = AsyncMock(return_value=doc)
+        with (
+            patch.object(service, "_get_release_or_404", AsyncMock(return_value=doc)),
+            patch("app.app_releases.service.get_app_releases_collection", return_value=collection),
+            patch("app.live.push.notify_app_update_devices", AsyncMock()) as notify_mock,
+        ):
+            result = await service.set_main_release(str(release_id))
+        collection.update_many.assert_not_awaited()
+        collection.update_one.assert_not_awaited()
+        notify_mock.assert_not_awaited()
+        self.assertTrue(result.is_main)
 
     async def test_trim_keeps_main_and_max_five(self):
         main_id = ObjectId()
