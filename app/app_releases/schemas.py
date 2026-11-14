@@ -34,6 +34,22 @@ class AppDownloadRecordResult(BaseModel):
     user_type: Literal["customer", "seller"]
 
 
+class AppInstalledSyncRequest(BaseModel):
+    platform: AppPlatform
+    version: str = Field(min_length=1, max_length=40)
+    device_id: str | None = Field(default=None, min_length=8, max_length=64)
+
+
+class AppInstalledSyncResult(BaseModel):
+    platform: AppPlatform
+    version: str
+    release_id: str | None = None
+    download_url: str | None = None
+    recorded: bool = False
+    counted: bool = False
+    user_type: Literal["customer", "seller"]
+
+
 class AppPlatformPromptStatus(BaseModel):
     main: AppReleasePublic | None = None
     downloaded_version: str | None = None

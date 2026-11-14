@@ -16,6 +16,7 @@ from gridfs.errors import NoFile
 
 from app.app_releases.schemas import (
     AppDownloadRecordResult,
+    AppInstalledSyncResult,
     AppPlatformPromptStatus,
     AppReleaseDeleteResult,
     AppReleaseMainsPublic,
@@ -145,6 +146,10 @@ async def ensure_app_release_indexes() -> None:
         [("user_type", 1), ("user_id", 1), ("platform", 1)],
         unique=True,
         name="unique_download_per_user_platform",
+    )
+    await records.create_index(
+        [("device_id", 1), ("platform", 1), ("version", 1)],
+        name="device_platform_version",
     )
 
 
@@ -424,6 +429,48 @@ async def stream_release_file(release_id: str) -> StreamingResponse:
     )
 
 
+def _normalize_device_id(value: str | None) -> str | None:
+    device_id = str(value or "").strip()
+    if len(device_id) < 8 or len(device_id) > 64:
+        return None
+    return device_id
+
+
+async def _find_release_for_version(
+    platform: AppPlatform,
+    version: str,
+) -> dict[str, Any] | None:
+    collection = get_app_releases_collection()
+    main = await collection.find_one(
+        {"platform": platform, "version": version, "is_main": True}
+    )
+    if main is not None:
+        return main
+    return await collection.find_one(
+        {"platform": platform, "version": version},
+        sort=[("uploaded_at", -1)],
+    )
+
+
+async def _device_already_counted(
+    *,
+    device_id: str | None,
+    platform: AppPlatform,
+    version: str,
+) -> bool:
+    if not device_id:
+        return False
+    existing = await get_app_download_records_collection().find_one(
+        {
+            "device_id": device_id,
+            "platform": platform,
+            "version": version,
+        },
+        {"_id": 1},
+    )
+    return existing is not None
+
+
 async def record_authenticated_download(
     release_id: str,
     *,
@@ -435,7 +482,21 @@ async def record_authenticated_download(
     platform = doc["platform"]
     version = doc["version"]
     release_oid = doc["_id"]
-    await get_app_download_records_collection().update_one(
+    records = get_app_download_records_collection()
+    previous = await records.find_one(
+        {
+            "user_type": user_type,
+            "user_id": str(user_id),
+            "platform": platform,
+        },
+        {"version": 1, "release_id": 1},
+    )
+    previous_version = str((previous or {}).get("version") or "").strip()
+    previous_release_id = str((previous or {}).get("release_id") or "").strip()
+    should_count = previous is None or previous_version != version or previous_release_id != str(
+        release_oid
+    )
+    await records.update_one(
         {
             "user_type": user_type,
             "user_id": str(user_id),
@@ -453,14 +514,100 @@ async def record_authenticated_download(
         },
         upsert=True,
     )
-    await get_app_releases_collection().update_one(
-        {"_id": release_oid},
-        {"$inc": {"download_count": 1}},
-    )
+    if should_count:
+        await get_app_releases_collection().update_one(
+            {"_id": release_oid},
+            {"$inc": {"download_count": 1}},
+        )
     return AppDownloadRecordResult(
         platform=platform,
         version=version,
         release_id=str(release_oid),
         download_url=_download_url(str(release_oid)),
+        user_type=user_type,
+    )
+
+
+async def sync_installed_version(
+    *,
+    platform: str,
+    version: str,
+    user_type: Literal["customer", "seller"],
+    user_id: str,
+    device_id: str | None = None,
+) -> AppInstalledSyncResult:
+    """Tras login en la app nativa: guarda la versión instalada y cuenta si cambió."""
+    normalized_platform = _normalize_platform(platform)
+    normalized_version = _normalize_version(version)
+    normalized_device_id = _normalize_device_id(device_id)
+    now = to_utc_naive(utc_now())
+    records = get_app_download_records_collection()
+    previous = await records.find_one(
+        {
+            "user_type": user_type,
+            "user_id": str(user_id),
+            "platform": normalized_platform,
+        }
+    )
+    previous_version = str((previous or {}).get("version") or "").strip()
+    if previous is not None and previous_version == normalized_version:
+        release_id = str(previous.get("release_id") or "").strip() or None
+        if normalized_device_id and previous.get("device_id") != normalized_device_id:
+            await records.update_one(
+                {"_id": previous["_id"]},
+                {"$set": {"device_id": normalized_device_id, "updated_at": now}},
+            )
+        return AppInstalledSyncResult(
+            platform=normalized_platform,
+            version=normalized_version,
+            release_id=release_id,
+            download_url=_download_url(release_id) if release_id else None,
+            recorded=False,
+            counted=False,
+            user_type=user_type,
+        )
+
+    release = await _find_release_for_version(normalized_platform, normalized_version)
+    release_id = str(release["_id"]) if release else None
+    set_fields: dict[str, Any] = {
+        "version": normalized_version,
+        "release_id": release_id,
+        "updated_at": now,
+    }
+    if normalized_device_id:
+        set_fields["device_id"] = normalized_device_id
+    already_counted = await _device_already_counted(
+        device_id=normalized_device_id,
+        platform=normalized_platform,
+        version=normalized_version,
+    )
+    await records.update_one(
+        {
+            "user_type": user_type,
+            "user_id": str(user_id),
+            "platform": normalized_platform,
+        },
+        {
+            "$set": set_fields,
+            "$setOnInsert": {
+                "created_at": now,
+            },
+        },
+        upsert=True,
+    )
+    counted = False
+    if release is not None and not already_counted:
+        await get_app_releases_collection().update_one(
+            {"_id": release["_id"]},
+            {"$inc": {"download_count": 1}},
+        )
+        counted = True
+    return AppInstalledSyncResult(
+        platform=normalized_platform,
+        version=normalized_version,
+        release_id=release_id,
+        download_url=_download_url(release_id) if release_id else None,
+        recorded=True,
+        counted=counted,
         user_type=user_type,
     )

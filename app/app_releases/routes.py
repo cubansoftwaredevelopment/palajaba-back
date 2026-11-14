@@ -5,6 +5,8 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.app_releases import service as app_releases_service
 from app.app_releases.schemas import (
     AppDownloadRecordResult,
+    AppInstalledSyncRequest,
+    AppInstalledSyncResult,
     AppReleaseDeleteResult,
     AppReleaseMainsPublic,
     AppReleasePromptStatus,
@@ -98,6 +100,24 @@ async def record_app_release_download(
 ):
     return await app_releases_service.record_authenticated_download(
         release_id,
+        user_type=account["user_type"],
+        user_id=account["user_id"],
+    )
+
+
+@marketplace_router.post(
+    "/app-releases/sync-installed",
+    response_model=AppInstalledSyncResult,
+)
+async def sync_installed_app_release(
+    payload: AppInstalledSyncRequest,
+    account: dict = Depends(require_customer_or_seller),
+):
+    """Registra la versión instalada en el dispositivo tras iniciar sesión."""
+    return await app_releases_service.sync_installed_version(
+        platform=payload.platform,
+        version=payload.version,
+        device_id=payload.device_id,
         user_type=account["user_type"],
         user_id=account["user_id"],
     )

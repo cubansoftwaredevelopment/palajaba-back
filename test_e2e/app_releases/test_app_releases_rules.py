@@ -169,6 +169,124 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
         current = service._platform_prompt_status(main, {"version": "1.0.1"})
         self.assertFalse(current.needs_download)
 
+    async def test_sync_installed_version_counts_once(self):
+        release_id = ObjectId()
+        release = {
+            "_id": release_id,
+            "platform": "android",
+            "version": "1.2.0",
+            "is_main": True,
+        }
+        records = MagicMock()
+        records.find_one = AsyncMock(return_value=None)
+        records.update_one = AsyncMock()
+        releases = MagicMock()
+        releases.find_one = AsyncMock(return_value=release)
+        releases.update_one = AsyncMock()
+
+        with (
+            patch(
+                "app.app_releases.service.get_app_download_records_collection",
+                return_value=records,
+            ),
+            patch(
+                "app.app_releases.service.get_app_releases_collection",
+                return_value=releases,
+            ),
+        ):
+            first = await service.sync_installed_version(
+                platform="android",
+                version="1.2.0",
+                user_type="customer",
+                user_id="c1",
+                device_id="device-abc-001",
+            )
+            records.find_one = AsyncMock(
+                return_value={
+                    "_id": ObjectId(),
+                    "version": "1.2.0",
+                    "release_id": str(release_id),
+                    "device_id": "device-abc-001",
+                }
+            )
+            second = await service.sync_installed_version(
+                platform="android",
+                version="1.2.0",
+                user_type="customer",
+                user_id="c1",
+                device_id="device-abc-001",
+            )
+
+        self.assertTrue(first.recorded)
+        self.assertTrue(first.counted)
+        self.assertEqual(first.release_id, str(release_id))
+        self.assertFalse(second.recorded)
+        self.assertFalse(second.counted)
+        releases.update_one.assert_awaited_once()
+
+    async def test_sync_same_device_not_counted_for_second_account(self):
+        release_id = ObjectId()
+        release = {
+            "_id": release_id,
+            "platform": "android",
+            "version": "1.2.0",
+            "is_main": True,
+        }
+        device_id = "shared-device-xyz"
+        records = MagicMock()
+        records.update_one = AsyncMock()
+        releases = MagicMock()
+        releases.find_one = AsyncMock(return_value=release)
+        releases.update_one = AsyncMock()
+
+        # 1) customer: sin registro previo ni device contado
+        # 2) seller: sin registro propio, pero el device ya contó esa versión
+        records.find_one = AsyncMock(
+            side_effect=[
+                None,
+                None,
+                None,
+                {
+                    "user_type": "customer",
+                    "user_id": "c1",
+                    "device_id": device_id,
+                    "platform": "android",
+                    "version": "1.2.0",
+                },
+            ]
+        )
+
+        with (
+            patch(
+                "app.app_releases.service.get_app_download_records_collection",
+                return_value=records,
+            ),
+            patch(
+                "app.app_releases.service.get_app_releases_collection",
+                return_value=releases,
+            ),
+        ):
+            customer = await service.sync_installed_version(
+                platform="android",
+                version="1.2.0",
+                user_type="customer",
+                user_id="c1",
+                device_id=device_id,
+            )
+            seller = await service.sync_installed_version(
+                platform="android",
+                version="1.2.0",
+                user_type="seller",
+                user_id="s1",
+                device_id=device_id,
+            )
+
+        self.assertTrue(customer.recorded)
+        self.assertTrue(customer.counted)
+        self.assertTrue(seller.recorded)
+        self.assertFalse(seller.counted)
+        releases.update_one.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
