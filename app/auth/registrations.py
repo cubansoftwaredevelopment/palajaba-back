@@ -57,6 +57,7 @@ def document_to_public(
     sales_total_cup: float = 0,
     unconfirmed_orders_count: int = 0,
     completed_orders_count: int = 0,
+    app_downloads: list | None = None,
 ) -> RegistrationPublic:
     counts = product_counts or {}
     notes = marketplace_visibility_notes
@@ -110,15 +111,19 @@ def document_to_public(
         sales_total_cup=sales_total_cup,
         unconfirmed_orders_count=unconfirmed_orders_count,
         completed_orders_count=completed_orders_count,
+        app_downloads=list(app_downloads or []),
     )
 
 
 async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[RegistrationPublic]:
+    from app.app_releases.service import map_user_app_downloads
+
     seller_ids = [str(doc["_id"]) for doc in documents]
     counts_by_seller = await aggregate_product_counts_by_seller(seller_ids)
     sales_by_seller = await aggregate_sales_cup_by_seller(seller_ids)
     unconfirmed_by_seller = await aggregate_unconfirmed_orders_by_seller(seller_ids)
     completed_by_seller = await aggregate_completed_orders_by_seller(seller_ids)
+    downloads_by_seller = await map_user_app_downloads(user_type="seller", user_ids=seller_ids)
     return [
         document_to_public(
             doc,
@@ -132,17 +137,21 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
             sales_total_cup=sales_by_seller.get(str(doc["_id"]), 0),
             unconfirmed_orders_count=unconfirmed_by_seller.get(str(doc["_id"]), 0),
             completed_orders_count=completed_by_seller.get(str(doc["_id"]), 0),
+            app_downloads=downloads_by_seller.get(str(doc["_id"]), []),
         )
         for doc in documents
     ]
 
 
 async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
+    from app.app_releases.service import map_user_app_downloads
+
     seller_id = str(doc["_id"])
     counts_by_seller = await aggregate_product_counts_by_seller([seller_id])
     sales_by_seller = await aggregate_sales_cup_by_seller([seller_id])
     unconfirmed_by_seller = await aggregate_unconfirmed_orders_by_seller([seller_id])
     completed_by_seller = await aggregate_completed_orders_by_seller([seller_id])
+    downloads_by_seller = await map_user_app_downloads(user_type="seller", user_ids=[seller_id])
     counts = counts_by_seller.get(seller_id)
     return document_to_public(
         doc,
@@ -153,6 +162,7 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
         sales_total_cup=sales_by_seller.get(seller_id, 0),
         unconfirmed_orders_count=unconfirmed_by_seller.get(seller_id, 0),
         completed_orders_count=completed_by_seller.get(seller_id, 0),
+        app_downloads=downloads_by_seller.get(seller_id, []),
     )
 
 

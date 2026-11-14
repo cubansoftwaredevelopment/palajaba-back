@@ -94,7 +94,34 @@ def _document_to_public(doc: dict[str, Any]) -> AppReleasePublic:
         is_main=bool(doc.get("is_main")),
         uploaded_at=doc.get("uploaded_at"),
         download_url=_download_url(release_id),
+        download_count=int(doc.get("download_count") or 0),
     )
+
+
+async def map_user_app_downloads(
+    *,
+    user_type: Literal["customer", "seller"],
+    user_ids: list[str],
+) -> dict[str, list[dict[str, str]]]:
+    """Última versión descargada por plataforma, indexada por user_id."""
+    ids = [str(user_id).strip() for user_id in user_ids if str(user_id).strip()]
+    if not ids:
+        return {}
+    docs = await get_app_download_records_collection().find(
+        {"user_type": user_type, "user_id": {"$in": ids}},
+        {"user_id": 1, "platform": 1, "version": 1},
+    ).to_list(length=len(ids) * 2 + 10)
+    result: dict[str, list[dict[str, str]]] = {user_id: [] for user_id in ids}
+    for doc in docs:
+        user_id = str(doc.get("user_id") or "")
+        platform = str(doc.get("platform") or "").strip().lower()
+        version = str(doc.get("version") or "").strip()
+        if not user_id or platform not in ("android", "ios") or not version:
+            continue
+        result.setdefault(user_id, []).append({"platform": platform, "version": version})
+    for user_id, items in result.items():
+        items.sort(key=lambda item: item["platform"])
+    return result
 
 
 async def ensure_app_release_indexes() -> None:
@@ -235,6 +262,7 @@ async def create_release(
         "content_type": content_type,
         "size_bytes": len(content),
         "is_main": existing_main is None,
+        "download_count": 0,
         "uploaded_at": now,
         "uploaded_by": admin_id or "admin",
     }
@@ -367,6 +395,7 @@ async def record_authenticated_download(
     now = to_utc_naive(utc_now())
     platform = doc["platform"]
     version = doc["version"]
+    release_oid = doc["_id"]
     await get_app_download_records_collection().update_one(
         {
             "user_type": user_type,
@@ -376,7 +405,7 @@ async def record_authenticated_download(
         {
             "$set": {
                 "version": version,
-                "release_id": str(doc["_id"]),
+                "release_id": str(release_oid),
                 "updated_at": now,
             },
             "$setOnInsert": {
@@ -385,10 +414,14 @@ async def record_authenticated_download(
         },
         upsert=True,
     )
+    await get_app_releases_collection().update_one(
+        {"_id": release_oid},
+        {"$inc": {"download_count": 1}},
+    )
     return AppDownloadRecordResult(
         platform=platform,
         version=version,
-        release_id=str(doc["_id"]),
-        download_url=_download_url(str(doc["_id"])),
+        release_id=str(release_oid),
+        download_url=_download_url(str(release_oid)),
         user_type=user_type,
     )

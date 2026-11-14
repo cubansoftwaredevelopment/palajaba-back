@@ -18,6 +18,7 @@ class AppReleasePublic(BaseModel):
     is_main: bool
     uploaded_at: UtcDateTime | None = None
     download_url: str
+    download_count: int = 0
 
 
 class AppReleaseMainsPublic(BaseModel):

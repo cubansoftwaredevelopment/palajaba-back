@@ -194,6 +194,11 @@ class AdvertisingPlansPublic(BaseModel):
     plans: list[AdvertisingPlanPublic]
 
 
+class AdminAppDownloadInfo(BaseModel):
+    platform: Literal["android", "ios"]
+    version: str
+
+
 class AdminCustomerPublic(BaseModel):
     id: str
     full_name: str
@@ -204,6 +209,7 @@ class AdminCustomerPublic(BaseModel):
     created_at: datetime | None = None
     order_count: int = 0
     purchase_revoked: bool = False
+    app_downloads: list[AdminAppDownloadInfo] = Field(default_factory=list)
 
 
 class AdminCustomerAccessUpdate(BaseModel):

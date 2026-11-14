@@ -7,7 +7,8 @@ from datetime import datetime
 from bson import ObjectId
 from fastapi import HTTPException
 
-from app.admin.schemas import AdminCustomerPublic
+from app.admin.schemas import AdminAppDownloadInfo, AdminCustomerPublic
+from app.app_releases.service import map_user_app_downloads
 from app.database import get_customers_collection, get_orders_collection
 
 
@@ -25,7 +26,11 @@ def _phone(value: str) -> str:
     return str(value or "")
 
 
-def _public(doc: dict, order_count: int) -> AdminCustomerPublic:
+def _public(
+    doc: dict,
+    order_count: int,
+    app_downloads: list[AdminAppDownloadInfo] | None = None,
+) -> AdminCustomerPublic:
     created_at = doc.get("created_at")
     return AdminCustomerPublic(
         id=str(doc["_id"]),
@@ -37,6 +42,7 @@ def _public(doc: dict, order_count: int) -> AdminCustomerPublic:
         created_at=created_at if isinstance(created_at, datetime) else None,
         order_count=order_count,
         purchase_revoked=bool(doc.get("purchase_revoked")),
+        app_downloads=list(app_downloads or []),
     )
 
 
@@ -57,7 +63,19 @@ async def list_admin_customers() -> list[AdminCustomerPublic]:
     counts = await _order_counts()
     docs = await get_customers_collection().find({}).to_list(length=None)
     docs.sort(key=lambda doc: doc.get("created_at") or datetime.min, reverse=True)
-    return [_public(doc, counts.get(str(doc["_id"]), 0)) for doc in docs]
+    customer_ids = [str(doc["_id"]) for doc in docs]
+    downloads_by_user = await map_user_app_downloads(user_type="customer", user_ids=customer_ids)
+    return [
+        _public(
+            doc,
+            counts.get(str(doc["_id"]), 0),
+            [
+                AdminAppDownloadInfo(platform=item["platform"], version=item["version"])
+                for item in downloads_by_user.get(str(doc["_id"]), [])
+            ],
+        )
+        for doc in docs
+    ]
 
 
 async def set_customer_purchase_access(customer_id: str, *, purchase_revoked: bool) -> AdminCustomerPublic:
@@ -70,4 +88,12 @@ async def set_customer_purchase_access(customer_id: str, *, purchase_revoked: bo
         raise HTTPException(status_code=404, detail="Cliente no encontrado.")
     doc = await get_customers_collection().find_one({"_id": oid})
     order_count = await get_orders_collection().count_documents({"buyer_id": str(oid)})
-    return _public(doc, order_count)
+    downloads = await map_user_app_downloads(user_type="customer", user_ids=[str(oid)])
+    return _public(
+        doc,
+        order_count,
+        [
+            AdminAppDownloadInfo(platform=item["platform"], version=item["version"])
+            for item in downloads.get(str(oid), [])
+        ],
+    )

@@ -322,6 +322,11 @@ class RegisterResponse(BaseModel):
     message: str
 
 
+class RegistrationAppDownload(BaseModel):
+    platform: Literal["android", "ios"]
+    version: str
+
+
 class RegistrationPublic(BaseModel):
     id: str
     transfer_id: str
@@ -355,6 +360,7 @@ class RegistrationPublic(BaseModel):
     sales_total_cup: float = 0
     unconfirmed_orders_count: int = 0
     completed_orders_count: int = 0
+    app_downloads: list[RegistrationAppDownload] = Field(default_factory=list)
 
 
 class RegistrationDeleteResult(BaseModel):
