@@ -275,6 +275,40 @@ async def require_customer(
     return payload
 
 
+async def require_customer_or_seller(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    """Auth para endpoints que aceptan cliente o vendedor (p. ej. registro de descarga de app)."""
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = credentials.credentials
+    customer_payload = decode_customer_token(token)
+    if customer_payload is not None:
+        customer = await require_customer(credentials)
+        return {
+            "user_type": "customer",
+            "user_id": str(customer["customer_id"]),
+            **customer,
+        }
+    seller_payload = decode_seller_token(token)
+    if seller_payload is not None:
+        seller = await require_seller(credentials)
+        return {
+            "user_type": "seller",
+            "user_id": str(seller["seller_id"]),
+            **seller,
+        }
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token inválido o expirado",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def require_gestor(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:

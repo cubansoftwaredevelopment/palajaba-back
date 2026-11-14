@@ -14,6 +14,7 @@ from app.auth.routes import router as account_router
 from app.customer_accounts.routes import router as customer_accounts_router
 from app.orders.routes import router as orders_router
 from app.products.routes import router as products_router
+from app.app_releases.routes import router as app_releases_router
 from app.admin.routes import router as admin_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
@@ -64,6 +65,7 @@ app.include_router(account_router)
 app.include_router(customer_accounts_router)
 app.include_router(auth.router)
 app.include_router(products_router)
+app.include_router(app_releases_router)
 app.include_router(orders_router)
 app.include_router(gestores.router)
 app.include_router(categories.router)

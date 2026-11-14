@@ -55,6 +55,9 @@ async def connect_to_mongo():
     await ensure_advertising_indexes()
     await ensure_subscription_qvapay_indexes()
     await ensure_banner_indexes()
+    from app.app_releases.service import ensure_app_release_indexes
+
+    await ensure_app_release_indexes()
     await ensure_exchange_rates_indexes()
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
@@ -296,6 +299,18 @@ def get_marketplace_banners_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["marketplace_banners"]
+
+
+def get_app_releases_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["app_releases"]
+
+
+def get_app_download_records_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["app_download_records"]
 
 
 def get_platform_expenses_collection() -> AsyncIOMotorCollection:
