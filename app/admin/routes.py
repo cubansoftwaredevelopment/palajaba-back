@@ -26,12 +26,10 @@ from app.products.routes import admin_router as products_router
 from app.schemas.banners import BannerAdminPublic, BannerUpdate
 from app.schemas.discount_code import DiscountCodeCreate, DiscountCodeDeleteResult, DiscountCodePublic, DiscountCodeUpdate
 from app.schemas.gestores import GestorPublic
-from app.schemas.seller_feedback import AdminFeedbackDeleteResult, AdminFeedbackPublic, AdminFeedbackUnreadCount
 from app.services import banners as banners_service
 from app.services import discount_codes as discount_codes_service
 from app.services import gestores as gestores_service
 from app.services import seller_deletion as seller_deletion_service
-from app.services import seller_feedback as seller_feedback_service
 from app.statistics_admin.routes import router as statistics_router
 from app.subscriptions.routes import router as subscriptions_router
 from app.utils.dates import parse_subscription_end
@@ -113,26 +111,6 @@ async def update_discount_code(discount_code_id: str, payload: DiscountCodeUpdat
 @panel_router.delete("/discount-codes/{discount_code_id}", response_model=DiscountCodeDeleteResult)
 async def delete_discount_code(discount_code_id: str, _: dict = Depends(require_admin)):
     return await discount_codes_service.delete_discount_code(discount_code_id)
-
-
-@panel_router.get("/feedback", response_model=list[AdminFeedbackPublic])
-async def list_feedback(feedback_filter: Literal["all", "unread", "complaint", "suggestion"] = Query(default="all", alias="filter"), _: dict = Depends(require_admin)):
-    return await seller_feedback_service.list_admin_feedback(feedback_filter=feedback_filter)
-
-
-@panel_router.get("/feedback/unread-count", response_model=AdminFeedbackUnreadCount)
-async def feedback_unread_count(_: dict = Depends(require_admin)):
-    return await seller_feedback_service.get_admin_feedback_unread_count()
-
-
-@panel_router.patch("/feedback/{feedback_id}/read", response_model=AdminFeedbackPublic)
-async def mark_feedback_read(feedback_id: str, _: dict = Depends(require_admin)):
-    return await seller_feedback_service.mark_admin_feedback_read(feedback_id)
-
-
-@panel_router.delete("/feedback/{feedback_id}", response_model=AdminFeedbackDeleteResult)
-async def delete_feedback(feedback_id: str, _: dict = Depends(require_admin)):
-    return await seller_feedback_service.delete_admin_feedback(feedback_id)
 
 
 @panel_router.get("/settings", response_model=PlatformSettingsPublic)

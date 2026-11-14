@@ -19,7 +19,6 @@ from app.database import (
     get_registrations_collection,
     get_seller_contact_otp_challenges_collection,
     get_seller_devices_collection,
-    get_seller_feedback_collection,
     get_seller_profile_views_collection,
 )
 from app.utils.datetime import to_utc_naive, utc_now
@@ -152,8 +151,6 @@ async def hard_delete_seller_account(seller_id: str) -> dict[str, str]:
     await get_gestores_collection().delete_many({"seller_id": seller_id})
     await get_notifications_collection().delete_many({"seller_id": seller_oid})
     await get_seller_devices_collection().delete_many({"seller_id": seller_oid})
-    await get_seller_feedback_collection().delete_many({"seller_id": seller_oid})
-    await get_seller_feedback_collection().delete_many({"seller_id": seller_id})
     await get_seller_contact_otp_challenges_collection().delete_many({"seller_id": seller_id})
 
     await collection.delete_one({"_id": seller_oid})

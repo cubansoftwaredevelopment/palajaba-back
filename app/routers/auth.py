@@ -9,7 +9,6 @@ from app.schemas.seller_profile import (
     StoreBannerUpdate,
     StorePageUpdate,
 )
-from app.schemas.seller_feedback import SellerFeedbackCreate, SellerFeedbackSubmitResult
 from app.schemas.gestores import (
     GestorAllowedProductPublic,
     GestorCatalogAccess,
@@ -22,7 +21,6 @@ from app.schemas.gestores import (
 )
 from app.services import gestores as gestores_service
 from app.services import seller_deletion as seller_deletion_service
-from app.services import seller_feedback as seller_feedback_service
 from app.services import seller_profile as profile_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -52,17 +50,6 @@ async def update_seller_store_name(
     seller_payload: dict = Depends(require_active_seller),
 ):
     return await profile_service.update_seller_store_name(seller_payload["seller_id"], payload)
-
-
-@router.post("/me/feedback", response_model=SellerFeedbackSubmitResult, status_code=201)
-async def submit_seller_feedback(
-    payload: SellerFeedbackCreate,
-    seller_payload: dict = Depends(require_active_seller),
-):
-    return await seller_feedback_service.submit_seller_feedback(
-        seller_payload["seller_id"],
-        payload,
-    )
 
 
 @router.post("/me/profile-photo", response_model=SellerPublic)

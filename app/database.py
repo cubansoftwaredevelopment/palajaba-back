@@ -59,7 +59,6 @@ async def connect_to_mongo():
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
     await ensure_catalog_indexes()
-    from app.services.seller_feedback import ensure_seller_feedback_indexes
     from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
     from app.catalogs.catalog_theme import ensure_catalog_theme_defaults_on_startup
     from app.services.discount_codes import ensure_discount_code_indexes
@@ -68,7 +67,6 @@ async def connect_to_mongo():
         ensure_seller_gestor_catalog_defaults,
     )
 
-    await ensure_seller_feedback_indexes()
     await ensure_discount_code_indexes()
     await ensure_gestor_indexes()
     await ensure_seller_gestor_catalog_defaults()
@@ -232,12 +230,6 @@ def get_exchange_rates_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["exchange_rates"]
-
-
-def get_seller_feedback_collection() -> AsyncIOMotorCollection:
-    if db is None:
-        raise RuntimeError("MongoDB no está conectado")
-    return db["seller_feedback"]
 
 
 def get_discount_codes_collection() -> AsyncIOMotorCollection:
