@@ -67,6 +67,52 @@ async def _access_token(account: dict) -> str | None:
     return token
 
 
+# Canal Android (debe coincidir con PushNotifications.createChannel en el front).
+ANDROID_PUSH_CHANNEL_ID = "pala_jaba_push"
+
+
+def _fcm_message(token: str, title: str, body: str, data: dict | None = None) -> dict:
+    """Payload con notification + android/apns para bandeja del sistema en background."""
+    clean_title = str(title or "").strip() or "Pa' La Jaba"
+    clean_body = str(body or "").replace("\n", " ").strip() or "Tienes una novedad."
+    message: dict = {
+        "token": token,
+        "notification": {
+            "title": clean_title,
+            "body": clean_body,
+        },
+        "android": {
+            "priority": "HIGH",
+            "notification": {
+                "channel_id": ANDROID_PUSH_CHANNEL_ID,
+                "title": clean_title,
+                "body": clean_body,
+                "sound": "default",
+                "default_sound": True,
+                "default_vibrate_timings": True,
+                "notification_priority": "PRIORITY_HIGH",
+            },
+        },
+        "apns": {
+            "headers": {
+                "apns-priority": "10",
+            },
+            "payload": {
+                "aps": {
+                    "alert": {
+                        "title": clean_title,
+                        "body": clean_body,
+                    },
+                    "sound": "default",
+                }
+            },
+        },
+    }
+    if data:
+        message["data"] = {str(key): str(value) for key, value in data.items()}
+    return message
+
+
 async def notify_device_tokens(tokens: list[str], title: str, body: str, data: dict | None = None) -> None:
     account = _account()
     if account is None or not account.get("project_id"):
@@ -89,16 +135,7 @@ async def notify_device_tokens(tokens: list[str], title: str, body: str, data: d
                 await client.post(
                     url,
                     headers=headers,
-                    json={
-                        "message": {
-                            "token": device_token,
-                            "notification": {
-                                "title": title,
-                                "body": body.replace("\n", " "),
-                            },
-                            **({"data": {str(key): str(value) for key, value in data.items()}} if data else {}),
-                        }
-                    },
+                    json={"message": _fcm_message(device_token, title, body, data)},
                 )
     except Exception:
         return
