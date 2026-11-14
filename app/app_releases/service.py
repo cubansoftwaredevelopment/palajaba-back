@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from pathlib import Path
@@ -12,8 +13,10 @@ from fastapi.responses import FileResponse
 
 from app.app_releases.schemas import (
     AppDownloadRecordResult,
+    AppPlatformPromptStatus,
     AppReleaseDeleteResult,
     AppReleaseMainsPublic,
+    AppReleasePromptStatus,
     AppReleasePublic,
 )
 from app.database import get_app_download_records_collection, get_app_releases_collection
@@ -276,6 +279,49 @@ async def list_main_releases() -> AppReleaseMainsPublic:
     return AppReleaseMainsPublic(
         android=_document_to_public(android) if android else None,
         ios=_document_to_public(ios) if ios else None,
+    )
+
+
+def _platform_prompt_status(
+    main_doc: dict[str, Any] | None,
+    record: dict[str, Any] | None,
+) -> AppPlatformPromptStatus:
+    main = _document_to_public(main_doc) if main_doc else None
+    downloaded_version = None
+    if record and record.get("version"):
+        downloaded_version = str(record["version"]).strip() or None
+    needs_download = False
+    if main is not None:
+        needs_download = (
+            downloaded_version is None or downloaded_version != main.version
+        )
+    return AppPlatformPromptStatus(
+        main=main,
+        downloaded_version=downloaded_version,
+        needs_download=needs_download,
+    )
+
+
+async def get_prompt_status(
+    *,
+    user_type: Literal["customer", "seller"],
+    user_id: str,
+) -> AppReleasePromptStatus:
+    releases = get_app_releases_collection()
+    records = get_app_download_records_collection()
+    android_main, ios_main, android_record, ios_record = await asyncio.gather(
+        releases.find_one({"platform": "android", "is_main": True}),
+        releases.find_one({"platform": "ios", "is_main": True}),
+        records.find_one(
+            {"user_type": user_type, "user_id": str(user_id), "platform": "android"}
+        ),
+        records.find_one(
+            {"user_type": user_type, "user_id": str(user_id), "platform": "ios"}
+        ),
+    )
+    return AppReleasePromptStatus(
+        android=_platform_prompt_status(android_main, android_record),
+        ios=_platform_prompt_status(ios_main, ios_record),
     )
 
 

@@ -7,6 +7,7 @@ from app.app_releases.schemas import (
     AppDownloadRecordResult,
     AppReleaseDeleteResult,
     AppReleaseMainsPublic,
+    AppReleasePromptStatus,
     AppReleasePublic,
 )
 from app.auth.utils import require_admin, require_customer_or_seller
@@ -52,6 +53,19 @@ async def delete_app_release(release_id: str, _: dict = Depends(require_admin)):
 @marketplace_router.get("/app-releases/main", response_model=AppReleaseMainsPublic)
 async def get_main_app_releases():
     return await app_releases_service.list_main_releases()
+
+
+@marketplace_router.get(
+    "/app-releases/prompt-status",
+    response_model=AppReleasePromptStatus,
+)
+async def get_app_release_prompt_status(
+    account: dict = Depends(require_customer_or_seller),
+):
+    return await app_releases_service.get_prompt_status(
+        user_type=account["user_type"],
+        user_id=account["user_id"],
+    )
 
 
 @marketplace_router.get("/app-releases/{release_id}/file")

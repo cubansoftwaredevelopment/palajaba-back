@@ -33,6 +33,17 @@ class AppDownloadRecordResult(BaseModel):
     user_type: Literal["customer", "seller"]
 
 
+class AppPlatformPromptStatus(BaseModel):
+    main: AppReleasePublic | None = None
+    downloaded_version: str | None = None
+    needs_download: bool = False
+
+
+class AppReleasePromptStatus(BaseModel):
+    android: AppPlatformPromptStatus
+    ios: AppPlatformPromptStatus
+
+
 class AppReleaseDeleteResult(BaseModel):
     id: str
     message: str = Field(default="Build eliminado.")

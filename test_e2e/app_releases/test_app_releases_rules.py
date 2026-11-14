@@ -114,6 +114,26 @@ class AppReleaseRulesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(path.read_bytes(), content)
             self.assertTrue(relative.startswith("app-releases/android/"))
 
+    def test_platform_prompt_status_needs_download(self):
+        main = {
+            "_id": ObjectId(),
+            "platform": "android",
+            "version": "1.0.1",
+            "original_filename": "a.apk",
+            "size_bytes": 10,
+            "is_main": True,
+            "uploaded_at": None,
+        }
+        missing = service._platform_prompt_status(main, None)
+        self.assertTrue(missing.needs_download)
+        self.assertIsNone(missing.downloaded_version)
+
+        outdated = service._platform_prompt_status(main, {"version": "1.0.0"})
+        self.assertTrue(outdated.needs_download)
+
+        current = service._platform_prompt_status(main, {"version": "1.0.1"})
+        self.assertFalse(current.needs_download)
+
 
 if __name__ == "__main__":
     unittest.main()
