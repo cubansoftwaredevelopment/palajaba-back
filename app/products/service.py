@@ -349,41 +349,20 @@ async def _sync_local_category_product_count(seller_id: str, category_oid: Objec
     )
 
 
-def parse_ordered_product_ids(raw_ids: list) -> list[ObjectId]:
-    parsed: list[ObjectId] = []
-    seen: set[ObjectId] = set()
-    for raw in raw_ids:
-        try:
-            product_id = ObjectId(str(raw))
-        except (InvalidId, TypeError):
-            continue
-        if product_id in seen:
-            continue
-        seen.add(product_id)
-        parsed.append(product_id)
-    return parsed
-
-
-def ordered_product_search_limit(query: str) -> int:
+def catalog_product_search_limit(query: str) -> int:
     if query.strip():
         return ORDERED_PRODUCT_SEARCH_LIMIT
     return ORDERED_PRODUCT_PREVIEW_LIMIT
 
 
-def ordered_product_search_filter(
+def catalog_product_search_filter(
     seller_id: str,
-    product_ids: list[ObjectId],
     query: str,
     category_ids: list[ObjectId],
-) -> dict[str, Any] | None:
-    if not product_ids:
-        return None
-
+) -> dict[str, Any]:
+    """Todo el catálogo del seller (incl. no disponibles / solo consulta)."""
     product_filter: dict[str, Any] = {
         "seller_id": seller_id,
-        "_id": {"$in": product_ids},
-        "is_available": True,
-        "view_only": {"$ne": True},
         "deleted_at": None,
     }
     normalized = query.strip()
@@ -399,10 +378,11 @@ def ordered_product_search_filter(
 
 
 async def search_seller_ordered_products(seller_id: str, query: str) -> CatalogProductSearchPublic:
-    raw_ids = await get_orders_collection().distinct("items.product_id", {"seller_id": seller_id})
-    product_ids = parse_ordered_product_ids(raw_ids)
-    if not product_ids:
-        return CatalogProductSearchPublic()
+    products_col = get_catalog_products_collection()
+    catalog_filter = {"seller_id": seller_id, "deleted_at": None}
+    has_catalog = await products_col.find_one(catalog_filter, {"_id": 1}) is not None
+    if not has_catalog:
+        return CatalogProductSearchPublic(has_ordered_products=False)
 
     normalized = query.strip()
     category_ids: list[ObjectId] = []
@@ -415,10 +395,9 @@ async def search_seller_ordered_products(seller_id: str, query: str) -> CatalogP
             },
         )
 
-    product_filter = ordered_product_search_filter(seller_id, product_ids, normalized, category_ids)
-    products_col = get_catalog_products_collection()
+    product_filter = catalog_product_search_filter(seller_id, normalized, category_ids)
     total = await products_col.count_documents(product_filter)
-    limit = ordered_product_search_limit(normalized)
+    limit = catalog_product_search_limit(normalized)
     docs = await products_col.find(product_filter).sort("name", 1).limit(limit).to_list(length=limit)
 
     category_oids = [doc["category_id"] for doc in docs if doc.get("category_id") is not None]
@@ -447,6 +426,7 @@ async def search_seller_ordered_products(seller_id: str, query: str) -> CatalogP
     return CatalogProductSearchPublic(
         products=suggestions,
         total=total,
+        # Campo legacy: indica si hay productos en el catálogo.
         has_ordered_products=True,
     )
 

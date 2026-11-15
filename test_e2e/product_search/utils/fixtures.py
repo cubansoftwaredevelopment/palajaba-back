@@ -1,4 +1,4 @@
-"""Datos propios del e2e de autocompletado de productos con pedidos."""
+"""Datos propios del e2e de autocompletado de productos del catálogo."""
 
 from __future__ import annotations
 

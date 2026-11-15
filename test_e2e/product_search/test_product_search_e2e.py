@@ -1,4 +1,4 @@
-"""Recorrido de autocompletado: solo productos que ya están en pedidos."""
+"""Recorrido de autocompletado: todo el catálogo del seller."""
 
 from __future__ import annotations
 
@@ -23,14 +23,20 @@ class ProductSearchE2ETests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cleanup_db()
 
-    def test_blank_query_lists_only_ordered_available_products(self) -> None:
+    def test_blank_query_lists_full_catalog(self) -> None:
         body = search_products(self.seed["seller_id"])
 
         self.assertTrue(body["has_ordered_products"])
-        self.assertEqual(body["total"], 2)
+        self.assertEqual(body["total"], 5)
         self.assertEqual(
             [(item["name"], item["category_name"]) for item in body["products"]],
-            [("Arroz Premium", "Despensa"), ("Café", "Bebidas")],
+            [
+                ("Aceite", "Despensa"),
+                ("Arroz Premium", "Despensa"),
+                ("Café", "Bebidas"),
+                ("Frijoles", "Despensa"),
+                ("Jamón", "Despensa"),
+            ],
         )
 
     def test_name_search_is_case_insensitive_and_keeps_accents(self) -> None:
@@ -46,25 +52,25 @@ class ProductSearchE2ETests(unittest.TestCase):
         self.assertEqual(without_accent["products"], [])
         self.assertTrue(without_accent["has_ordered_products"])
 
-    def test_category_search_skips_products_that_were_never_ordered(self) -> None:
+    def test_category_and_name_include_hidden_and_never_ordered(self) -> None:
         body = search_products(self.seed["seller_id"], "despensa")
 
-        self.assertEqual(body["total"], 1)
-        self.assertEqual([item["name"] for item in body["products"]], ["Arroz Premium"])
+        self.assertEqual(body["total"], 4)
+        self.assertEqual(
+            [item["name"] for item in body["products"]],
+            ["Aceite", "Arroz Premium", "Frijoles", "Jamón"],
+        )
 
         never_ordered = search_products(self.seed["seller_id"], "Jamón")
-        self.assertEqual(never_ordered["total"], 0)
-        self.assertEqual(never_ordered["products"], [])
+        self.assertEqual(never_ordered["total"], 1)
+        self.assertEqual([item["name"] for item in never_ordered["products"]], ["Jamón"])
 
-    def test_hidden_ordered_products_stay_out_of_suggestions(self) -> None:
         view_only = search_products(self.seed["seller_id"], "aceite")
         unavailable = search_products(self.seed["seller_id"], "frijoles")
+        self.assertEqual([item["name"] for item in view_only["products"]], ["Aceite"])
+        self.assertEqual([item["name"] for item in unavailable["products"]], ["Frijoles"])
 
-        self.assertEqual(view_only["total"], 0)
-        self.assertEqual(unavailable["total"], 0)
-        self.assertTrue(view_only["has_ordered_products"])
-
-    def test_seller_without_orders_has_no_suggestions(self) -> None:
+    def test_seller_without_catalog_has_no_suggestions(self) -> None:
         body = search_products(self.seed["empty_seller_id"], "arroz")
 
         self.assertFalse(body["has_ordered_products"])

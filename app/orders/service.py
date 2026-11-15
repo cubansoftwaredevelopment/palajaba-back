@@ -296,6 +296,8 @@ async def _rollback_stock_decrements(
 async def _decrement_product_stock(
     seller_id: str,
     normalized_items: list[dict[str, Any]],
+    *,
+    require_available: bool = True,
 ) -> list[tuple[ObjectId, int]]:
     products_col = get_catalog_products_collection()
     now = to_utc_naive(utc_now())
@@ -322,7 +324,11 @@ async def _decrement_product_stock(
             raise ValueError("Producto no encontrado.")
         if doc.get("seller_id") != seller_id:
             raise ValueError("No puedes registrar productos de otra tienda.")
-        if not doc.get("is_available", True) or doc.get("view_only"):
+        if doc.get("deleted_at") is not None:
+            raise ValueError(f"«{doc.get('name', 'Producto')}» ya no está en el catálogo.")
+        # Pedidos del marketplace: solo productos visibles/disponibles.
+        # Venta manual: permite todo el catálogo (agotados / solo consulta).
+        if require_available and (not doc.get("is_available", True) or doc.get("view_only")):
             raise ValueError(f"«{doc.get('name', 'Producto')}» no está disponible para la venta.")
 
     applied: list[tuple[ObjectId, int]] = []
@@ -454,7 +460,11 @@ async def create_seller_manual_order(
 
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
-    stock_adjustments = await _decrement_product_stock(seller_id, normalized_items)
+    stock_adjustments = await _decrement_product_stock(
+        seller_id,
+        normalized_items,
+        require_available=False,
+    )
     now = to_utc_naive(utc_now())
 
     doc = _build_order_document(
