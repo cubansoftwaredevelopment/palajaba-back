@@ -196,3 +196,30 @@ class CustomerPasswordResetCompleteResponse(BaseModel):
     message: str
 
 
+class StoreCustomerNoticeRequest(BaseModel):
+    title: str = Field(..., min_length=2, max_length=80)
+    content: str = Field(..., min_length=2, max_length=500)
+    all_customers: bool = False
+    customer_ids: list[str] = Field(default_factory=list, max_length=100)
+
+    @field_validator("title", "content")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        return " ".join(value.split())
+
+    @model_validator(mode="after")
+    def require_audience(self):
+        if self.all_customers:
+            self.customer_ids = []
+            return self
+        seen: list[str] = []
+        for raw in self.customer_ids:
+            key = str(raw or "").strip()
+            if key and key not in seen:
+                seen.append(key)
+        if not seen:
+            raise ValueError("Elige todos los clientes o al menos uno.")
+        self.customer_ids = seen
+        return self
+
+

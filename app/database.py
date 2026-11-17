@@ -95,6 +95,7 @@ async def connect_to_mongo():
     await get_app_push_devices_collection().create_index("token", unique=True)
     await get_app_push_devices_collection().create_index("platform")
     await get_customer_notifications_collection().create_index([("customer_id", 1), ("created_at", -1)])
+    await get_customer_notifications_collection().create_index([("seller_id", 1), ("kind", 1), ("created_at", -1)])
     await ensure_exchange_rates_ready()
     ensure_uploads_dir()
 

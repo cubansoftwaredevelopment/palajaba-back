@@ -257,7 +257,7 @@ class AccountDeletionE2ETests(unittest.TestCase):
         ):
             before = client.get("/api/customers/me/orders", headers=customer_headers)
             self.assertEqual(before.status_code, 200, before.text)
-            self.assertEqual(len(before.json()), 1)
+            self.assertEqual(len(before.json()["items"]), 1)
 
             deleted = client.delete("/api/auth/me", headers=seller_headers)
             self.assertEqual(deleted.status_code, 204, deleted.text)
@@ -267,7 +267,7 @@ class AccountDeletionE2ETests(unittest.TestCase):
 
             customer_orders = client.get("/api/customers/me/orders", headers=customer_headers)
             self.assertEqual(customer_orders.status_code, 200, customer_orders.text)
-            orders = customer_orders.json()
+            orders = customer_orders.json()["items"]
             self.assertEqual(len(orders), 1)
             order = orders[0]
             self.assertEqual(order["id"], pair["order_id"])

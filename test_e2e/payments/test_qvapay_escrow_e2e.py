@@ -76,7 +76,7 @@ class QvaPayEscrowE2ETests(unittest.TestCase):
             self.assertEqual(hooked.status_code, 200, hooked.text)
             customer_orders = client.get("/api/customers/me/orders", headers=customer_headers)
             self.assertEqual(customer_orders.status_code, 200)
-            stored = next(item for item in customer_orders.json() if item["id"] == seeded["order_id"])
+            stored = next(item for item in customer_orders.json()["items"] if item["id"] == seeded["order_id"])
             self.assertEqual(stored["payment_method"], "qvapay")
             self.assertEqual(stored["qvapay"]["payment_status"], "paid")
             self.assertEqual(stored["qvapay"]["release_status"], "held")

@@ -272,15 +272,38 @@ async def _notify_customer(
     customer_oid = _oid(customer_id, "Cliente no encontrado.")
     created_at = to_utc_naive(utc_now())
     stored_images = [image for image in images or [] if isinstance(image, str) and image.strip()]
+    store_name = None
+    store_logo = None
+    try:
+        order = await get_orders_collection().find_one(
+            {"_id": ObjectId(str(order_id))},
+            {"store_name": 1, "seller_id": 1},
+        )
+    except Exception:
+        order = None
+    if order:
+        store_name = order.get("store_name") or None
+        try:
+            seller = await get_registrations_collection().find_one(
+                {"_id": ObjectId(str(order.get("seller_id")))},
+                {"store_name": 1, "profile_photo_url": 1},
+            )
+        except Exception:
+            seller = None
+        if seller:
+            store_name = store_name or seller.get("store_name")
+            store_logo = seller.get("profile_photo_url") or None
     document = {
         "_id": ObjectId(), "customer_id": customer_oid, "order_id": str(order_id), "title": title,
-        "content": content, "kind": kind, "images": stored_images, "created_at": created_at, "read_at": None,
+        "content": content, "kind": kind, "images": stored_images, "store_name": store_name,
+        "store_logo": store_logo, "created_at": created_at, "read_at": None,
     }
     await get_customer_notifications_collection().insert_one(document)
     from app.live.hub import publish_customer_notification
     await publish_customer_notification(str(customer_oid), {
         "id": str(document["_id"]), "order_id": str(order_id), "title": title,
-        "content": content, "kind": kind, "images": stored_images, "created_at": created_at, "read_at": None,
+        "content": content, "kind": kind, "images": stored_images, "store_name": store_name,
+        "store_logo": store_logo, "from_admin": False, "created_at": created_at, "read_at": None,
     })
     if not sms:
         return
@@ -658,9 +681,70 @@ async def stop_expiry_task() -> None:
     _expiry_task = None
 
 
+async def _attach_customer_notice_senders(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    order_ids: list[ObjectId] = []
+    for doc in docs:
+        raw_order = doc.get("order_id")
+        if not raw_order or doc.get("store_name"):
+            continue
+        try:
+            order_ids.append(ObjectId(str(raw_order)))
+        except Exception:
+            continue
+    orders_by_id: dict[str, dict[str, Any]] = {}
+    if order_ids:
+        found_orders = await get_orders_collection().find(
+            {"_id": {"$in": order_ids}},
+            {"store_name": 1, "seller_id": 1},
+        ).to_list(length=len(order_ids))
+        orders_by_id = {str(item["_id"]): item for item in found_orders}
+
+    seller_oids: list[ObjectId] = []
+    for order in orders_by_id.values():
+        try:
+            seller_oids.append(ObjectId(str(order.get("seller_id"))))
+        except Exception:
+            continue
+    store_names = [
+        str(doc.get("store_name")).strip()
+        for doc in docs
+        if doc.get("kind") == "store" and doc.get("store_name") and not doc.get("store_logo")
+    ]
+    seller_query: list[dict[str, Any]] = []
+    if seller_oids:
+        seller_query.append({"_id": {"$in": seller_oids}})
+    if store_names:
+        seller_query.append({"store_name": {"$in": store_names}})
+    sellers: list[dict[str, Any]] = []
+    if seller_query:
+        sellers = await get_registrations_collection().find(
+            {"$or": seller_query} if len(seller_query) > 1 else seller_query[0],
+            {"store_name": 1, "profile_photo_url": 1},
+        ).to_list(length=None)
+    sellers_by_id = {str(item["_id"]): item for item in sellers}
+    sellers_by_name = {item.get("store_name"): item for item in sellers if item.get("store_name")}
+
+    enriched: list[dict[str, Any]] = []
+    for doc in docs:
+        next_doc = dict(doc)
+        order = orders_by_id.get(str(doc.get("order_id") or ""))
+        seller = None
+        if order:
+            next_doc["store_name"] = next_doc.get("store_name") or order.get("store_name")
+            seller = sellers_by_id.get(str(order.get("seller_id") or ""))
+        if seller is None and next_doc.get("store_name"):
+            seller = sellers_by_name.get(next_doc.get("store_name"))
+        if seller:
+            next_doc["store_name"] = next_doc.get("store_name") or seller.get("store_name")
+            next_doc["store_logo"] = next_doc.get("store_logo") or seller.get("profile_photo_url")
+        enriched.append(next_doc)
+    return enriched
+
+
 async def list_customer_notifications(customer_id: str) -> list[dict[str, Any]]:
     docs = await get_customer_notifications_collection().find({"customer_id": _oid(customer_id, "Cliente no encontrado.")}).sort("created_at", -1).limit(50).to_list(length=50)
-    return [_customer_notification_public(doc) for doc in docs]
+    enriched = await _attach_customer_notice_senders(docs)
+    return [_customer_notification_public(doc) for doc in enriched]
 
 
 def _customer_notification_public(doc: dict[str, Any]) -> dict[str, Any]:
@@ -671,6 +755,9 @@ def _customer_notification_public(doc: dict[str, Any]) -> dict[str, Any]:
         "kind": doc["kind"],
         "images": [image for image in doc.get("images") or [] if isinstance(image, str)],
         "order_id": doc.get("order_id"),
+        "store_name": doc.get("store_name") or None,
+        "store_logo": doc.get("store_logo") or None,
+        "from_admin": doc.get("kind") == "admin",
         "created_at": doc["created_at"],
         "read_at": doc.get("read_at"),
     }

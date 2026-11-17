@@ -29,6 +29,7 @@ from .schema import (
     CustomerPhoneUpdateRequest,
     CustomerPublic,
     CustomerRegisterRequest,
+    StoreCustomerNoticeRequest,
 )
 
 router = APIRouter(prefix="/api/customers", tags=["customers"])
@@ -170,8 +171,16 @@ async def remove_customer_favorite(product_id: str, customer_payload: dict = Dep
 
 
 @router.get("/me/orders")
-async def list_customer_orders(customer_payload: dict = Depends(require_customer)):
-    return await services.list_customer_orders(customer_payload["customer_id"])
+async def list_customer_orders(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=50),
+    customer_payload: dict = Depends(require_customer),
+):
+    return await services.list_customer_orders(
+        customer_payload["customer_id"],
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/me/orders/{order_id}/agreements/{kind}.pdf")
@@ -214,6 +223,15 @@ async def download_customer_order_evidence(
     )
 
 
+@router.get("/store/customers/suggestions")
+async def suggest_store_customers(
+    q: str = Query(default="", max_length=80),
+    limit: int = Query(default=8, ge=1, le=20),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await services.suggest_store_customers(seller_payload["seller_id"], q, limit=limit)
+
+
 @router.get("/store/customers")
 async def list_store_customers(
     offset: int = Query(default=0, ge=0),
@@ -243,3 +261,24 @@ async def list_store_customers(
         date_to=date_to,
         products=products,
     )
+
+
+@router.get("/store/notices")
+async def list_store_customer_notices(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=50),
+    seller_payload: dict = Depends(require_seller),
+):
+    return await services.list_store_customer_notices(
+        seller_payload["seller_id"],
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.post("/store/notices")
+async def send_store_customer_notice(
+    payload: StoreCustomerNoticeRequest,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await services.send_store_customer_notice(seller_payload["seller_id"], payload)

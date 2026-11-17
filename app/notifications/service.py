@@ -631,6 +631,7 @@ async def _insert_customer_notices(
                 "content": content,
                 "kind": "admin",
                 "images": [],
+                "from_admin": True,
                 "created_at": created_at,
                 "read_at": None,
             },

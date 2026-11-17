@@ -22,6 +22,7 @@ from app.database import (
 from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
 from app.platform_terms import acceptance_record, stored_acceptance
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
+from app.services.marketplace import _search_text_filter
 from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
 from .schema import (
@@ -44,6 +45,7 @@ from .schema import (
     CustomerPasswordResetStartResponse,
     CustomerPhoneUpdateRequest,
     CustomerRegisterRequest,
+    StoreCustomerNoticeRequest,
 )
 from .utils import customer_public, mask_customer_phone, store_customer_order_location
 
@@ -489,8 +491,18 @@ async def remove_customer_favorite(product_id: str, customer_id: str):
     return await get_customer(customer_id)
 
 
-async def list_customer_orders(customer_id: str):
-    docs = await get_orders_collection().find({"buyer_id": customer_id}).sort("created_at", -1).to_list(length=None)
+async def list_customer_orders(customer_id: str, *, offset: int = 0, limit: int = 10):
+    page_size = max(1, min(limit, 50))
+    safe_offset = max(0, offset)
+    orders = get_orders_collection()
+    query = {"buyer_id": customer_id}
+    total = await orders.count_documents(query)
+    docs = await orders.find(query).sort([("created_at", -1), ("_id", -1)]).skip(safe_offset).limit(page_size).to_list(length=page_size)
+    attention = await orders.count_documents({
+        "buyer_id": customer_id,
+        "payment_method": "qvapay",
+        "qvapay.evidence.status": {"$in": ["pending", "rejected"]},
+    })
     product_ids = set()
     for doc in docs:
         for item in doc.get("items") or []:
@@ -517,7 +529,7 @@ async def list_customer_orders(customer_id: str):
             items.append(item_data)
         return items
 
-    return [
+    items = [
         {
             "id": str(doc["_id"]), "store_id": doc["seller_id"], "store_name": doc["store_name"],
             "status": doc["status"], "items": items_with_images(doc), "subtotals": doc.get("subtotals") or [],
@@ -531,6 +543,14 @@ async def list_customer_orders(customer_id: str):
         }
         for doc in docs
     ]
+    return {
+        "items": items,
+        "total": total,
+        "offset": safe_offset,
+        "limit": page_size,
+        "has_more": safe_offset + len(items) < total,
+        "has_attention": attention > 0,
+    }
 
 
 def _customer_order_qvapay_public(value: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -676,4 +696,213 @@ async def list_store_customers(
             {"value": key, "label": value}
             for key, value in sorted(location_options.items(), key=lambda item: item[1].casefold())
         ],
+    }
+
+
+async def suggest_store_customers(seller_id: str, query: str, *, limit: int = 8) -> dict[str, Any]:
+    normalized = query.strip()
+    if len(normalized) < 2:
+        return {"items": []}
+    text_filter = _search_text_filter(normalized)
+    if not text_filter:
+        return {"items": []}
+    name_match = text_filter["$or"][0]["name"]
+    buyer_ids = await get_orders_collection().distinct(
+        "buyer_id",
+        {"seller_id": seller_id, "buyer_id": {"$exists": True, "$nin": [None, ""]}},
+    )
+    customer_ids: list[ObjectId] = []
+    for raw in buyer_ids:
+        try:
+            customer_ids.append(ObjectId(str(raw)))
+        except Exception:
+            continue
+    if not customer_ids:
+        return {"items": []}
+    docs = await get_customers_collection().find(
+        {"_id": {"$in": customer_ids}, "full_name": name_match},
+        {"full_name": 1, "phone": 1, "email": 1},
+    ).limit(max(1, min(limit, 20))).to_list(length=max(1, min(limit, 20)))
+    return {
+        "items": [
+            {
+                "id": str(doc["_id"]),
+                "full_name": doc.get("full_name") or "Cliente",
+                "phone": doc.get("phone") or "",
+                "email": doc.get("email") or "",
+            }
+            for doc in docs
+        ],
+    }
+
+
+async def send_store_customer_notice(seller_id: str, payload: StoreCustomerNoticeRequest) -> dict[str, int]:
+    try:
+        seller_oid = ObjectId(seller_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.") from exc
+    seller = await get_registrations_collection().find_one(
+        {"_id": seller_oid},
+        {"store_name": 1, "profile_photo_url": 1},
+    )
+    if not seller:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+
+    buyer_ids = await get_orders_collection().distinct(
+        "buyer_id",
+        {"seller_id": seller_id, "buyer_id": {"$exists": True, "$nin": [None, ""]}},
+    )
+    allowed: dict[str, ObjectId] = {}
+    for raw in buyer_ids:
+        try:
+            oid = ObjectId(str(raw))
+        except Exception:
+            continue
+        allowed[str(oid)] = oid
+    if payload.all_customers:
+        target_ids = list(allowed)
+    else:
+        unknown = [item for item in payload.customer_ids if item not in allowed]
+        if unknown:
+            raise HTTPException(status_code=400, detail="Solo puedes avisar a clientes que han pedido en tu tienda.")
+        target_ids = list(payload.customer_ids)
+    if not target_ids:
+        raise HTTPException(status_code=400, detail="No hay clientes para recibir el aviso.")
+
+    customers = await get_customers_collection().find(
+        {"_id": {"$in": [allowed[item] for item in target_ids]}},
+        {"_id": 1},
+    ).to_list(length=None)
+    if not customers:
+        raise HTTPException(status_code=400, detail="No hay clientes para recibir el aviso.")
+
+    store_name = str(seller.get("store_name") or "Tu tienda").strip() or "Tu tienda"
+    store_logo = seller.get("profile_photo_url") or None
+    created_at = to_utc_naive(utc_now())
+    batch_id = ObjectId()
+    documents = [
+        {
+            "_id": ObjectId(),
+            "customer_id": customer["_id"],
+            "order_id": None,
+            "title": payload.title,
+            "content": payload.content,
+            "kind": "store",
+            "seller_id": seller_id,
+            "batch_id": batch_id,
+            "all_customers": bool(payload.all_customers),
+            "store_name": store_name,
+            "store_logo": store_logo,
+            "images": [],
+            "created_at": created_at,
+            "read_at": None,
+        }
+        for customer in customers
+    ]
+    await get_customer_notifications_collection().insert_many(documents)
+    from app.live.hub import publish_customer_notification
+    for document in documents:
+        await publish_customer_notification(
+            str(document["customer_id"]),
+            {
+                "id": str(document["_id"]),
+                "order_id": None,
+                "title": payload.title,
+                "content": payload.content,
+                "kind": "store",
+                "store_name": store_name,
+                "store_logo": store_logo,
+                "from_admin": False,
+                "images": [],
+                "created_at": created_at,
+                "read_at": None,
+            },
+        )
+    return {"sent_count": len(documents)}
+
+
+async def list_store_customer_notices(seller_id: str, *, offset: int = 0, limit: int = 10) -> dict[str, Any]:
+    try:
+        seller_oid = ObjectId(seller_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.") from exc
+    seller = await get_registrations_collection().find_one({"_id": seller_oid}, {"store_name": 1})
+    if not seller:
+        raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+    store_name = str(seller.get("store_name") or "").strip()
+    page_size = max(1, min(limit, 50))
+    safe_offset = max(0, offset)
+    match: dict[str, Any] = {
+        "kind": "store",
+        "$or": [
+            {"seller_id": seller_id},
+            {"seller_id": {"$exists": False}, "store_name": store_name},
+        ],
+    }
+    grouped = await get_customer_notifications_collection().aggregate([
+        {"$match": match},
+        {"$group": {
+            "_id": {
+                "batch_id": "$batch_id",
+                "created_at": "$created_at",
+                "title": "$title",
+                "content": "$content",
+            },
+            "created_at": {"$first": "$created_at"},
+            "title": {"$first": "$title"},
+            "content": {"$first": "$content"},
+            "all_customers": {"$max": "$all_customers"},
+            "customer_ids": {"$addToSet": "$customer_id"},
+            "read_count": {"$sum": {"$cond": [{"$ifNull": ["$read_at", False]}, 1, 0]}},
+        }},
+        {"$sort": {"created_at": -1}},
+        {"$facet": {
+            "items": [{"$skip": safe_offset}, {"$limit": page_size}],
+            "meta": [{"$count": "total"}],
+        }},
+    ]).to_list(length=1)
+    page = grouped[0] if grouped else {"items": [], "meta": []}
+    groups = page.get("items") or []
+    total = int((page.get("meta") or [{}])[0].get("total") or 0)
+    preview_ids: list[ObjectId] = []
+    for group in groups:
+        if group.get("all_customers"):
+            continue
+        for customer_id in (group.get("customer_ids") or [])[:8]:
+            if isinstance(customer_id, ObjectId):
+                preview_ids.append(customer_id)
+    names: dict[str, str] = {}
+    if preview_ids:
+        customers = await get_customers_collection().find(
+            {"_id": {"$in": preview_ids}},
+            {"full_name": 1},
+        ).to_list(length=len(preview_ids))
+        names = {str(doc["_id"]): str(doc.get("full_name") or "Cliente") for doc in customers}
+    items = []
+    for group in groups:
+        key = group.get("_id") or {}
+        batch_id = key.get("batch_id")
+        created_at = group.get("created_at")
+        customer_ids = [item for item in (group.get("customer_ids") or []) if item is not None]
+        recipients = [
+            {"id": str(customer_id), "full_name": names.get(str(customer_id), "Cliente")}
+            for customer_id in customer_ids[:8]
+            if not group.get("all_customers")
+        ]
+        items.append({
+            "id": str(batch_id) if batch_id else f"{created_at.isoformat() if hasattr(created_at, 'isoformat') else created_at}|{group.get('title') or ''}",
+            "title": group.get("title") or "",
+            "content": group.get("content") or "",
+            "created_at": created_at,
+            "all_customers": bool(group.get("all_customers")),
+            "recipient_count": len(customer_ids),
+            "read_count": int(group.get("read_count") or 0),
+            "recipients": recipients,
+        })
+    return {
+        "items": items,
+        "total": total,
+        "offset": safe_offset,
+        "limit": page_size,
+        "has_more": safe_offset + len(items) < total,
     }
