@@ -2599,11 +2599,12 @@ def _jaba_product_eligible(
     *,
     province_id: str | None,
     municipality_id: str | None,
+    municipality_ids: list[str] | None,
     visible_seller_ids: set[str] | None,
     pickup_seller_ids: set[str] | None = None,
 ) -> str | None:
     if seller is None:
-        return "deleted"
+        return "store_unavailable" if visible_seller_ids is not None else "deleted"
 
     seller_id = str(seller["_id"])
     if visible_seller_ids is not None:
@@ -2618,8 +2619,11 @@ def _jaba_product_eligible(
     if not product.get("is_available", True):
         return "unavailable"
 
-    if province_id and municipality_id and visible_seller_ids is not None:
-        if not product_covers_municipality(product, province_id, municipality_id):
+    if province_id and municipality_ids and visible_seller_ids is not None:
+        if not any(
+            product_covers_municipality(product, province_id, selected_id)
+            for selected_id in municipality_ids
+        ):
             return "out_of_zone"
 
     return None
@@ -2635,8 +2639,14 @@ async def sync_jaba_products(payload: JabaSyncRequest) -> JabaSyncPublic:
     visible_seller_ids: set[str] | None = None
     pickup_seller_ids: set[str] | None = None
 
+    selected_municipality_ids: list[str] = []
     if province_id and municipality_id:
         _validate_location_ids(province_id, municipality_id)
+        selected_municipality_ids = _selected_sales_area_municipality_ids(
+            province_id,
+            municipality_id,
+            payload.municipios_adicionales,
+        )
         visible_sellers, _, _, pickup_list = await _build_marketplace_seller_context(
             province_id,
             municipality_id,
@@ -2714,6 +2724,7 @@ async def sync_jaba_products(payload: JabaSyncRequest) -> JabaSyncPublic:
             seller,
             province_id=province_id,
             municipality_id=municipality_id,
+            municipality_ids=selected_municipality_ids,
             visible_seller_ids=visible_seller_ids,
             pickup_seller_ids=pickup_seller_ids,
         )
@@ -2734,6 +2745,11 @@ async def sync_jaba_products(payload: JabaSyncRequest) -> JabaSyncPublic:
             public_sellers,
             buyer_province_id=province_id,
             buyer_municipality_id=municipality_id,
+            buyer_municipality_ids=[
+                selected_id
+                for selected_id in selected_municipality_ids
+                if selected_id != municipality_id
+            ],
         )
         if public is None:
             removed.append(

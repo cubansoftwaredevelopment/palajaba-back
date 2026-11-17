@@ -57,3 +57,34 @@ class AudienceFilterTests(unittest.TestCase):
         self.assertEqual(_stored_audience(["premium_monthly", "pro_yearly"], []), "mixed")
         self.assertEqual(_stored_audience([], ["abc"]), "single")
         self.assertEqual(_stored_audience(["all"], []), "all")
+        self.assertEqual(_stored_audience(["customers"], []), "customers")
+        self.assertEqual(_stored_audience(["all", "customers"], []), "mixed")
+        self.assertEqual(_stored_audience(["premium_monthly", "customers"], []), "mixed")
+
+    def test_create_accepts_specific_customers(self) -> None:
+        payload = AdminNotificationCreate(
+            title="Aviso",
+            content="Texto del aviso",
+            audience="single",
+            customer_ids=[
+                "aaaaaaaaaaaaaaaaaaaaaaaa",
+                "aaaaaaaaaaaaaaaaaaaaaaaa",
+                "bbbbbbbbbbbbbbbbbbbbbbbb",
+            ],
+        )
+        self.assertEqual(
+            payload.customer_ids,
+            ["aaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbb"],
+        )
+        self.assertEqual(payload.audiences, [])
+        self.assertEqual(payload.seller_ids, [])
+
+    def test_create_accepts_customers_only(self) -> None:
+        payload = AdminNotificationCreate(
+            title="Aviso",
+            content="Texto del aviso",
+            audience="customers",
+            audiences=["customers"],
+        )
+        self.assertEqual(payload.audiences, ["customers"])
+        self.assertEqual(payload.audience, "customers")

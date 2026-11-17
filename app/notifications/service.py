@@ -8,8 +8,14 @@ from fastapi import HTTPException, status
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
-from app.database import get_notifications_collection, get_orders_collection, get_registrations_collection
-from app.live.hub import publish_seller_notification
+from app.database import (
+    get_customer_notifications_collection,
+    get_customers_collection,
+    get_notifications_collection,
+    get_orders_collection,
+    get_registrations_collection,
+)
+from app.live.hub import publish_customer_notification, publish_seller_notification
 from app.notifications.otp_manager import send_custom_sms, send_sms_campaign
 from app.auth.registrations import phone_e164
 from app.notifications.schemas import (
@@ -406,11 +412,15 @@ def _filter_sellers_by_audience(
     return _filter_sellers_by_audiences(sellers, [audience])
 
 
+def _seller_audiences(audiences: list[str]) -> list[str]:
+    return [item for item in audiences if item and item not in {"single", "customers"}]
+
+
 def _filter_sellers_by_audiences(
     sellers: list[dict[str, Any]],
     audiences: list[str],
 ) -> list[dict[str, Any]]:
-    groups = [item for item in audiences if item and item != "single"]
+    groups = _seller_audiences(audiences)
     if "all" in groups:
         return sellers
     if not groups:
@@ -439,6 +449,14 @@ def _explicit_store_names(sellers: list[dict[str, Any]], seller_ids: list[str]) 
     return names
 
 
+def _broadcast_recipient_count(row: dict[str, Any]) -> int:
+    seller_count = row.get("seller_count")
+    customer_count = row.get("customer_count")
+    if seller_count is None and customer_count is None:
+        return int(row.get("doc_count") or 0)
+    return int(seller_count or 0) + int(customer_count or 0)
+
+
 def _broadcast_store_names(row: dict[str, Any]) -> list[str]:
     names = [
         str(name).strip()
@@ -452,11 +470,17 @@ def _broadcast_store_names(row: dict[str, Any]) -> list[str]:
 
 
 def _stored_audience(groups: list[str], seller_ids: list[str]) -> str:
-    if "all" in groups:
+    seller_groups = _seller_audiences(groups)
+    has_customers = "customers" in groups
+    if has_customers and not seller_groups and not seller_ids:
+        return "customers"
+    if has_customers and (seller_groups or seller_ids):
+        return "mixed"
+    if "all" in seller_groups:
         return "all"
-    if len(groups) == 1:
-        return groups[0]
-    if len(groups) > 1:
+    if len(seller_groups) == 1:
+        return seller_groups[0]
+    if len(seller_groups) > 1:
         return "mixed"
     if seller_ids:
         return "single"
@@ -540,6 +564,79 @@ async def _resolve_notification_sellers(
     return list(by_id.values())
 
 
+async def _load_notice_customers() -> list[dict[str, Any]]:
+    return await get_customers_collection().find(
+        {},
+        {"_id": 1, "phone": 1, "full_name": 1},
+    ).to_list(length=None)
+
+
+async def _load_customers_by_ids(customer_ids: list[str]) -> list[dict[str, Any]]:
+    oids: list[ObjectId] = []
+    for raw in customer_ids:
+        try:
+            oids.append(ObjectId(str(raw).strip()))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Hay un cliente que no es válido.",
+            ) from exc
+    found = await get_customers_collection().find(
+        {"_id": {"$in": oids}},
+        {"_id": 1, "phone": 1, "full_name": 1},
+    ).to_list(length=None)
+    by_id = {str(doc["_id"]): doc for doc in found}
+    missing = [item for item in customer_ids if item not in by_id]
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hay clientes seleccionados que no existen.",
+        )
+    return [by_id[item] for item in customer_ids]
+
+
+async def _insert_customer_notices(
+    customers: list[dict[str, Any]],
+    *,
+    batch_id: str,
+    title: str,
+    content: str,
+    created_at,
+) -> None:
+    if not customers:
+        return
+    documents = [
+        {
+            "_id": ObjectId(),
+            "customer_id": customer["_id"],
+            "batch_id": batch_id,
+            "order_id": None,
+            "title": title,
+            "content": content,
+            "kind": "admin",
+            "images": [],
+            "created_at": created_at,
+            "read_at": None,
+        }
+        for customer in customers
+    ]
+    await get_customer_notifications_collection().insert_many(documents)
+    for document in documents:
+        await publish_customer_notification(
+            str(document["customer_id"]),
+            {
+                "id": str(document["_id"]),
+                "order_id": None,
+                "title": title,
+                "content": content,
+                "kind": "admin",
+                "images": [],
+                "created_at": created_at,
+                "read_at": None,
+            },
+        )
+
+
 async def send_notification_to_sellers(
     admin_id: str,
     title: str,
@@ -549,12 +646,17 @@ async def send_notification_to_sellers(
     seller_id: str | None = None,
     audiences: list[str] | None = None,
     seller_ids: list[str] | None = None,
+    customer_ids: list[str] | None = None,
 ) -> AdminNotificationSendResult:
     groups = [item for item in (audiences or []) if item and item != "single"]
     if not groups and audience and audience != "single":
         groups = [audience]
+    include_customers = "customers" in groups
+    groups = _seller_audiences(groups)
     if "all" in groups:
         groups = ["all"]
+    if include_customers:
+        groups = [*groups, "customers"]
 
     ids: list[str] = []
     seen_ids: set[str] = set()
@@ -565,23 +667,49 @@ async def send_notification_to_sellers(
         seen_ids.add(key)
         ids.append(key)
 
-    if not groups and not ids:
+    customer_id_list: list[str] = []
+    seen_customers: set[str] = set()
+    for raw in customer_ids or []:
+        key = str(raw or "").strip()
+        if not key or key in seen_customers:
+            continue
+        seen_customers.add(key)
+        customer_id_list.append(key)
+
+    seller_groups = _seller_audiences(groups)
+    if not seller_groups and not ids and not include_customers and not customer_id_list:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Elige al menos un grupo o un negocio.",
+            detail="Elige al menos un grupo, un negocio o un cliente.",
         )
 
-    sellers = await _resolve_notification_sellers(groups=groups, seller_ids=ids)
-    audience = _stored_audience(groups, ids)
-    stored_audiences = groups if groups else ["single"]
+    sellers = (
+        await _resolve_notification_sellers(groups=seller_groups, seller_ids=ids)
+        if seller_groups or ids
+        else []
+    )
+    if include_customers:
+        customers = await _load_notice_customers()
+    elif customer_id_list:
+        customers = await _load_customers_by_ids(customer_id_list)
+    else:
+        customers = []
+    stored_audiences = list(groups)
+    if customers and "customers" not in stored_audiences:
+        stored_audiences.append("customers")
+    if not stored_audiences:
+        stored_audiences = ["single"]
+    audience = _stored_audience(stored_audiences, ids)
     target_store_names = _explicit_store_names(sellers, ids)
     target_store_name = target_store_names[0] if target_store_names else None
 
-    if not sellers:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=_audience_empty_message(groups[0] if len(groups) == 1 else "mixed"),
+    if not sellers and not customers:
+        detail = (
+            "No hay clientes para recibir la notificación."
+            if include_customers and not seller_groups and not ids
+            else _audience_empty_message(seller_groups[0] if len(seller_groups) == 1 else "mixed")
         )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
     try:
         admin_object_id = ObjectId(admin_id)
@@ -607,6 +735,8 @@ async def send_notification_to_sellers(
             "audiences": stored_audiences,
             "target_store_name": target_store_name,
             "target_store_names": target_store_names,
+            "seller_count": len(sellers),
+            "customer_count": len(customers),
             "sms_send_count": 0,
             "read_at": None,
             "created_at": now,
@@ -616,19 +746,54 @@ async def send_notification_to_sellers(
     ]
 
     collection = get_notifications_collection()
-    await collection.insert_many(documents)
-    for document in documents:
-        await publish_seller_notification(str(document["seller_id"]), _document_to_public(document))
+    if documents:
+        await collection.insert_many(documents)
+        for document in documents:
+            await publish_seller_notification(str(document["seller_id"]), _document_to_public(document))
+    elif customers:
+        await collection.insert_one(
+            {
+                "_id": ObjectId(),
+                "seller_id": None,
+                "batch_id": batch_id,
+                "title": title_clean,
+                "content": content_clean,
+                "audience": audience,
+                "audiences": stored_audiences,
+                "target_store_name": None,
+                "target_store_names": [],
+                "seller_count": 0,
+                "customer_count": len(customers),
+                "sms_send_count": 0,
+                "read_at": None,
+                "created_at": now,
+                "created_by_admin_id": admin_object_id,
+            }
+        )
+    await _insert_customer_notices(customers, batch_id=batch_id, title=title_clean, content=content_clean, created_at=now)
+
+    recipient_count = len(sellers) + len(customers)
+    if audience == "customers" and len(customers) == 1:
+        customer_name = str(customers[0].get("full_name") or "").strip()
+        sent_message = (
+            f"Aviso enviado a {customer_name}."
+            if customer_name
+            else "Aviso enviado a 1 cliente."
+        )
+    elif audience == "customers":
+        sent_message = f"Aviso enviado a {recipient_count} cliente{'s' if recipient_count != 1 else ''}."
+    elif audience == "single" and len(sellers) == 1 and target_store_name and not customers:
+        sent_message = f"Aviso enviado a {target_store_name}."
+    elif customers and sellers:
+        sent_message = (
+            f"Aviso enviado a {len(sellers)} vendedor{'es' if len(sellers) != 1 else ''}"
+            f" y {len(customers)} cliente{'s' if len(customers) != 1 else ''}."
+        )
+    else:
+        sent_message = f"Aviso enviado a {len(sellers)} vendedor{'es' if len(sellers) != 1 else ''}."
 
     events: list[AdminNotificationSendEvent] = [
-        AdminNotificationSendEvent(
-            type="success",
-            message=(
-                f"Aviso enviado a {target_store_name}."
-                if audience == "single" and len(documents) == 1 and target_store_name
-                else f"Aviso enviado a {len(documents)} vendedor{'es' if len(documents) != 1 else ''}."
-            ),
-        )
+        AdminNotificationSendEvent(type="success", message=sent_message)
     ]
 
     return AdminNotificationSendResult(
@@ -637,7 +802,7 @@ async def send_notification_to_sellers(
         content=content_clean,
         audience=audience,
         audiences=stored_audiences,
-        recipient_count=len(documents),
+        recipient_count=recipient_count,
         created_at=now,
         target_store_name=target_store_name,
         target_store_names=target_store_names,
@@ -805,10 +970,35 @@ async def send_broadcast_sms(batch_id: str) -> AdminNotificationSendResult:
             {"_id": 1, "store_name": 1, "phone": 1},
         ).to_list(length=None)
 
+    sms_targets = _sms_targets_from_sellers(sellers)
+    if "customers" in stored_audiences:
+        customer_notices = await get_customer_notifications_collection().find(
+            {"batch_id": key},
+            {"customer_id": 1},
+        ).to_list(length=None)
+        customer_oids = [
+            notice["customer_id"]
+            for notice in customer_notices
+            if isinstance(notice.get("customer_id"), ObjectId)
+        ]
+        if customer_oids:
+            customers = await get_customers_collection().find(
+                {"_id": {"$in": customer_oids}},
+                {"_id": 1, "full_name": 1, "phone": 1},
+            ).to_list(length=None)
+            seen_phones = {phone for phone, _name in sms_targets}
+            for customer in customers:
+                phone = _seller_phone_e164(customer)
+                if not phone or phone in seen_phones:
+                    continue
+                seen_phones.add(phone)
+                name = (customer.get("full_name") or "Cliente").strip() or "Cliente"
+                sms_targets.append((phone, name))
+
     sms_sent, sms_error, events = await _send_aviso_sms(
         title=title_clean,
         content=content_clean,
-        sms_targets=_sms_targets_from_sellers(sellers),
+        sms_targets=sms_targets,
     )
     if sms_sent:
         sms_send_count += 1
@@ -851,7 +1041,9 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
                 "target_store_names": {"$first": "$target_store_names"},
                 "created_at": {"$first": "$created_at"},
                 "sms_send_count": {"$max": "$sms_send_count"},
-                "recipient_count": {"$sum": 1},
+                "seller_count": {"$first": "$seller_count"},
+                "customer_count": {"$first": "$customer_count"},
+                "doc_count": {"$sum": 1},
             }
         },
         {"$sort": {"created_at": DESCENDING}},
@@ -865,7 +1057,7 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
             content=row["content"],
             audience=row.get("audience") or "all",
             audiences=list(row.get("audiences") or []),
-            recipient_count=row["recipient_count"],
+            recipient_count=_broadcast_recipient_count(row),
             created_at=row["created_at"],
             target_store_name=row.get("target_store_name"),
             target_store_names=_broadcast_store_names(row),

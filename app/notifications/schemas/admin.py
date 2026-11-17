@@ -15,6 +15,7 @@ NotificationAudienceInput = Literal[
     "standard_monthly",
     "standard_quarterly",
     "standard_yearly",
+    "customers",
     "single",
 ]
 
@@ -28,14 +29,19 @@ class AdminNotificationCreate(BaseModel):
     audiences: list[NotificationAudienceInput] = Field(default_factory=list)
     seller_id: str | None = Field(default=None, min_length=1, max_length=40)
     seller_ids: list[str] = Field(default_factory=list)
+    customer_ids: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_targets(self) -> "AdminNotificationCreate":
         groups = [item for item in self.audiences if item and item != "single"]
         if not groups and self.audience and self.audience != "single":
             groups = [self.audience]
+        include_customers = "customers" in groups
+        groups = [item for item in groups if item != "customers"]
         if "all" in groups:
             groups = ["all"]
+        if include_customers:
+            groups.append("customers")
 
         ids: list[str] = []
         seen: set[str] = set()
@@ -46,11 +52,21 @@ class AdminNotificationCreate(BaseModel):
             seen.add(seller_id)
             ids.append(seller_id)
 
-        if not groups and not ids:
-            raise ValueError("Elige al menos un grupo o un negocio.")
+        customer_ids: list[str] = []
+        seen_customers: set[str] = set()
+        for raw in self.customer_ids or []:
+            customer_id = str(raw or "").strip()
+            if not customer_id or customer_id in seen_customers:
+                continue
+            seen_customers.add(customer_id)
+            customer_ids.append(customer_id)
+
+        if not groups and not ids and not customer_ids:
+            raise ValueError("Elige al menos un grupo, un negocio o un cliente.")
 
         self.audiences = groups
         self.seller_ids = ids
+        self.customer_ids = customer_ids
         self.seller_id = ids[0] if len(ids) == 1 and not groups else None
         if not groups:
             self.audience = "single"
