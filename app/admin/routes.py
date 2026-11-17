@@ -1,6 +1,7 @@
 from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from pydantic import BaseModel, Field
 from fastapi.responses import Response
 
 from app.admin.customers import list_admin_customers, set_customer_purchase_access
@@ -19,6 +20,7 @@ from app.auth import registrations as registration_service
 from app.auth.schemas import RegistrationDeleteResult, RegistrationPublic
 from app.auth.utils import create_admin_token, require_admin
 from app.finance_admin.routes import router as finance_router
+from app.notifications.otp_manager.email_otp import send_test_email
 from app.notifications.routes.admin import router as notifications_router
 from app.payments import disputes as dispute_service
 from app.payments.schema import DisputeRulingRequest
@@ -121,6 +123,16 @@ async def get_settings(_: dict = Depends(require_admin)):
 @panel_router.patch("/settings", response_model=PlatformSettingsPublic)
 async def update_settings(payload: PlatformSettingsUpdate, _: dict = Depends(require_admin)):
     return await admin_service.update_platform_settings(payload)
+
+
+class SmtpTestRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=200)
+
+
+@panel_router.post("/settings/smtp-test")
+async def smtp_test(payload: SmtpTestRequest, _: dict = Depends(require_admin)):
+    await send_test_email(payload.email)
+    return {"ok": True}
 
 
 @platform_router.get("/renewal-contact", response_model=PlatformRenewalContactPublic)

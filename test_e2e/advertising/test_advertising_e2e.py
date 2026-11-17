@@ -32,11 +32,14 @@ class OtpManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(can_send_sms("+12125551234"))
         self.assertFalse(can_send_sms(""))
 
-    async def test_send_otp_skips_sms_when_phone_is_not_cuba(self) -> None:
-        with patch(
-            "app.notifications.otp_manager.otp_manager.nox_provider.send_otp",
-            new_callable=AsyncMock,
-        ) as mocked:
+    async def test_send_otp_email_uses_nox_and_skips_sms_outside_cuba(self) -> None:
+        with (
+            patch.object(settings, "app_env", "production"),
+            patch(
+                "app.notifications.otp_manager.otp_manager.nox_provider.send_otp",
+                new_callable=AsyncMock,
+            ) as mocked,
+        ):
             mocked.return_value = OtpSendResult(hash="email-hash")
             result = await send_otp(email="tienda@test.com", phone_e164="+12125551234")
             self.assertEqual(result.hash, "email-hash")
@@ -46,10 +49,13 @@ class OtpManagerTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(kwargs["phone_e164"])
 
     async def test_send_otp_phone_only_rejects_non_cuba(self) -> None:
-        with patch(
-            "app.notifications.otp_manager.otp_manager.nox_provider.send_otp",
-            new_callable=AsyncMock,
-        ) as mocked:
+        with (
+            patch.object(settings, "app_env", "production"),
+            patch(
+                "app.notifications.otp_manager.otp_manager.nox_provider.send_otp",
+                new_callable=AsyncMock,
+            ) as mocked,
+        ):
             with self.assertRaises(Exception) as caught:
                 await send_otp(phone_e164="+12125551234")
             mocked.assert_not_awaited()

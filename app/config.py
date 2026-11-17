@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     otp_api_base: str = "https://otp.noxcreation.dev/api"
     otp_api_key: str = ""
     otp_token_secret: str = ""
+    otp_smtp_host: str = ""
+    otp_smtp_port: int = 587
+    otp_smtp_username: str = ""
+    otp_smtp_password: str = ""
+    otp_smtp_from: str = ""
+    otp_smtp_starttls: bool = True
+    otp_smtp_use_ssl: bool = False
     qvapay_app_id: str = ""
     qvapay_app_secret: str = ""
     qvapay_user_bearer_token: str = ""
