@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from typing import Any
 
 from bson import ObjectId
@@ -30,7 +31,7 @@ from app.services.store_pages import (
 )
 from app.subscriptions.service import is_subscription_active
 from app.utils.currency_conversion import VALID_CURRENCIES
-from app.utils.datetime import to_utc_naive, utc_now
+from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
 
 def _calc_subtotals(items: list[dict[str, Any]]) -> list[OrderSubtotalPublic]:
@@ -466,6 +467,16 @@ async def create_seller_manual_order(
         require_available=False,
     )
     now = to_utc_naive(utc_now())
+    created_at = now
+    if payload.sold_at is not None:
+        created_at = to_utc_naive(
+            datetime(
+                payload.sold_at.year,
+                payload.sold_at.month,
+                payload.sold_at.day,
+                tzinfo=APP_DISPLAY_TZ,
+            )
+        )
 
     doc = _build_order_document(
         seller,
@@ -476,6 +487,7 @@ async def create_seller_manual_order(
         origin="manual",
         now=now,
     )
+    doc["created_at"] = created_at
     doc["platform_terms"] = platform_terms_snapshot(now)
 
     try:

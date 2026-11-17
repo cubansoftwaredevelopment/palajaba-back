@@ -1,8 +1,10 @@
+from datetime import date, datetime
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 from app.orders.constants import PAYMENT_CURRENCIES, OrderOrigin, OrderPaymentMethod, OrderStatus
-from app.utils.datetime import UtcDateTime
+from app.utils.datetime import APP_DISPLAY_TZ, UtcDateTime
 
 
 class OrderItemCreate(BaseModel):
@@ -152,6 +154,7 @@ class CreateSellerManualOrderRequest(BaseModel):
     delivery: DeliveryInfo | None = None
     buyer_zone: BuyerZone | None = None
     payment_currency: str | None = Field(default=None, min_length=3, max_length=8)
+    sold_at: date | None = None
 
     @field_validator("payment_currency")
     @classmethod
@@ -162,6 +165,18 @@ class CreateSellerManualOrderRequest(BaseModel):
         if normalized not in PAYMENT_CURRENCIES:
             raise ValueError("Moneda de pago no válida.")
         return normalized
+
+    @field_validator("sold_at")
+    @classmethod
+    def sold_at_not_in_the_future(cls, value: date | None) -> date | None:
+        if value is None:
+            return None
+        today = datetime.now(APP_DISPLAY_TZ).date()
+        if value > today:
+            raise ValueError("La fecha de venta no puede ser futura.")
+        if value.year < 2015:
+            raise ValueError("La fecha de venta no es válida.")
+        return value
 
 
 class OrderItemPublic(BaseModel):
