@@ -1,6 +1,7 @@
 RESERVED_STORE_SLUGS = frozenset(
     {
         "admin",
+        "cart",
         "comprar",
         "login",
         "registro",
