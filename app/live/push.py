@@ -166,13 +166,18 @@ async def notify_customer_devices(
     *,
     order_id: str | None = None,
     notification_id: str | None = None,
+    kind: str | None = None,
+    store_name: str | None = None,
 ) -> None:
     data = {
         "screen": "customer_avisos",
         "notification_id": str(notification_id or ""),
+        "kind": str(kind or ""),
     }
     if order_id:
         data["order_id"] = str(order_id)
+    if store_name:
+        data["store_name"] = str(store_name)
     await notify_device_tokens(
         await list_customer_device_tokens(customer_id), title, body, data=data
     )

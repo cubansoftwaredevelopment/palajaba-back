@@ -79,12 +79,27 @@ async def publish_customer_notification(customer_id: str, notification: dict) ->
             "type": "customer_notification",
             "notification": jsonable_encoder(notification),
         })
+    except Exception:
+        pass
+    kind = str(notification.get("kind") or "")
+    store_name = str(notification.get("store_name") or "").strip()
+    title = str(notification.get("title") or "").strip() or "Aviso"
+    content = str(notification.get("content") or "").strip()
+    if kind == "store" and store_name:
+        push_title = store_name
+        push_body = f"{title}. {content}" if title and content and content != title else (content or title)
+    else:
+        push_title = title
+        push_body = content or "Tienes una novedad en Pa' La Jaba."
+    try:
         await notify_customer_devices(
             str(customer_id),
-            str(notification.get("title") or "Actualización de tu pedido"),
-            str(notification.get("content") or "Tienes una novedad en Pa' La Jaba."),
+            push_title,
+            push_body,
             order_id=str(notification["order_id"]) if notification.get("order_id") else None,
             notification_id=str(notification.get("id") or ""),
+            kind=kind,
+            store_name=store_name or None,
         )
     except Exception:
         return
