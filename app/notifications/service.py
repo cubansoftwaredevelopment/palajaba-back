@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from datetime import date
 from typing import Any
 
 from bson import ObjectId
@@ -47,6 +48,7 @@ from app.subscriptions.service import (
     subscription_days_remaining,
     warning_notification_content,
 )
+from app.utils.dates import created_at_bounds
 from app.utils.datetime import to_utc_naive, utc_now
 
 logger = logging.getLogger(__name__)
@@ -1071,6 +1073,8 @@ async def list_admin_broadcasts(limit: int = 30) -> list[AdminNotificationBroadc
 async def list_seller_notifications(
     seller_id: str,
     limit: int = 50,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[SellerNotificationPublic]:
     await ensure_subscription_expiring_notifications()
 
@@ -1082,8 +1086,13 @@ async def list_seller_notifications(
             detail="Vendedor no encontrado.",
         ) from exc
 
+    query: dict[str, Any] = {"seller_id": seller_object_id}
+    created_bounds = created_at_bounds(date_from, date_to)
+    if created_bounds:
+        query["created_at"] = created_bounds
+
     collection = get_notifications_collection()
-    cursor = collection.find({"seller_id": seller_object_id}).sort("created_at", DESCENDING).limit(limit)
+    cursor = collection.find(query).sort("created_at", DESCENDING).limit(limit)
     docs = await cursor.to_list(length=limit)
     return [_document_to_public(doc) for doc in docs]
 

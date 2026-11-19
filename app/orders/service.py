@@ -487,6 +487,9 @@ async def create_seller_manual_order(
         origin="manual",
         now=now,
     )
+    if payload.delivery is not None:
+        doc["delivery_price"] = float(payload.delivery_price)
+        doc["delivery_currency"] = payload.delivery_currency
     doc["created_at"] = created_at
     doc["platform_terms"] = platform_terms_snapshot(now)
 

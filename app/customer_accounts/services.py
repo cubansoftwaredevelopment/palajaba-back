@@ -23,6 +23,7 @@ from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, veri
 from app.platform_terms import acceptance_record, stored_acceptance
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
 from app.services.marketplace import _search_text_filter
+from app.utils.dates import created_at_bounds
 from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
 from .schema import (
@@ -821,7 +822,14 @@ async def send_store_customer_notice(seller_id: str, payload: StoreCustomerNotic
     return {"sent_count": len(documents)}
 
 
-async def list_store_customer_notices(seller_id: str, *, offset: int = 0, limit: int = 10) -> dict[str, Any]:
+async def list_store_customer_notices(
+    seller_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 10,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
     try:
         seller_oid = ObjectId(seller_id)
     except Exception as exc:
@@ -839,6 +847,9 @@ async def list_store_customer_notices(seller_id: str, *, offset: int = 0, limit:
             {"seller_id": {"$exists": False}, "store_name": store_name},
         ],
     }
+    created_bounds = created_at_bounds(date_from, date_to)
+    if created_bounds:
+        match["created_at"] = created_bounds
     grouped = await get_customer_notifications_collection().aggregate([
         {"$match": match},
         {"$group": {

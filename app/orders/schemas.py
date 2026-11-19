@@ -154,9 +154,11 @@ class CreateSellerManualOrderRequest(BaseModel):
     delivery: DeliveryInfo | None = None
     buyer_zone: BuyerZone | None = None
     payment_currency: str | None = Field(default=None, min_length=3, max_length=8)
+    delivery_price: float | None = Field(default=None, ge=0)
+    delivery_currency: str | None = Field(default=None, min_length=3, max_length=8)
     sold_at: date | None = None
 
-    @field_validator("payment_currency")
+    @field_validator("payment_currency", "delivery_currency")
     @classmethod
     def normalize_payment_currency(cls, value: str | None) -> str | None:
         if value is None:
@@ -165,6 +167,14 @@ class CreateSellerManualOrderRequest(BaseModel):
         if normalized not in PAYMENT_CURRENCIES:
             raise ValueError("Moneda de pago no válida.")
         return normalized
+
+    @model_validator(mode="after")
+    def delivery_cost_required(self):
+        if self.delivery is None:
+            return self
+        if self.delivery_price is None or not self.delivery_currency:
+            raise ValueError("Indica la moneda y el costo del domicilio.")
+        return self
 
     @field_validator("sold_at")
     @classmethod

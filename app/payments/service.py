@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from urllib.parse import urlparse
@@ -26,6 +26,7 @@ from app.notifications.schemas import SellerNotificationPublic
 from app.payments.qvapay import create_invoice, qvapay_escrow_configured, transfer_to_user, verify_qvapay_username
 from app.services.exchange_rates import get_cup_per_unit
 from app.catalogs.media_storage import read_image_upload, store_image
+from app.utils.dates import created_at_bounds
 from app.utils.datetime import to_utc_naive, utc_now
 
 logger = logging.getLogger(__name__)
@@ -760,6 +761,34 @@ def _customer_notification_public(doc: dict[str, Any]) -> dict[str, Any]:
         "from_admin": doc.get("kind") == "admin",
         "created_at": doc["created_at"],
         "read_at": doc.get("read_at"),
+    }
+
+
+async def list_customer_notifications_page(
+    customer_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 10,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    page_size = max(1, min(limit, 50))
+    safe_offset = max(0, offset)
+    query: dict[str, Any] = {"customer_id": _oid(customer_id, "Cliente no encontrado.")}
+    created_bounds = created_at_bounds(date_from, date_to)
+    if created_bounds:
+        query["created_at"] = created_bounds
+    collection = get_customer_notifications_collection()
+    total = await collection.count_documents(query)
+    docs = await collection.find(query).sort("created_at", -1).skip(safe_offset).limit(page_size).to_list(length=page_size)
+    enriched = await _attach_customer_notice_senders(docs)
+    items = [_customer_notification_public(doc) for doc in enriched]
+    return {
+        "items": items,
+        "total": total,
+        "offset": safe_offset,
+        "limit": page_size,
+        "has_more": safe_offset + len(items) < total,
     }
 
 

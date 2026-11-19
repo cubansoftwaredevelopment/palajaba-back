@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends
 
 from app.auth.utils import require_seller
@@ -12,8 +14,16 @@ router = APIRouter(prefix="/api/auth", tags=["notifications"])
 
 
 @router.get("/me/notifications", response_model=list[SellerNotificationPublic])
-async def list_my_notifications(seller_payload: dict = Depends(require_seller)):
-    return await service.list_seller_notifications(seller_payload["seller_id"])
+async def list_my_notifications(
+    date_from: date | None = None,
+    date_to: date | None = None,
+    seller_payload: dict = Depends(require_seller),
+):
+    return await service.list_seller_notifications(
+        seller_payload["seller_id"],
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @router.get("/me/notifications/unread-count", response_model=SellerNotificationUnreadCount)

@@ -2,7 +2,9 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from datetime import date
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 
 from app.advertising.service import mark_advertising_paid
 from app.payments.qvapay import verify_webhook_signature
@@ -235,8 +237,22 @@ async def reject_customer_order_evidence(order_id: str, customer: dict = Depends
 
 
 @account_router.get("/api/customers/me/notifications")
-async def list_customer_order_notifications(customer: dict = Depends(require_customer)):
-    return await service.list_customer_notifications(customer["customer_id"])
+async def list_customer_order_notifications(
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=50),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    customer: dict = Depends(require_customer),
+):
+    if offset is None and limit is None and date_from is None and date_to is None:
+        return await service.list_customer_notifications(customer["customer_id"])
+    return await service.list_customer_notifications_page(
+        customer["customer_id"],
+        offset=offset or 0,
+        limit=limit or 10,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
 
 @account_router.patch("/api/customers/me/notifications/{notification_id}/read")

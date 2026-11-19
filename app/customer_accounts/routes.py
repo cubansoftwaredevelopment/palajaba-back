@@ -267,12 +267,16 @@ async def list_store_customers(
 async def list_store_customer_notices(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=10, ge=1, le=50),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     seller_payload: dict = Depends(require_seller),
 ):
     return await services.list_store_customer_notices(
         seller_payload["seller_id"],
         offset=offset,
         limit=limit,
+        date_from=date_from,
+        date_to=date_to,
     )
 
 
