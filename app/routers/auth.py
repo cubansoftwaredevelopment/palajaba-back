@@ -65,7 +65,19 @@ async def upload_store_banner(
     photo: UploadFile = File(...),
     seller_payload: dict = Depends(require_active_seller),
 ):
-    return await profile_service.add_store_banner(seller_payload["seller_id"], photo)
+    seller, created = await profile_service.add_store_banner(seller_payload["seller_id"], photo)
+    if created:
+        from app.live.push import notify_seller_devices
+        try:
+            await notify_seller_devices(
+                seller_payload["seller_id"],
+                "Banner recibido",
+                "Ya guardamos el banner de tu tienda.",
+                kind="store_banner",
+            )
+        except Exception:
+            pass
+    return seller
 
 
 @router.patch("/me/store-banners/{banner_id}", response_model=SellerPublic)

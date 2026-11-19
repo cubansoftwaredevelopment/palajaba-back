@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 from typing import Any
@@ -237,15 +238,24 @@ def store_banners_from_document(
 
 
 def _store_banner_documents(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    return [
-        {
+    raw_by_id = {
+        str(item.get("id") or ""): item
+        for item in (doc.get("store_banners") or [])
+        if isinstance(item, dict)
+    }
+    documents = []
+    for banner in store_banners_from_document(doc):
+        item = {
             "id": banner.id,
             "image_url": banner.image_url,
             "sort_order": banner.sort_order,
             "is_active": banner.is_active,
         }
-        for banner in store_banners_from_document(doc)
-    ]
+        content_hash = str((raw_by_id.get(banner.id) or {}).get("content_hash") or "").strip()
+        if content_hash:
+            item["content_hash"] = content_hash
+        documents.append(item)
+    return documents
 
 
 def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
@@ -528,12 +538,20 @@ def _require_store_banners(doc: dict) -> None:
         )
 
 
-async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
+async def add_store_banner(seller_id: str, file: UploadFile) -> tuple[SellerPublic, bool]:
     doc = await _get_seller_doc(seller_id)
     _require_store_banners(doc)
     banners = _store_banner_documents(doc)
 
     content, content_type = await read_image_upload(file)
+    content_hash = hashlib.sha256(content).hexdigest()
+    raw_banners = doc.get("store_banners") if isinstance(doc.get("store_banners"), list) else []
+    if any(
+        isinstance(banner, dict) and str(banner.get("content_hash") or "") == content_hash
+        for banner in raw_banners
+    ):
+        return document_to_seller(doc), False
+
     stored_image = await store_image(
         content,
         content_type,
@@ -547,6 +565,7 @@ async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
             "image_url": stored_image.url,
             "sort_order": next_order,
             "is_active": True,
+            "content_hash": content_hash,
         }
     )
 
@@ -557,7 +576,7 @@ async def add_store_banner(seller_id: str, file: UploadFile) -> SellerPublic:
         {"$set": {"store_banners": banners, "updated_at": now}},
     )
     updated = await collection.find_one({"_id": doc["_id"]})
-    return document_to_seller(updated)
+    return document_to_seller(updated), True
 
 
 async def delete_store_banner(seller_id: str, banner_id: str) -> SellerPublic:

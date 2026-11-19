@@ -142,7 +142,7 @@ async def create_my_catalog_product(
     discount_percent: str | None = Form(None),
     sales_areas: str | None = Form(None),
 ):
-    product = await products_service.create_catalog_product(
+    product, created = await products_service.create_catalog_product(
         seller_payload["seller_id"],
         name=name,
         description=description,
@@ -160,8 +160,19 @@ async def create_my_catalog_product(
         discount_percent=discount_percent,
         sales_areas_raw=sales_areas,
     )
-    from app.live.hub import publish_seller_data_update
-    await publish_seller_data_update(seller_payload["seller_id"], "products")
+    if created:
+        from app.live.hub import publish_seller_data_update
+        from app.live.push import notify_seller_devices
+        await publish_seller_data_update(seller_payload["seller_id"], "products")
+        try:
+            await notify_seller_devices(
+                seller_payload["seller_id"],
+                "Producto recibido",
+                f"Ya guardamos {product.name} en tu catálogo.",
+                kind="catalog_product",
+            )
+        except Exception:
+            pass
     return product
 
 

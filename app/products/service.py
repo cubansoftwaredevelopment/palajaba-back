@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import uuid
@@ -699,6 +700,11 @@ def product_images_from_document(doc: dict[str, Any]) -> list[dict[str, Any]]:
                     "image_url": image_url,
                     "image_public_id": item.get("image_public_id"),
                     "is_frontal": bool(item.get("is_frontal")),
+                    **(
+                        {"content_hash": str(item.get("content_hash"))}
+                        if item.get("content_hash")
+                        else {}
+                    ),
                 }
             )
     if images:
@@ -801,6 +807,71 @@ async def _save_product_photo(seller_id: str, file: UploadFile):
     )
 
 
+def _area_keys(areas: list[dict[str, Any]] | None) -> list[tuple[str, str]]:
+    keys = []
+    for area in areas or []:
+        if not isinstance(area, dict):
+            continue
+        keys.append((str(area.get("province_id") or ""), str(area.get("municipality_id") or "")))
+    return sorted(keys)
+
+
+def _same_catalog_product(
+    doc: dict[str, Any],
+    *,
+    name: str,
+    description: str | None,
+    base_price: float,
+    base_currency: str,
+    discount_percent: int | None,
+    accepted_currencies: list[str],
+    global_category_id: str,
+    offers_delivery: bool,
+    sales_areas: list[dict[str, Any]],
+    view_only: bool,
+    is_available: bool,
+    images: list[dict[str, Any]],
+) -> bool:
+    if str(doc.get("name") or "") != name:
+        return False
+    if (doc.get("description") or None) != description:
+        return False
+    try:
+        same_price = round(float(doc.get("base_price")), 2) == round(float(base_price), 2)
+    except (TypeError, ValueError):
+        return False
+    if not same_price or str(doc.get("base_currency") or "") != base_currency:
+        return False
+    stored_discount = doc.get("discount_percent")
+    if stored_discount is not None:
+        stored_discount = int(stored_discount)
+    if stored_discount != discount_percent:
+        return False
+    if list(doc.get("accepted_currencies") or []) != list(accepted_currencies):
+        return False
+    if str(doc.get("global_category_id") or "") != global_category_id:
+        return False
+    if bool(doc.get("offers_delivery")) != bool(offers_delivery):
+        return False
+    if bool(doc.get("view_only")) != bool(view_only):
+        return False
+    if bool(doc.get("is_available")) != bool(is_available):
+        return False
+    if _area_keys(doc.get("sales_areas")) != _area_keys(sales_areas):
+        return False
+    stored_images = doc.get("images") if isinstance(doc.get("images"), list) else []
+    if len(stored_images) != len(images):
+        return False
+    for stored, incoming in zip(stored_images, images):
+        if not isinstance(stored, dict):
+            return False
+        if str(stored.get("content_hash") or "") != incoming["content_hash"]:
+            return False
+        if bool(stored.get("is_frontal")) != bool(incoming["is_frontal"]):
+            return False
+    return True
+
+
 async def create_catalog_product(
     seller_id: str,
     *,
@@ -819,7 +890,7 @@ async def create_catalog_product(
     frontal_index: int = 0,
     discount_percent: object = None,
     sales_areas_raw: str | None = None,
-) -> CatalogProductPublic:
+) -> tuple[CatalogProductPublic, bool]:
     seller_doc = await _seller_doc(seller_id)
     normalized_discount = _discount_percent_for_write(discount_percent, seller_doc)
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
@@ -828,14 +899,6 @@ async def create_catalog_product(
         global_category_id,
     )
     products = get_catalog_products_collection()
-    product_count = await products.count_documents(
-        {"seller_id": seller_id, "category_id": local_category_oid, "deleted_at": None}
-    )
-    if product_count >= MAX_PRODUCTS_PER_CATEGORY:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"No puedes agregar más de {MAX_PRODUCTS_PER_CATEGORY} productos en una categoría.",
-        )
 
     normalized_name = _normalize_product_name(name)
     normalized_currency = _validate_currency(base_currency, "La moneda base")
@@ -879,15 +942,72 @@ async def create_catalog_product(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Elige una foto frontal válida.",
         )
-    stored_images: list[dict[str, Any]] = []
+    prepared_images: list[dict[str, Any]] = []
     for index, upload in enumerate(uploads):
-        stored = await _save_product_photo(seller_id, upload)
+        content, content_type = await read_image_upload(upload)
+        prepared_images.append(
+            {
+                "content": content,
+                "content_type": content_type,
+                "content_hash": hashlib.sha256(content).hexdigest(),
+                "is_frontal": index == frontal_index,
+            }
+        )
+    sales_areas = parse_sales_areas(
+        sales_areas_raw,
+        seller_doc,
+        offers_delivery=bool(offers_delivery),
+    )
+    candidates = await products.find(
+        {
+            "seller_id": seller_id,
+            "deleted_at": None,
+            "category_id": local_category_oid,
+            "name": normalized_name,
+        }
+    ).to_list(length=100)
+    for candidate in candidates:
+        if _same_catalog_product(
+            candidate,
+            name=normalized_name,
+            description=cleaned_description,
+            base_price=float(base_price),
+            base_currency=normalized_currency,
+            discount_percent=normalized_discount,
+            accepted_currencies=accepted_currencies,
+            global_category_id=normalized_global_category_id,
+            offers_delivery=bool(offers_delivery),
+            sales_areas=sales_areas,
+            view_only=bool(view_only),
+            is_available=bool(is_available),
+            images=prepared_images,
+        ):
+            return document_to_product(candidate, seller_doc), False
+
+    product_count = await products.count_documents(
+        {"seller_id": seller_id, "category_id": local_category_oid, "deleted_at": None}
+    )
+    if product_count >= MAX_PRODUCTS_PER_CATEGORY:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"No puedes agregar más de {MAX_PRODUCTS_PER_CATEGORY} productos en una categoría.",
+        )
+
+    stored_images: list[dict[str, Any]] = []
+    for prepared in prepared_images:
+        stored = await store_image(
+            prepared["content"],
+            prepared["content_type"],
+            scope="products",
+            owner_id=seller_id,
+        )
         stored_images.append(
             {
                 "id": uuid.uuid4().hex,
                 "image_url": stored.url,
                 "image_public_id": stored.public_id,
-                "is_frontal": index == frontal_index,
+                "content_hash": prepared["content_hash"],
+                "is_frontal": prepared["is_frontal"],
             }
         )
     now = to_utc_naive(utc_now())
@@ -903,11 +1023,7 @@ async def create_catalog_product(
         "discount_percent": normalized_discount,
         "accepted_currencies": accepted_currencies,
         "offers_delivery": bool(offers_delivery),
-        "sales_areas": parse_sales_areas(
-            sales_areas_raw,
-            seller_doc,
-            offers_delivery=bool(offers_delivery),
-        ),
+        "sales_areas": sales_areas,
         "view_only": bool(view_only),
         "is_available": bool(is_available),
         "sort_order": product_count,
@@ -920,7 +1036,7 @@ async def create_catalog_product(
     await _sync_local_category_product_count(seller_id, local_category_oid)
     await _refresh_seller_global_categories(seller_id)
 
-    return document_to_product(doc, seller_doc)
+    return document_to_product(doc, seller_doc), True
 
 
 async def _delete_product_image_file(
