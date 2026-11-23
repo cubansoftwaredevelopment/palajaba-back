@@ -24,6 +24,7 @@ from app.payments.routes import router as payments_router
 from app.payments.evidence_clock import start_evidence_clock_task, stop_evidence_clock_task
 from app.payments.service import start_expiry_task, stop_expiry_task
 from app.routers import auth, categories, marketplace, platform, product_categories, seo, gestores
+from app.mensajeros.routes import router as mensajeros_router
 from app.notifications.service import (
     start_subscription_reminder_task,
     stop_subscription_reminder_task,
@@ -68,6 +69,7 @@ app.include_router(products_router)
 app.include_router(app_releases_router)
 app.include_router(orders_router)
 app.include_router(gestores.router)
+app.include_router(mensajeros_router)
 app.include_router(categories.router)
 app.include_router(product_categories.router)
 app.include_router(marketplace.router)

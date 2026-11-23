@@ -42,8 +42,9 @@ async def publish_seller_data_update(seller_id: str, *resources: str) -> None:
     try:
         from app.database import get_orders_collection
 
+        from app.orders.constants import OPEN_ORDER_STATUSES
         pending_count = await get_orders_collection().count_documents(
-            {"seller_id": str(seller_id), "status": "pending_confirmation"}
+            {"seller_id": str(seller_id), "status": {"$in": list(OPEN_ORDER_STATUSES)}}
         )
         await hub.send(str(seller_id), {
             "type": "seller_data_update",

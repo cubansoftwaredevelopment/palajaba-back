@@ -150,6 +150,51 @@ def decode_gestor_setup_token(token: str) -> dict | None:
     return payload
 
 
+def create_mensajero_token(*, mensajero_id: str, seller_id: str, username: str) -> str:
+    payload = {
+        "sub": username,
+        "mensajero_id": mensajero_id,
+        "seller_id": seller_id,
+        "username": username,
+        "role": "mensajero",
+        "exp": _token_expiration_timestamp(),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def decode_mensajero_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("role") != "mensajero":
+        return None
+    return payload
+
+
+def create_mensajero_setup_token(*, mensajero_id: str, seller_id: str, username: str, expire_minutes: int = 30) -> str:
+    expire_at = datetime.now(UTC) + timedelta(minutes=expire_minutes)
+    payload = {
+        "sub": username,
+        "mensajero_id": mensajero_id,
+        "seller_id": seller_id,
+        "username": username,
+        "role": "mensajero_setup",
+        "exp": int(expire_at.timestamp()),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)
+
+
+def decode_mensajero_setup_token(token: str) -> dict | None:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+    except JWTError:
+        return None
+    if payload.get("role") != "mensajero_setup":
+        return None
+    return payload
+
+
 async def require_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> dict:
@@ -331,4 +376,28 @@ async def require_gestor(
 
     await assert_gestor_account_active(payload["gestor_id"], payload["seller_id"])
 
+    return payload
+
+
+async def require_mensajero(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> dict:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No autenticado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_mensajero_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido o expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    from app.mensajeros.service import assert_mensajero_active
+
+    await assert_mensajero_active(payload["mensajero_id"])
     return payload

@@ -369,6 +369,35 @@ async def notify_seller_new_order(
     await publish_seller_notification(str(seller_object_id), _document_to_public(document))
 
 
+async def notify_seller_notice(
+    seller_id: str | ObjectId,
+    *,
+    title: str,
+    content: str,
+    kind: str,
+    order_id: str | None = None,
+) -> None:
+    try:
+        seller_object_id = seller_id if isinstance(seller_id, ObjectId) else ObjectId(str(seller_id))
+    except Exception:
+        return
+    document = {
+        "seller_id": seller_object_id,
+        "batch_id": f"{kind}-{uuid.uuid4().hex}",
+        "kind": kind,
+        "order_id": order_id,
+        "title": title,
+        "content": content,
+        "action_label": "Ver pedidos" if order_id else None,
+        "action_type": "view_orders" if order_id else None,
+        "read_at": None,
+        "created_at": to_utc_naive(utc_now()),
+        "created_by_admin_id": None,
+    }
+    await get_notifications_collection().insert_one(document)
+    await publish_seller_notification(str(seller_object_id), _document_to_public(document))
+
+
 AUDIENCE_SPECS: dict[str, tuple[str, str]] = {
     "premium_monthly": (PREMIUM_PLAN_TIER, "monthly"),
     "premium_quarterly": (PREMIUM_PLAN_TIER, "quarterly"),

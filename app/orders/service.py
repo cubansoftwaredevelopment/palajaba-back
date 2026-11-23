@@ -97,6 +97,7 @@ def _doc_to_public(doc: dict[str, Any]) -> OrderPublic:
         qvapay=_public_qvapay(doc.get("qvapay")),
         store_agreements=_public_store_agreements(doc.get("store_agreements")),
         platform_terms=_public_platform_terms(doc.get("platform_terms")),
+        mensajeria=doc.get("mensajeria"),
     )
 
 
@@ -522,7 +523,16 @@ async def list_seller_orders(seller_id: str, *, offset: int = 0, limit: int = 25
         .to_list(length=limit)
     )
     total = await collection.count_documents(base_query)
-    pending_count = await collection.count_documents({**base_query, "status": "pending_confirmation"})
+    from app.mensajeros.service import assignment_map, mark_started_orders_in_transit
+    summaries = await assignment_map([doc["_id"] for doc in docs])
+    transit_ids = await mark_started_orders_in_transit([doc["_id"] for doc in docs if doc.get("status") == "pending_confirmation"])
+    for doc in docs:
+        if doc["_id"] in transit_ids:
+            doc["status"] = "in_transit"
+    for doc in docs:
+        doc["mensajeria"] = summaries.get(str(doc["_id"]))
+    from app.orders.constants import OPEN_ORDER_STATUSES
+    pending_count = await collection.count_documents({**base_query, "status": {"$in": list(OPEN_ORDER_STATUSES)}})
     completed_count = await collection.count_documents({**base_query, "status": "completed"})
     return {
         "items": [_doc_to_public(doc) for doc in docs],
@@ -588,6 +598,8 @@ async def update_seller_order(
         updates["payment_currency"] = payload.payment_currency
 
     if payload.status is not None:
+        if payload.status == "completed" and doc.get("status") == "in_transit":
+            raise ValueError("No puedes marcar como realizado un pedido que está en tránsito.")
         if payload.status == "completed":
             if doc.get("delivery_requested"):
                 resolved_delivery_price = (
@@ -659,7 +671,8 @@ async def update_seller_order(
 async def delete_seller_order(seller_id: str, order_id: str) -> None:
     doc = await _get_order_doc(seller_id, order_id)
 
-    if doc["status"] != "pending_confirmation":
+    from app.orders.constants import OPEN_ORDER_STATUSES
+    if doc["status"] not in OPEN_ORDER_STATUSES:
         raise ValueError("Solo puedes cancelar pedidos pendientes de confirmar.")
 
     now = to_utc_naive(utc_now())
@@ -672,7 +685,7 @@ async def delete_seller_order(seller_id: str, order_id: str) -> None:
                 continue
         await _rollback_stock_decrements(adjustments)
     await get_orders_collection().update_one(
-        {"_id": doc["_id"], "status": "pending_confirmation"},
+        {"_id": doc["_id"], "status": {"$in": list(OPEN_ORDER_STATUSES)}},
         {"$set": {"status": "cancelled", "cancelled_at": now, "updated_at": now}},
     )
     from app.live.hub import publish_seller_data_update

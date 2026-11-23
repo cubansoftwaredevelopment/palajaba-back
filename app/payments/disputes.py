@@ -742,6 +742,7 @@ async def rule_dispute(
 
     previous_evidence = (qvapay.get("evidence") or {}).get("status") if isinstance(qvapay.get("evidence"), dict) else None
     plan = None
+    courier_user = ""
     if winner == "buyer":
         from app.payments.refunds import plan_adjustment
 
@@ -752,13 +753,18 @@ async def rule_dispute(
         idempotency = f"store-order-{order['_id']}-refund-{sequence}"
     else:
         amount, username = _money(order, refund=False)
+        from app.mensajeros.payout import courier_qvapay_share
+        cut, courier_user, _already = await courier_qvapay_share(order)
+        if courier_user:
+            amount = round(max(0.0, amount - cut), 2)
         if not username:
             seller = await get_registrations_collection().find_one({"_id": _oid(order["seller_id"], "Tienda no encontrada.")})
             username = str((seller or {}).get("qvapay_username") or "").strip()
         idempotency = f"store-order-{order['_id']}-release"
     if winner == "buyer" and not username:
         raise HTTPException(status_code=409, detail="El comprador no tiene un usuario QvaPay.")
-    if not username or amount <= 0:
+    courier_only = winner == "seller" and bool(courier_user) and amount <= 0
+    if not courier_only and (not username or amount <= 0):
         raise HTTPException(status_code=409, detail="No hay un destino o un monto para transferir.")
 
     now = to_utc_naive(utc_now())
@@ -775,12 +781,17 @@ async def rule_dispute(
         raise HTTPException(status_code=409, detail="El pago ya no está retenido.")
     description = f"{'Devolución' if winner == 'buyer' else 'Liquidación'} pedido {str(order['_id'])[-6:].upper()}"
     try:
-        transaction = await transfer_to_user(
-            amount=amount,
-            username=username,
-            description=description,
-            idempotency_key=idempotency,
-        )
+        transaction = ""
+        if amount > 0:
+            transaction = await transfer_to_user(
+                amount=amount,
+                username=username,
+                description=description,
+                idempotency_key=idempotency,
+            )
+        if winner == "seller":
+            from app.mensajeros.payout import pay_courier_share
+            await pay_courier_share(order)
     except Exception:
         logger.exception("No se pudo transferir la disputa %s", dispute_id)
         restore = {"qvapay.release_status": "held", "updated_at": to_utc_naive(utc_now())}

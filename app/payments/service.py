@@ -488,7 +488,7 @@ async def upload_evidence_image(seller_id: str, order_id: str, file: UploadFile)
 async def submit_evidence(seller_id: str, order_id: str, content: dict[str, Any]) -> dict[str, Any]:
     doc = await _seller_order(seller_id, order_id)
     qv = doc["qvapay"]
-    if qv.get("payment_status") != "paid" or qv.get("release_status") != "held" or doc.get("status") != "pending_confirmation":
+    if qv.get("payment_status") != "paid" or qv.get("release_status") != "held" or doc.get("status") not in {"pending_confirmation", "in_transit"}:
         raise HTTPException(status_code=409, detail="El pago debe confirmarse antes de enviar evidencia.")
     evidence = qv.get("evidence") or {}
     if evidence.get("status") == "pending":
@@ -502,7 +502,7 @@ async def submit_evidence(seller_id: str, order_id: str, content: dict[str, Any]
     if previous:
         update["$push"] = {"qvapay.evidence_history": previous}
     result = await get_orders_collection().update_one(
-        {"_id": doc["_id"], "status": "pending_confirmation", "qvapay.payment_status": "paid",
+        {"_id": doc["_id"], "status": {"$in": ["pending_confirmation", "in_transit"]}, "qvapay.payment_status": "paid",
          "qvapay.release_status": "held",
          "qvapay.evidence.status": {"$ne": "pending"}},
         update,
@@ -542,12 +542,19 @@ async def _release_funds(order_id: ObjectId) -> None:
         return
     qv = doc["qvapay"]
     amount = round(float(qv.get("products_amount_usd", 0)) + float(qv.get("delivery_amount_usd", 0)), 2)
+    from app.mensajeros.payout import courier_qvapay_share, pay_courier_share
+    cut, courier_user, _already = await courier_qvapay_share(doc)
+    if courier_user:
+        amount = round(max(0.0, amount - cut), 2)
     try:
-        transaction = await transfer_to_user(
-            amount=amount, username=payout_username,
-            description=f"Liquidación pedido {str(order_id)[-6:].upper()}",
-            idempotency_key=f"store-order-{order_id}-release",
-        )
+        transaction = ""
+        if amount > 0:
+            transaction = await transfer_to_user(
+                amount=amount, username=payout_username,
+                description=f"Liquidación pedido {str(order_id)[-6:].upper()}",
+                idempotency_key=f"store-order-{order_id}-release",
+            )
+        await pay_courier_share(doc)
     except Exception:
         logger.exception("No se pudo liberar QvaPay del pedido %s", order_id)
         await get_orders_collection().update_one(

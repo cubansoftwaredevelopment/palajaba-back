@@ -269,6 +269,39 @@ def build_agreement_pdf(order: dict[str, Any], kind: str, *, store_name: str) ->
     return report.finish(), f"{spec['filename']}-{code}.pdf"
 
 
+def build_courier_evidence_pdf(evidence: dict[str, Any]) -> tuple[bytes, str]:
+    report = _Report()
+    code = str(evidence.get("code") or "")
+    report.text(str(evidence.get("store_name") or "Tienda"), font="Helvetica-Bold", size=16, color=BRAND_GREEN_DARK, leading=20)
+    report.text("Evidencia del mensajero", font="Helvetica-Bold", size=14, color=BRAND_GREEN_DARK, leading=18)
+    if code:
+        report.text(f"Pedido #{code}", size=11, leading=15)
+    buyer = str(evidence.get("buyer_name") or "").strip()
+    address = str(evidence.get("address") or "").strip()
+    messenger = str(evidence.get("messenger_name") or "").strip()
+    if buyer:
+        report.text(f"Cliente: {buyer}", size=10, leading=14)
+    if address:
+        report.text(f"Dirección: {address}", size=10, leading=14)
+    if messenger:
+        report.text(f"Mensajero: {messenger}", size=10, leading=14)
+    submitted = evidence.get("submitted_at")
+    if isinstance(submitted, datetime):
+        report.text(f"Enviada el {_when(submitted)}.", size=9, color=TEXT_MUTED, leading=12)
+    report.rule()
+    note = str(evidence.get("note") or "").strip()
+    report.text("Nota", font="Helvetica-Bold", size=12, color=BRAND_GREEN_DARK, leading=16)
+    report.text(note or "Sin nota.", size=10, color=colors.black if note else TEXT_MUTED, leading=13)
+    images = [str(url) for url in (evidence.get("images") or []) if url]
+    if images:
+        report.gap(2 * mm)
+        report.text("Fotos", font="Helvetica-Bold", size=12, color=BRAND_GREEN_DARK, leading=16)
+        for src in images:
+            report.gap(2 * mm)
+            report.image(src)
+    return report.finish(), f"evidencia-mensajero-{code or 'pedido'}.pdf"
+
+
 def build_evidence_pdf(order: dict[str, Any], *, store_name: str) -> tuple[bytes, str]:
     report = _Report()
     code = str(order.get("_id") or "")[-6:].upper()

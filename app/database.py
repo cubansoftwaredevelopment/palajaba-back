@@ -72,6 +72,9 @@ async def connect_to_mongo():
 
     await ensure_discount_code_indexes()
     await ensure_gestor_indexes()
+    from app.mensajeros.service import ensure_mensajero_indexes
+
+    await ensure_mensajero_indexes()
     await ensure_seller_gestor_catalog_defaults()
     await ensure_catalog_theme_defaults_on_startup()
     await ensure_store_catalog_repairs_on_startup()
@@ -248,6 +251,36 @@ def get_gestores_collection() -> AsyncIOMotorCollection:
     if db is None:
         raise RuntimeError("MongoDB no está conectado")
     return db["gestores"]
+
+
+def get_mensajeros_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["mensajeros"]
+
+
+def get_mensajeria_batches_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["mensajeria_batches"]
+
+
+def get_mensajeria_asignaciones_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["mensajeria_asignaciones"]
+
+
+def get_mensajeria_puntos_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["mensajeria_puntos"]
+
+
+def get_mensajero_devices_collection() -> AsyncIOMotorCollection:
+    if db is None:
+        raise RuntimeError("MongoDB no está conectado")
+    return db["mensajero_devices"]
 
 
 def get_subscription_payments_collection() -> AsyncIOMotorCollection:

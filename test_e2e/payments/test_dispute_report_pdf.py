@@ -7,7 +7,7 @@ from datetime import datetime
 
 from bson import ObjectId
 
-from app.payments.dispute_report import build_agreement_pdf, build_evidence_pdf
+from app.payments.dispute_report import build_agreement_pdf, build_courier_evidence_pdf, build_evidence_pdf
 
 
 class DisputeReportPdfTests(unittest.TestCase):
@@ -70,3 +70,21 @@ class DisputeReportPdfTests(unittest.TestCase):
         self.assertNotIn(b"Pa' La Jaba", pdf)
         self.assertIn(b"Dej\\351 el pedido en recepci\\363n.", pdf)
         self.assertEqual(name, f"evidencia-{str(order_id)[-6:].upper()}.pdf")
+
+    def test_courier_evidence_pdf_contains_the_note(self) -> None:
+        pdf, name = build_courier_evidence_pdf({
+            "code": "CODFE8",
+            "store_name": "startup",
+            "buyer_name": "Jose Miguel",
+            "address": "Calle 10",
+            "messenger_name": "Jose Perez",
+            "note": "Entregado en la puerta.",
+            "images": [],
+            "submitted_at": datetime(2026, 11, 23, 15, 0),
+        })
+
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"startup", pdf)
+        self.assertIn(b"Entregado en la puerta.", pdf)
+        self.assertIn(b"Jose Perez", pdf)
+        self.assertEqual(name, "evidencia-mensajero-CODFE8.pdf")

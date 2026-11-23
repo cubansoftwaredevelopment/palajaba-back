@@ -241,6 +241,7 @@ class OrderPublic(BaseModel):
     qvapay: dict | None = None
     store_agreements: OrderAgreementsPublic | None = None
     platform_terms: dict | None = None
+    mensajeria: dict | None = None
 
 
 class UpdateOrderRequest(BaseModel):

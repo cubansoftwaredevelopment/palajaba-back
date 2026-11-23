@@ -18,8 +18,9 @@ async def seller_events(websocket: WebSocket, token: str = Query(default="")):
     await hub.connect(seller_id, websocket)
     try:
         from app.database import get_orders_collection
+        from app.orders.constants import OPEN_ORDER_STATUSES
         pending_count = await get_orders_collection().count_documents(
-            {"seller_id": seller_id, "status": "pending_confirmation"}
+            {"seller_id": seller_id, "status": {"$in": list(OPEN_ORDER_STATUSES)}}
         )
         await websocket.send_json({
             "type": "seller_data_update",

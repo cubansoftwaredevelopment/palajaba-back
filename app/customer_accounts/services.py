@@ -184,7 +184,7 @@ async def customer_login(payload: CustomerLoginRequest) -> CustomerLoginResponse
 
 async def _assert_customer_account_can_be_deleted(customer_id: str) -> None:
     pending = await get_orders_collection().count_documents(
-        {"buyer_id": customer_id, "status": "pending_confirmation"}
+        {"buyer_id": customer_id, "status": {"$in": ["pending_confirmation", "in_transit"]}}
     )
     if pending:
         raise HTTPException(
@@ -499,6 +499,11 @@ async def list_customer_orders(customer_id: str, *, offset: int = 0, limit: int 
     query = {"buyer_id": customer_id}
     total = await orders.count_documents(query)
     docs = await orders.find(query).sort([("created_at", -1), ("_id", -1)]).skip(safe_offset).limit(page_size).to_list(length=page_size)
+    from app.mensajeros.service import mark_started_orders_in_transit
+    transit_ids = await mark_started_orders_in_transit([doc["_id"] for doc in docs if doc.get("status") == "pending_confirmation"])
+    for doc in docs:
+        if doc["_id"] in transit_ids:
+            doc["status"] = "in_transit"
     attention = await orders.count_documents({
         "buyer_id": customer_id,
         "payment_method": "qvapay",
@@ -530,12 +535,23 @@ async def list_customer_orders(customer_id: str, *, offset: int = 0, limit: int 
             items.append(item_data)
         return items
 
+    from app.database import get_mensajeria_asignaciones_collection
+    fee_by_order = {}
+    if docs:
+        assignments = await get_mensajeria_asignaciones_collection().find(
+            {"order_id": {"$in": [doc["_id"] for doc in docs]}, "status": {"$ne": "cancelled"}},
+            {"order_id": 1, "fee_amount": 1, "fee_currency": 1},
+        ).to_list(length=len(docs))
+        fee_by_order = {item["order_id"]: item for item in assignments}
     items = [
         {
             "id": str(doc["_id"]), "store_id": doc["seller_id"], "store_name": doc["store_name"],
             "status": doc["status"], "items": items_with_images(doc), "subtotals": doc.get("subtotals") or [],
             "delivery_requested": bool(doc.get("delivery_requested")), "delivery_price": doc.get("delivery_price"),
-            "delivery_currency": doc.get("delivery_currency"), "created_at": doc["created_at"],
+            "delivery_currency": doc.get("delivery_currency"),
+            "courier_fee_amount": (fee_by_order.get(doc["_id"]) or {}).get("fee_amount"),
+            "courier_fee_currency": (fee_by_order.get(doc["_id"]) or {}).get("fee_currency"),
+            "created_at": doc["created_at"],
             "updated_at": doc["updated_at"], "completed_at": doc.get("completed_at"),
             "payment_method": doc.get("payment_method") or "contact",
             "qvapay": _customer_order_qvapay_public(doc.get("qvapay")),
