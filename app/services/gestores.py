@@ -325,6 +325,32 @@ async def list_seller_gestores(seller_id: str) -> list[GestorPublic]:
     return [document_to_gestor_public(doc) for doc in docs]
 
 
+async def aggregate_gestor_counts_by_seller(seller_ids: list[str]) -> dict[str, int]:
+    """Cuenta los gestores de cada negocio, activos e inactivos."""
+    if not seller_ids:
+        return {}
+    seller_oids: list[ObjectId] = []
+    for seller_id in seller_ids:
+        try:
+            seller_oids.append(ObjectId(seller_id))
+        except InvalidId:
+            continue
+    rows = await get_gestores_collection().aggregate(
+        [
+            {"$match": {"seller_id": {"$in": [*seller_oids, *seller_ids]}}},
+            {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+        ]
+    ).to_list(length=None)
+    totals: dict[str, int] = {}
+    for row in rows:
+        raw_id = row.get("_id")
+        if raw_id is None:
+            continue
+        key = str(raw_id)
+        totals[key] = totals.get(key, 0) + int(row.get("count") or 0)
+    return totals
+
+
 async def count_seller_gestores(seller_id: str, *, active_only: bool = True) -> int:
     query: dict[str, Any] = {"seller_id": _seller_oid(seller_id)}
     if active_only:

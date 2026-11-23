@@ -360,6 +360,7 @@ class RegistrationPublic(BaseModel):
     sales_total_cup: float = 0
     unconfirmed_orders_count: int = 0
     completed_orders_count: int = 0
+    gestor_count: int = 0
     app_downloads: list[RegistrationAppDownload] = Field(default_factory=list)
 
 
