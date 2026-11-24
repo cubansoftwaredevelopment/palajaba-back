@@ -25,13 +25,13 @@ from app.notifications.routes.admin import router as notifications_router
 from app.payments import disputes as dispute_service
 from app.payments.schema import DisputeRulingRequest
 from app.products.routes import admin_router as products_router
-from app.schemas.banners import BannerAdminPublic, BannerUpdate
-from app.schemas.discount_code import DiscountCodeCreate, DiscountCodeDeleteResult, DiscountCodePublic, DiscountCodeUpdate
-from app.schemas.gestores import GestorPublic
-from app.services import banners as banners_service
-from app.services import discount_codes as discount_codes_service
-from app.services import gestores as gestores_service
-from app.services import seller_deletion as seller_deletion_service
+from app.banners.schemas import BannerAdminPublic, BannerUpdate
+from app.discount_codes.schemas import DiscountCodeCreate, DiscountCodeDeleteResult, DiscountCodePublic, DiscountCodeUpdate
+from app.gestores.schemas import GestorPublic
+from app.banners import service as banners_service
+from app.discount_codes import service as discount_codes_service
+from app.gestores import service as gestores_service
+from app.auth import seller_deletion as seller_deletion_service
 from app.statistics_admin.routes import router as statistics_router
 from app.subscriptions.routes import router as subscriptions_router
 from app.utils.dates import parse_subscription_end

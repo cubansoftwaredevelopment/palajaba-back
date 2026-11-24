@@ -1,4 +1,4 @@
-from app.services.exchange_rates import SUPPORTED_CURRENCIES, get_cup_per_unit
+from app.exchange_rates.service import SUPPORTED_CURRENCIES, get_cup_per_unit
 
 
 def convert_amount(amount: float, from_currency: str, to_currency: str) -> float:

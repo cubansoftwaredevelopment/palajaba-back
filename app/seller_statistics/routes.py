@@ -10,20 +10,18 @@ from app.seller_statistics.schemas import (
     HighViewsLowSales,
     ProductConversion,
     RevenueChart,
+    SellerProductsSoldChart,
+    SellerRevenueChart,
     SellerStatsKpis,
+    SellerStatsSummary,
+    SellerTopProducts,
     SeriesChart,
     SiteConversion,
     TopSold,
     ViewsByZone,
 )
-from app.schemas.seller_stats import (
-    SellerProductsSoldChart,
-    SellerRevenueChart,
-    SellerStatsSummary,
-    SellerTopProducts,
-)
-from app.services import seller_stats as seller_stats_service
-from app.services.seller_stats import Granularity
+from app.seller_statistics import stats as seller_stats_service
+from app.seller_statistics.stats import Granularity
 
 router = APIRouter()
 stats_router = APIRouter(prefix="/api/seller/statistics", tags=["seller-statistics"])

@@ -23,7 +23,7 @@ from app.orders.schemas import (
 from app.orders.utils import compute_order_products_revenue
 from app.platform_terms import platform_terms_snapshot
 from app.products.utils import DEFAULT_STOCK_QUANTITY, bump_products_on_order_completed
-from app.services.store_pages import (
+from app.auth.store_pages import (
     STORE_PAGE_TITLES,
     sanitize_store_page_content,
     store_page_has_content,

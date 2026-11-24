@@ -28,14 +28,14 @@ from app.auth.schemas import (
 )
 from app.auth import service as auth_service
 from app.auth.utils import create_seller_token, require_active_seller, require_seller
-from app.schemas.seller_profile import (
+from app.auth.profile_schemas import (
     SellerContactOtpConfirmRequest,
     SellerContactOtpResendRequest,
     SellerContactOtpStartResponse,
     SellerEmailUpdate,
     SellerPhoneUpdate,
 )
-from app.services import seller_profile as profile_service
+from app.auth import seller_profile as profile_service
 
 router = APIRouter()
 

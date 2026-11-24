@@ -9,13 +9,13 @@ from app.database import (
     get_seller_contact_otp_challenges_collection,
 )
 from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
-from app.schemas.seller_profile import (
+from app.auth.profile_schemas import (
     SellerContactOtpStartResponse,
     SellerEmailUpdate,
     SellerPhoneUpdate,
 )
 from app.auth.registrations import phone_e164
-from app.services.seller_profile import (
+from app.auth.seller_profile import (
     update_seller_email,
     update_seller_phone,
 )
@@ -94,7 +94,7 @@ async def _save_challenge(*, seller_id: str, kind: str, target: dict, sent) -> S
 
 
 async def start_phone_change(*, seller_id: str, phone: str) -> SellerContactOtpStartResponse:
-    from app.services.seller_profile import _get_seller_doc
+    from app.auth.seller_profile import _get_seller_doc
 
     doc = await _get_seller_doc(seller_id)
     if phone == doc.get("phone"):
@@ -120,7 +120,7 @@ async def start_phone_change(*, seller_id: str, phone: str) -> SellerContactOtpS
 
 
 async def start_email_change(*, seller_id: str, email: str) -> SellerContactOtpStartResponse:
-    from app.services.seller_profile import _get_seller_doc
+    from app.auth.seller_profile import _get_seller_doc
 
     doc = await _get_seller_doc(seller_id)
     current_email = (doc.get("email") or "").strip().lower()

@@ -24,7 +24,7 @@ from app.live.hub import publish_seller_notification
 from app.notifications.otp_manager import send_custom_sms
 from app.notifications.schemas import SellerNotificationPublic
 from app.payments.qvapay import create_invoice, qvapay_escrow_configured, transfer_to_user, verify_qvapay_username
-from app.services.exchange_rates import get_cup_per_unit
+from app.exchange_rates.service import get_cup_per_unit
 from app.catalogs.media_storage import read_image_upload, store_image
 from app.utils.dates import created_at_bounds
 from app.utils.datetime import to_utc_naive, utc_now

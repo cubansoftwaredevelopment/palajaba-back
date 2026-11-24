@@ -18,7 +18,7 @@ from app.notifications.otp_manager import send_custom_sms
 from app.payments.qvapay import create_invoice
 from app.admin.schemas import AdvertisingPlanPublic
 from app.admin.service import get_advertising_prices, get_platform_settings
-from app.services.exchange_rates import snapshot_cup_per_unit
+from app.exchange_rates.service import snapshot_cup_per_unit
 from app.subscriptions.service import is_subscription_active
 from app.utils.datetime import to_utc_naive, utc_now
 from app.utils.phone import can_send_sms, to_e164

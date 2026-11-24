@@ -15,10 +15,10 @@ from app.statistics_admin.schemas.stats import (
     AdminRevenueChart,
     AdminStatsSummary,
 )
-from app.schemas.seller_stats import RevenueDataPoint
+from app.seller_statistics.schemas import RevenueDataPoint
 from app.constants import PROVINCE_NAMES
 from app.statistics_admin.traffic import count_visits_in_month
-from app.services.seller_stats import (
+from app.seller_statistics.stats import (
     Granularity,
     build_period_comparison,
     resolve_comparison_window,

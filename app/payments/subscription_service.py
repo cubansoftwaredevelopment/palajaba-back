@@ -14,7 +14,7 @@ from app.database import (
     get_subscription_qvapay_purchases_collection,
 )
 from app.payments.qvapay import create_invoice, qvapay_configured
-from app.services.exchange_rates import snapshot_cup_per_unit
+from app.exchange_rates.service import snapshot_cup_per_unit
 from app.admin.service import get_plan_prices
 from app.subscriptions.service import (
     expiry_notice_reset,

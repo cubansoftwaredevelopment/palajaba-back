@@ -15,7 +15,7 @@ from app.database import (
     get_orders_collection,
     get_registrations_collection,
 )
-from app.services.categories import (
+from app.categories.service import (
     business_category_name,
     normalize_business_category_id,
     parse_product_global_category_id,
@@ -1357,7 +1357,7 @@ from app.database import (
     get_registrations_collection,
 )
 from app.products.schemas import AdminProductList, AdminProductRow
-from app.services.categories import business_category_name
+from app.categories.service import business_category_name
 from app.subscriptions.service import is_subscription_active
 
 

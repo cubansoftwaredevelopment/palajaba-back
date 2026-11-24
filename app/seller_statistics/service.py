@@ -32,7 +32,7 @@ from app.seller_statistics.schemas import (
 )
 from app.constants import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.subscriptions.service import STATISTICS_PLAN_REQUIRED_MESSAGE, seller_has_statistics
-from app.services.seller_stats import Granularity
+from app.seller_statistics.stats import Granularity
 from app.statistics_admin.utils import parse_inclusive_dates, ranges_between
 from app.utils.datetime import to_utc_naive, utc_now
 

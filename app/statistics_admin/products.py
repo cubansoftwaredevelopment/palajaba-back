@@ -14,8 +14,8 @@ from app.database import (
     get_product_popularity_events_collection,
     get_registrations_collection,
 )
-from app.services.exchange_rates import get_cup_per_unit
-from app.services.seller_stats import resolve_comparison_window
+from app.exchange_rates.service import get_cup_per_unit
+from app.seller_statistics.stats import resolve_comparison_window
 from app.statistics_admin.schemas.orders import (
     AdminTopPopularProduct,
     AdminTopPopularProducts,

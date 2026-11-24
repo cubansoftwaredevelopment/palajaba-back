@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.seller_stats import PeriodComparison, RevenueDataPoint
+from app.seller_statistics.schemas import PeriodComparison, RevenueDataPoint
 
 
 class AdminStatsSummary(BaseModel):

@@ -16,7 +16,7 @@ async def connect_to_mongo():
 
     from app.admin.service import ensure_admin_indexes, seed_default_admin
     from app.products.service import ensure_catalog_indexes
-    from app.services.categories import ensure_category_seed
+    from app.categories.service import ensure_category_seed
     from app.catalogs.catalog_theme import ensure_product_category_seed
     from app.notifications.service import (
         ensure_notification_indexes,
@@ -32,15 +32,15 @@ async def connect_to_mongo():
     from app.auth.contact_changes import ensure_seller_contact_otp_indexes
     from app.auth.registrations import ensure_registration_indexes
     from app.catalogs.media_storage import init_cloudinary
-    from app.services.seller_stats import ensure_seller_stats_indexes
+    from app.seller_statistics.stats import ensure_seller_stats_indexes
     from app.subscriptions.service import ensure_subscription_payment_indexes
     from app.statistics_admin.traffic import ensure_marketplace_visit_indexes
-    from app.services.exchange_rates import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
+    from app.exchange_rates.service import ensure_exchange_rates_indexes, ensure_exchange_rates_ready
     from app.advertising.service import ensure_advertising_indexes
     from app.payments.subscription_service import ensure_subscription_qvapay_indexes
     from app.admin.service import ensure_platform_settings_indexes
-    from app.services.banners import ensure_banner_indexes
-    from app.services.seller_profile import ensure_uploads_dir
+    from app.banners.service import ensure_banner_indexes
+    from app.auth.seller_profile import ensure_uploads_dir
 
     init_cloudinary()
 
@@ -62,10 +62,10 @@ async def connect_to_mongo():
     await ensure_notification_indexes()
     await ensure_pending_order_notifications()
     await ensure_catalog_indexes()
-    from app.services.store_catalog_repair import ensure_store_catalog_repairs_on_startup
+    from app.catalogs.store_catalog_repair import ensure_store_catalog_repairs_on_startup
     from app.catalogs.catalog_theme import ensure_catalog_theme_defaults_on_startup
-    from app.services.discount_codes import ensure_discount_code_indexes
-    from app.services.gestores import (
+    from app.discount_codes.service import ensure_discount_code_indexes
+    from app.gestores.service import (
         ensure_gestor_indexes,
         ensure_seller_gestor_catalog_defaults,
     )

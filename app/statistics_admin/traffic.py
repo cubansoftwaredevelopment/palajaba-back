@@ -19,7 +19,7 @@ from app.statistics_admin.schemas.traffic import (
     TrafficDataPoint,
     TrafficGranularity,
 )
-from app.schemas.seller_stats import PeriodComparison
+from app.seller_statistics.schemas import PeriodComparison
 from app.constants import MUNICIPALITIES_BY_PROVINCE, PROVINCE_NAMES
 from app.utils.cuba_time import (
     cuba_date_str,
@@ -28,7 +28,7 @@ from app.utils.cuba_time import (
     cuba_weekday,
     cuba_weekday_label,
 )
-from app.services.seller_stats import (
+from app.seller_statistics.stats import (
     build_period_comparison,
     resolve_comparison_window,
 )

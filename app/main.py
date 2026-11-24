@@ -18,20 +18,28 @@ from app.app_releases.routes import router as app_releases_router
 from app.admin.routes import router as admin_router
 from app.seller_statistics.routes import router as seller_statistics_router
 from app.statistics_admin.routes import public_router as statistics_public_router
+from app.advertising.routes import platform_router as advertising_platform_router
 from app.advertising.routes import router as advertising_router
 from app.payments.routes import account_router as payment_workflow_router
 from app.payments.routes import router as payments_router
 from app.payments.evidence_clock import start_evidence_clock_task, stop_evidence_clock_task
 from app.payments.service import start_expiry_task, stop_expiry_task
-from app.routers import auth, categories, marketplace, platform, product_categories, seo, gestores
+from app.auth.seller_routes import router as seller_account_router
+from app.catalogs.routes import router as product_categories_router
+from app.categories.routes import router as categories_router
+from app.discount_codes.routes import router as discount_codes_router
+from app.exchange_rates.routes import router as exchange_rates_router
+from app.exchange_rates.service import (
+    start_exchange_rates_refresh_task,
+    stop_exchange_rates_refresh_task,
+)
+from app.gestores.routes import router as gestores_router
+from app.marketplace.routes import router as marketplace_router
+from app.seo.routes import router as seo_router
 from app.mensajeros.routes import router as mensajeros_router
 from app.notifications.service import (
     start_subscription_reminder_task,
     stop_subscription_reminder_task,
-)
-from app.services.exchange_rates import (
-    start_exchange_rates_refresh_task,
-    stop_exchange_rates_refresh_task,
 )
 
 UPLOADS_ROOT = Path(__file__).resolve().parent.parent / "uploads"
@@ -63,21 +71,23 @@ app.add_middleware(
 )
 
 app.include_router(account_router)
+app.include_router(seller_account_router)
 app.include_router(customer_accounts_router)
-app.include_router(auth.router)
 app.include_router(products_router)
 app.include_router(app_releases_router)
 app.include_router(orders_router)
-app.include_router(gestores.router)
+app.include_router(gestores_router)
 app.include_router(mensajeros_router)
-app.include_router(categories.router)
-app.include_router(product_categories.router)
-app.include_router(marketplace.router)
-app.include_router(platform.router)
+app.include_router(categories_router)
+app.include_router(product_categories_router)
+app.include_router(marketplace_router)
+app.include_router(exchange_rates_router)
+app.include_router(discount_codes_router)
+app.include_router(advertising_platform_router)
 app.include_router(advertising_router)
 app.include_router(payments_router)
 app.include_router(payment_workflow_router)
-app.include_router(seo.router)
+app.include_router(seo_router)
 app.include_router(admin_router)
 app.include_router(statistics_public_router)
 app.include_router(seller_statistics_router)

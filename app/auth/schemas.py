@@ -3,14 +3,14 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.products.schemas import CatalogPalette
-from app.schemas.seller_profile import (
+from app.auth.profile_schemas import (
     BusinessArea,
     BusinessLocation,
     SellerSocialLink,
     StoreBannerPublic,
     StorePagesPublic,
 )
-from app.schemas.gestores import GestorCatalogAccess
+from app.gestores.schemas import GestorCatalogAccess
 from app.utils.datetime import UtcDateTime
 
 LoginMethod = Literal["phone", "store_name"]

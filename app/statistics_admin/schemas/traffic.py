@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.schemas.seller_stats import PeriodComparison
+from app.seller_statistics.schemas import PeriodComparison
 
 TrafficPage = Literal["marketplace"]
 TrafficGranularity = Literal["daily", "weekly", "monthly"]

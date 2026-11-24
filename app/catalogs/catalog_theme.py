@@ -7,7 +7,7 @@ from typing import Any, Literal, TypedDict
 from fastapi import HTTPException, status
 
 from app.database import get_product_categories_collection, get_registrations_collection
-from app.schemas.seller_profile import CategoryPublic
+from app.categories.schemas import CategoryPublic
 from app.utils.datetime import to_utc_naive, utc_now
 
 logger = logging.getLogger(__name__)
@@ -344,7 +344,7 @@ async def ensure_catalog_theme_defaults_on_startup() -> int:
 
 
 async def get_seller_catalog_theme(seller_id: str) -> str:
-    from app.services.seller_profile import _get_seller_doc
+    from app.auth.seller_profile import _get_seller_doc
 
     doc = await _get_seller_doc(seller_id)
     return normalize_catalog_theme(doc.get("catalog_theme"))
@@ -355,7 +355,7 @@ async def update_seller_catalog_theme(
     theme: str,
     palette: dict | None = None,
 ) -> dict:
-    from app.services.seller_profile import _get_seller_doc
+    from app.auth.seller_profile import _get_seller_doc
     from app.subscriptions.service import (
         CATALOG_THEME_PLAN_REQUIRED_MESSAGE,
         seller_has_full_store_customization,
@@ -392,7 +392,7 @@ async def update_seller_catalog_theme(
 
 
 async def update_seller_catalog_theme_profile(seller_id: str, theme: str, palette: dict | None = None):
-    from app.services.seller_profile import _get_seller_doc, document_to_seller
+    from app.auth.seller_profile import _get_seller_doc, document_to_seller
 
     await update_seller_catalog_theme(seller_id, theme, palette)
     doc = await _get_seller_doc(seller_id)

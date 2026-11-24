@@ -252,7 +252,7 @@ class AccountDeletionE2ETests(unittest.TestCase):
         )
 
         with api_client() as client, patch(
-            "app.services.seller_deletion.remove_image",
+            "app.auth.seller_deletion.remove_image",
             new_callable=AsyncMock,
         ):
             before = client.get("/api/customers/me/orders", headers=customer_headers)

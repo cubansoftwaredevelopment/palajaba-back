@@ -22,10 +22,10 @@ from app.statistics_admin.schemas.orders import (
     OrdersGranularity,
 )
 from app.statistics_admin.utils import build_cumulative_candles, ranges_between
-from app.services.exchange_rates import get_cup_per_unit
+from app.exchange_rates.service import get_cup_per_unit
 from app.utils.currency_conversion import convert_amount
 from app.statistics_admin.schemas.traffic import TrafficDataPoint
-from app.services.seller_stats import (
+from app.seller_statistics.stats import (
     build_period_comparison,
     resolve_comparison_window,
 )

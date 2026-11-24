@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.statistics_admin.schemas.traffic import TrafficDataPoint
-from app.schemas.seller_stats import PeriodComparison
+from app.seller_statistics.schemas import PeriodComparison
 
 OrdersGranularity = Literal["daily", "weekly", "monthly"]
 

@@ -397,7 +397,7 @@ from app.database import (
     get_registrations_collection,
     get_subscription_payments_collection,
 )
-from app.services.exchange_rates import snapshot_cup_per_unit
+from app.exchange_rates.service import snapshot_cup_per_unit
 from app.utils.datetime import to_utc_naive, utc_now
 
 PaymentKind = Literal["approval", "renewal", "adjustment"]

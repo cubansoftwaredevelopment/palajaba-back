@@ -372,7 +372,7 @@ async def require_gestor(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    from app.services.gestores import assert_gestor_account_active
+    from app.gestores.service import assert_gestor_account_active
 
     await assert_gestor_account_active(payload["gestor_id"], payload["seller_id"])
 

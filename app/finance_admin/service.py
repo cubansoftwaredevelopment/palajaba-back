@@ -28,7 +28,7 @@ from app.finance_admin.schemas import (
     LedgerListPublic,
     LiquidateDebtsResult,
 )
-from app.services.exchange_rates import SUPPORTED_CURRENCIES, snapshot_cup_per_unit
+from app.exchange_rates.service import SUPPORTED_CURRENCIES, snapshot_cup_per_unit
 from app.utils.currency_conversion import convert_amount
 from app.utils.datetime import APP_DISPLAY_TZ, as_utc_aware, to_utc_naive, utc_now
 

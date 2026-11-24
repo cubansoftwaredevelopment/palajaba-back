@@ -1,1 +1,1 @@
-"""Estadísticas de la tienda del vendedor (prueba gratuita, Pro y Premium)."""
+"""Estadísticas de la tienda: panel del vendedor y agregados que también usa el admin."""

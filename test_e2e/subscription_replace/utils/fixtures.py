@@ -7,7 +7,7 @@ from datetime import timedelta
 from bson import ObjectId
 
 from app.database import get_gestores_collection, get_registrations_collection
-from app.services.gestores import build_gestor_document
+from app.gestores.service import build_gestor_document
 from app.utils.datetime import to_utc_naive, utc_now
 from test_e2e.utils.database import run_db
 from test_e2e.utils.locations import PROVINCE_ID, SELLER_MUNICIPALITY_ID

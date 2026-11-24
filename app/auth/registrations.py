@@ -10,7 +10,7 @@ from app.database import get_registrations_collection
 from app.auth.schemas import RegistrationAppDownload, RegistrationPublic
 from app.subscriptions.schemas import RegistrationSubscriptionReplace
 from app.auth.utils import hash_password
-from app.services.admin_registration_insights import (
+from app.auth.registration_insights import (
     aggregate_product_counts_by_seller,
     aggregate_sales_cup_by_seller,
     aggregate_unconfirmed_orders_by_seller,
@@ -19,8 +19,8 @@ from app.services.admin_registration_insights import (
 )
 from app.subscriptions.service import normalize_billing_period, normalize_plan_tier
 from app.subscriptions.service import expiry_notice_reset, expiry_notice_sent
-from app.services.discount_codes import validate_discount_code
-from app.services.seller_profile import ensure_store_name_available, is_profile_complete
+from app.discount_codes.service import validate_discount_code
+from app.auth.seller_profile import ensure_store_name_available, is_profile_complete
 from app.subscriptions.service import (
     record_subscription_payment,
     registration_id_str,
@@ -120,7 +120,7 @@ def document_to_public(
 async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[RegistrationPublic]:
     from app.app_releases.service import map_user_app_downloads
 
-    from app.services.gestores import aggregate_gestor_counts_by_seller
+    from app.gestores.service import aggregate_gestor_counts_by_seller
 
     seller_ids = [str(doc["_id"]) for doc in documents]
     counts_by_seller = await aggregate_product_counts_by_seller(seller_ids)
@@ -155,7 +155,7 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
 async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
     from app.app_releases.service import map_user_app_downloads
 
-    from app.services.gestores import aggregate_gestor_counts_by_seller
+    from app.gestores.service import aggregate_gestor_counts_by_seller
 
     seller_id = str(doc["_id"])
     counts_by_seller = await aggregate_product_counts_by_seller([seller_id])
@@ -457,7 +457,7 @@ async def replace_subscription(
             detail="Solo se puede editar la suscripción de tiendas aprobadas.",
         )
 
-    from app.services.gestores import apply_plan_gestor_keep_list
+    from app.gestores.service import apply_plan_gestor_keep_list
     from app.subscriptions.utils import build_subscription_replace_fields
 
     plan_tier = normalize_plan_tier(payload.plan_tier)
@@ -528,7 +528,7 @@ async def renew_registration(
         )
 
     next_tier = normalize_plan_tier(plan_tier if plan_tier is not None else doc.get("plan_tier"))
-    from app.services.gestores import apply_plan_gestor_keep_list
+    from app.gestores.service import apply_plan_gestor_keep_list
 
     await apply_plan_gestor_keep_list(registration_id, next_tier, keep_gestor_ids)
 

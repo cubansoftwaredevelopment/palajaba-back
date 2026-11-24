@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -183,3 +185,10 @@ class AdminProductRow(BaseModel):
 class AdminProductList(BaseModel):
     products: list[AdminProductRow] = Field(default_factory=list)
     total: int = 0
+
+
+ProductPopularityEvent = Literal["view", "jaba"]
+
+
+class ProductPopularityEventRequest(BaseModel):
+    event: ProductPopularityEvent

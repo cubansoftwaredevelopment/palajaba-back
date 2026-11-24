@@ -22,7 +22,7 @@ from app.database import (
 from app.notifications.otp_manager import OTP_EXPIRES_IN_SECONDS, send_otp, verify_otp
 from app.platform_terms import acceptance_record, stored_acceptance
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
-from app.services.marketplace import _search_text_filter
+from app.marketplace.service import _search_text_filter
 from app.utils.dates import created_at_bounds
 from app.utils.datetime import APP_DISPLAY_TZ, to_utc_naive, utc_now
 
