@@ -312,14 +312,16 @@ async def set_main_release(release_id: str) -> AppReleasePublic:
     public = _document_to_public(updated)
     if not already_main:
         try:
+            from app.live.hub import publish_app_release_update
             from app.live.push import notify_app_update_devices
 
+            await publish_app_release_update(public.model_dump(mode="json"))
             await notify_app_update_devices(
                 platform=str(public.platform),
                 version=str(public.version),
             )
         except Exception:
-            # El main ya quedó marcado aunque falle el push.
+            # El main ya quedó marcado aunque falle el aviso.
             pass
     return public
 

@@ -32,9 +32,26 @@ class LiveHub:
         for websocket in dead:
             self.disconnect(seller_id, websocket)
 
+    async def broadcast(self, payload: dict) -> None:
+        for user_id in list(self._sockets):
+            await self.send(user_id, payload)
+
 
 hub = LiveHub()
 customer_hub = LiveHub()
+
+
+async def publish_app_release_update(release: dict) -> None:
+    """Avisa por el hub a las sesiones abiertas que hay una versión principal nueva."""
+    payload = {
+        "type": "app_release_update",
+        "release": jsonable_encoder(release),
+    }
+    try:
+        await hub.broadcast(payload)
+        await customer_hub.broadcast(payload)
+    except Exception:
+        return
 
 
 async def publish_seller_data_update(seller_id: str, *resources: str) -> None:

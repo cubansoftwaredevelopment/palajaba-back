@@ -1126,6 +1126,50 @@ async def list_seller_notifications(
     return [_document_to_public(doc) for doc in docs]
 
 
+async def list_seller_notifications_page(
+    seller_id: str,
+    *,
+    offset: int = 0,
+    limit: int = 10,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    page_size = max(1, min(limit, 50))
+    safe_offset = max(0, offset)
+    await ensure_subscription_expiring_notifications()
+
+    try:
+        seller_object_id = ObjectId(seller_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vendedor no encontrado.",
+        ) from exc
+
+    query: dict[str, Any] = {"seller_id": seller_object_id}
+    created_bounds = created_at_bounds(date_from, date_to)
+    if created_bounds:
+        query["created_at"] = created_bounds
+
+    collection = get_notifications_collection()
+    total = await collection.count_documents(query)
+    docs = (
+        await collection.find(query)
+        .sort("created_at", DESCENDING)
+        .skip(safe_offset)
+        .limit(page_size)
+        .to_list(length=page_size)
+    )
+    items = [_document_to_public(doc) for doc in docs]
+    return {
+        "items": items,
+        "total": total,
+        "offset": safe_offset,
+        "limit": page_size,
+        "has_more": safe_offset + len(items) < total,
+    }
+
+
 async def get_unread_count(seller_id: str) -> SellerNotificationUnreadCount:
     await ensure_subscription_expiring_notifications()
 

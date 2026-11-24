@@ -1,6 +1,6 @@
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth.utils import require_seller
 from app.notifications import service
@@ -13,14 +13,24 @@ from app.notifications.schemas import (
 router = APIRouter(prefix="/api/auth", tags=["notifications"])
 
 
-@router.get("/me/notifications", response_model=list[SellerNotificationPublic])
+@router.get("/me/notifications")
 async def list_my_notifications(
     date_from: date | None = None,
     date_to: date | None = None,
+    offset: int | None = Query(default=None, ge=0),
+    limit: int | None = Query(default=None, ge=1, le=50),
     seller_payload: dict = Depends(require_seller),
 ):
-    return await service.list_seller_notifications(
+    if offset is None and limit is None:
+        return await service.list_seller_notifications(
+            seller_payload["seller_id"],
+            date_from=date_from,
+            date_to=date_to,
+        )
+    return await service.list_seller_notifications_page(
         seller_payload["seller_id"],
+        offset=offset or 0,
+        limit=limit or 10,
         date_from=date_from,
         date_to=date_to,
     )
