@@ -55,7 +55,7 @@ class MensajeroSetupRequest(BaseModel):
 
 class VehicleCreate(BaseModel):
     vehicle_type: str
-    plate: str = ""
+    plate: str = Field(min_length=1)
 
 
 class EvidenceRequest(BaseModel):

@@ -756,6 +756,13 @@ def _vehicle_photo_urls(item: dict) -> list[str]:
     return urls
 
 
+def _require_plate(plate: str) -> str:
+    cleaned = (plate or "").strip()
+    if not cleaned:
+        raise HTTPException(status_code=422, detail="Escribe la chapa del vehículo.")
+    return cleaned
+
+
 def _require_vehicle_photos(urls: list[str]) -> list[str]:
     if not urls:
         raise HTTPException(status_code=422, detail="Sube al menos una foto del vehículo.")
@@ -768,11 +775,12 @@ async def add_vehicle(mensajero_id: str, vehicle_type: str, plate: str, photo_ur
     if vehicle_type not in VEHICLE_TYPES:
         raise HTTPException(status_code=422, detail="Tipo de vehículo no válido.")
     photos = _require_vehicle_photos(photo_urls)
+    cleaned_plate = _require_plate(plate)
     doc = await assert_mensajero_active(mensajero_id)
     vehicle = {
         "id": str(ObjectId()),
         "vehicle_type": vehicle_type,
-        "plate": plate.strip(),
+        "plate": cleaned_plate,
         "photo_url": photos[0],
         "photo_urls": photos,
     }
@@ -793,15 +801,16 @@ async def update_vehicle(mensajero_id: str, vehicle_id: str, vehicle_type: str, 
         raise HTTPException(status_code=404, detail="No encontramos ese vehículo.")
     owned = _vehicle_photo_urls(current)
     photos = _require_vehicle_photos([*[url for url in keep_urls if url in owned], *new_urls])
+    cleaned_plate = _require_plate(plate)
     current["vehicle_type"] = vehicle_type
-    current["plate"] = plate.strip()
+    current["plate"] = cleaned_plate
     current["photo_url"] = photos[0]
     current["photo_urls"] = photos
     await get_mensajeros_collection().update_one(
         {"_id": doc["_id"], "vehicles.id": vehicle_id},
         {"$set": {
             "vehicles.$.vehicle_type": current["vehicle_type"],
-            "vehicles.$.plate": current["plate"],
+            "vehicles.$.plate": cleaned_plate,
             "vehicles.$.photo_url": photos[0],
             "vehicles.$.photo_urls": photos,
             "updated_at": to_utc_naive(utc_now()),
