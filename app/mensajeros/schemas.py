@@ -38,8 +38,6 @@ class AssignmentFee(BaseModel):
 class AssignBatchRequest(BaseModel):
     client_id: str | None = None
     mensajero_id: str
-    window_start: datetime
-    window_end: datetime
     orders: list[AssignmentFee] = Field(min_length=1)
 
 

@@ -28,7 +28,7 @@ from app.database import (
 from app.live.hub import customer_hub, hub, publish_customer_notification, publish_seller_data_update
 from app.live.push import notify_device_tokens
 from app.mensajeros.devices import list_device_tokens
-from app.mensajeros.utils import ACTIVE_ASSIGNMENT, VEHICLE_TYPES, haversine_km, normalize_username
+from app.mensajeros.utils import ACTIVE_ASSIGNMENT, VEHICLE_TYPES, distance_km, haversine_km, normalize_username
 from app.notifications.service import notify_seller_notice
 from app.payments.qvapay import verify_qvapay_username
 from app.utils.datetime import to_utc_naive, utc_now
@@ -301,10 +301,6 @@ def _order_brief(order: dict) -> dict:
 
 
 async def assign_batch(seller_id: str, payload) -> dict:
-    window_start = to_utc_naive(payload.window_start)
-    window_end = to_utc_naive(payload.window_end)
-    if window_end <= window_start:
-        raise HTTPException(status_code=422, detail="La hora final tiene que ser posterior a la inicial.")
     messenger = await get_mensajeros_collection().find_one({
         "_id": _oid(payload.mensajero_id, "Mensajero no encontrado."),
         "seller_id": _oid(seller_id, "Tienda no encontrada."),
@@ -354,8 +350,6 @@ async def assign_batch(seller_id: str, payload) -> dict:
         "mensajero_id": messenger["_id"],
         "status": "assigned",
         "vehicle_id": None,
-        "window_start": window_start,
-        "window_end": window_end,
         "started_at": None,
         "closed_at": None,
         "created_at": now,
@@ -444,8 +438,7 @@ async def _batch_public(batch: dict | None) -> dict:
         "id": str(batch["_id"]),
         "status": batch.get("status"),
         "vehicle_id": batch.get("vehicle_id"),
-        "window_start": batch.get("window_start"),
-        "window_end": batch.get("window_end"),
+        "created_at": batch.get("created_at"),
         "started_at": batch.get("started_at"),
         "closed_at": batch.get("closed_at"),
         "notice_read_at": batch.get("notice_read_at"),
@@ -458,7 +451,7 @@ async def _batch_public(batch: dict | None) -> dict:
 async def batches_for_messenger(mensajero_id: str) -> list[dict]:
     docs = await get_mensajeria_batches_collection().find(
         {"mensajero_id": _oid(mensajero_id, "Mensajero no encontrado."), "status": {"$ne": "cancelled"}}
-    ).sort("window_start", ASCENDING).to_list(length=100)
+    ).sort("created_at", DESCENDING).to_list(length=100)
     return [await _batch_public(doc) for doc in docs]
 
 
@@ -470,7 +463,7 @@ async def summary_for_messenger(mensajero_id: str, *, start: datetime | None, en
     done_amounts: dict[str, float] = {}
     km = 0.0
     for batch in batches:
-        window = batch.get("window_start")
+        window = batch.get("created_at")
         if start and window and to_utc_naive(window) < to_utc_naive(start):
             continue
         if end and window and to_utc_naive(window) > to_utc_naive(end):
@@ -611,6 +604,12 @@ async def add_point(mensajero_id: str, batch_id: str, point) -> dict:
     })
     if not batch:
         raise HTTPException(status_code=409, detail="No hay una ruta en curso.")
+    previous = await get_mensajeria_puntos_collection().find_one(
+        {"batch_id": batch["_id"]},
+        sort=[("recorded_at", DESCENDING)],
+    )
+    if previous and distance_km((previous["lat"], previous["lng"]), (point.lat, point.lng)) < 0.015:
+        return {"stored": False, "skipped": True}
     now = to_utc_naive(point.recorded_at or utc_now())
     document = {
         "client_id": point.client_id,
@@ -682,7 +681,14 @@ async def courier_evidence_pdf(order_id: str, *, seller_id: str | None = None, m
         "images": images,
         "submitted_at": evidence.get("submitted_at"),
     }
-    return await asyncio.to_thread(build_courier_evidence_pdf, payload)
+    try:
+        return await asyncio.to_thread(build_courier_evidence_pdf, payload)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="No pudimos preparar el PDF de la evidencia.") from exc
 
 
 async def submit_evidence(mensajero_id: str, order_id: str, *, note: str, image_urls: list[str], client_id: str | None) -> dict:

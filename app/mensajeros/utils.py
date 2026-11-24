@@ -52,6 +52,10 @@ def haversine_km(points: list[dict]) -> float:
     return round(total, 2)
 
 
+def distance_km(origin: tuple[float, float], destination: tuple[float, float]) -> float:
+    return _distance_km(origin, destination)
+
+
 def _distance_km(a: tuple[float, float], b: tuple[float, float]) -> float:
     radius = 6371.0
     lat1, lon1 = math.radians(a[0]), math.radians(a[1])

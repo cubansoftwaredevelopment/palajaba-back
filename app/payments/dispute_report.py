@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -165,21 +166,21 @@ class _Report:
         self.pdf.drawString(self.margin, self.y - size, line)
         self.y -= leading
 
-    def image(self, src: str) -> None:
+    def image(self, src: str) -> bool:
         data = _load_image(src)
         if not data:
             self.text("[Imagen]", color=TEXT_MUTED)
-            return
+            return False
         try:
             reader = ImageReader(BytesIO(data))
             width, height = reader.getSize()
         except Exception:
             self.text("[Imagen]", color=TEXT_MUTED)
-            return
+            return False
         if width <= 0 or height <= 0:
             self.text("[Imagen]", color=TEXT_MUTED)
-            return
-        max_height = 90 * mm
+            return False
+        max_height = 140 * mm
         scale = min(self.content_width / width, max_height / height, 1)
         draw_width = width * scale
         draw_height = height * scale
@@ -191,10 +192,10 @@ class _Report:
             width=draw_width,
             height=draw_height,
             preserveAspectRatio=True,
-            mask="auto",
             anchor="sw",
         )
         self.y -= draw_height + 3 * mm
+        return True
 
     def finish(self) -> bytes:
         self.pdf.save()
@@ -209,27 +210,65 @@ def _agreement(order: dict[str, Any], key: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def _load_image(src: str) -> bytes | None:
-    if src.startswith("/uploads/") and ".." not in src.split("/"):
-        path = (LOCAL_UPLOADS_ROOT / src.removeprefix("/uploads/")).resolve()
-        root = LOCAL_UPLOADS_ROOT.resolve()
-        if path.is_relative_to(root) and path.is_file():
-            data = path.read_bytes()
-            return data if len(data) <= MAX_IMAGE_BYTES else None
+def _local_upload(src: str) -> Path | None:
+    value = src.split("?", 1)[0].split("#", 1)[0]
+    marker = "/uploads/"
+    index = value.find(marker)
+    if index == -1 or ".." in value:
         return None
-    parsed = urlparse(src)
-    if parsed.scheme not in {"http", "https"} or parsed.hostname not in ALLOWED_IMAGE_HOSTS:
-        return None
+    relative = value[index + len(marker):]
+    path = (LOCAL_UPLOADS_ROOT / relative).resolve()
+    root = LOCAL_UPLOADS_ROOT.resolve()
+    if path.is_relative_to(root) and path.is_file():
+        return path
+    return None
+
+
+def _jpeg_for_pdf(data: bytes) -> bytes | None:
     try:
-        request = Request(src, headers={"User-Agent": "PaLaJaba"})
-        with urlopen(request, timeout=8) as response:
-            final = urlparse(response.geturl())
-            if final.hostname not in ALLOWED_IMAGE_HOSTS:
-                return None
-            data = response.read(MAX_IMAGE_BYTES + 1)
-    except (OSError, URLError, TimeoutError, ValueError):
+        from PIL import Image
+    except ImportError:
+        return data
+    try:
+        image = Image.open(BytesIO(data))
+        image.load()
+        if image.mode in {"RGBA", "LA", "P"}:
+            background = Image.new("RGB", image.size, (255, 255, 255))
+            rgba = image.convert("RGBA")
+            background.paste(rgba, mask=rgba.getchannel("A"))
+            image = background
+        else:
+            image = image.convert("RGB")
+        if max(image.size) > 1600:
+            image.thumbnail((1600, 1600))
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=85)
+        return output.getvalue()
+    except Exception:
         return None
-    return data if len(data) <= MAX_IMAGE_BYTES else None
+
+
+def _load_image(src: str) -> bytes | None:
+    data: bytes | None = None
+    local = _local_upload(src)
+    if local is not None:
+        data = local.read_bytes()
+    else:
+        parsed = urlparse(src)
+        if parsed.scheme not in {"http", "https"} or parsed.hostname not in ALLOWED_IMAGE_HOSTS:
+            return None
+        try:
+            request = Request(src, headers={"User-Agent": "PaLaJaba"})
+            with urlopen(request, timeout=8) as response:
+                final = urlparse(response.geturl())
+                if final.hostname not in ALLOWED_IMAGE_HOSTS:
+                    return None
+                data = response.read(MAX_IMAGE_BYTES + 1)
+        except (OSError, URLError, TimeoutError, ValueError):
+            return None
+    if not data or len(data) > MAX_IMAGE_BYTES:
+        return None
+    return _jpeg_for_pdf(data)
 
 
 def _write_document(report: _Report, content: Any, empty: str) -> None:
@@ -296,9 +335,13 @@ def build_courier_evidence_pdf(evidence: dict[str, Any]) -> tuple[bytes, str]:
     if images:
         report.gap(2 * mm)
         report.text("Fotos", font="Helvetica-Bold", size=12, color=BRAND_GREEN_DARK, leading=16)
+        attached = 0
         for src in images:
             report.gap(2 * mm)
-            report.image(src)
+            if report.image(src):
+                attached += 1
+        if attached == 0:
+            raise ValueError("No pudimos adjuntar la foto de la evidencia.")
     return report.finish(), f"evidencia-mensajero-{code or 'pedido'}.pdf"
 
 
