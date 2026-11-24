@@ -77,6 +77,9 @@ class MarketplaceProductPublic(BaseModel):
     discount_percent: int | None = None
     accepted_currencies: list[str] = Field(default_factory=list)
     offers_delivery: bool
+    stock_quantity: int = 100
+    stock_unit: str = "U"
+    unit_amount: float | None = None
     is_available: bool = True
     view_only: bool = False
     pickup_required: bool = False

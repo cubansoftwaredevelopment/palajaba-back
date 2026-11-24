@@ -6,6 +6,90 @@ PRODUCT_DISCOUNT_PLAN_REQUIRED_MESSAGE = (
     "Los descuentos de producto están disponibles en los planes Pro y Premium."
 )
 
+DEFAULT_STOCK_QUANTITY = 100
+STOCK_UNITS = ("kg", "g", "lb", "oz", "L", "ml", "U")
+
+
+def public_stock(doc: dict) -> tuple[int, str]:
+    raw = doc.get("stock_quantity")
+    if raw is None:
+        amount = DEFAULT_STOCK_QUANTITY
+    else:
+        try:
+            amount = int(raw)
+        except (TypeError, ValueError):
+            amount = DEFAULT_STOCK_QUANTITY
+    if amount < 0:
+        amount = 0
+    unit = str(doc.get("stock_unit") or "U").strip()
+    if unit not in STOCK_UNITS:
+        unit = "U"
+    return amount, unit
+
+
+def parse_stock_fields(quantity: object, unit: object) -> tuple[int, str]:
+    if quantity is None or (isinstance(quantity, str) and not quantity.strip()):
+        amount = DEFAULT_STOCK_QUANTITY
+    else:
+        try:
+            amount = int(str(quantity).strip())
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="El stock debe ser un número entero.",
+            ) from exc
+    if amount < 0 or amount > 1_000_000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El stock debe estar entre 0 y 1000000.",
+        )
+    code = str(unit or "U").strip()
+    if code not in STOCK_UNITS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La unidad de medida no es válida.",
+        )
+    return amount, code
+
+
+def public_unit_amount(doc: dict) -> float | None:
+    unit = str(doc.get("stock_unit") or "U").strip()
+    if unit not in STOCK_UNITS or unit == "U":
+        return None
+    raw = doc.get("unit_amount")
+    if raw is None or raw == "":
+        return None
+    try:
+        amount = round(float(raw), 3)
+    except (TypeError, ValueError):
+        return None
+    if amount <= 0:
+        return None
+    return amount
+
+
+def parse_unit_amount(raw: object, unit: str) -> float | None:
+    if unit == "U":
+        return None
+    if raw is None or (isinstance(raw, str) and not str(raw).strip()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Indica el número de la unidad de medida, por ejemplo 900 ml.",
+        )
+    try:
+        amount = round(float(str(raw).strip().replace(",", ".")), 3)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La unidad de medida debe ser un número.",
+        ) from exc
+    if amount <= 0 or amount > 1_000_000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La unidad de medida debe ser mayor que 0.",
+        )
+    return amount
+
 
 def parse_discount_percent(raw: object) -> int | None:
     if raw is None:

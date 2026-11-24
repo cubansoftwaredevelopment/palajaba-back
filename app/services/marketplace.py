@@ -66,6 +66,8 @@ from app.products.utils import (
     MARKETPLACE_PRODUCT_SORT,
     mongo_sort_for_product_mode,
     public_discount_percent,
+    public_stock,
+    public_unit_amount,
     refresh_popularity_window,
     sort_product_docs,
 )
@@ -404,6 +406,9 @@ def _product_to_public(
         discount_percent=public_discount_percent(product, seller),
         accepted_currencies=list(product.get("accepted_currencies") or []),
         offers_delivery=bool(product.get("offers_delivery")),
+        stock_quantity=public_stock(product)[0],
+        stock_unit=public_stock(product)[1],
+        unit_amount=public_unit_amount(product),
         is_available=bool(product.get("is_available", True)),
         view_only=bool(product.get("view_only")),
         pickup_required=pickup_required,

@@ -61,7 +61,9 @@ class CatalogProductSuggestion(BaseModel):
     base_price: float
     base_currency: str
     discount_percent: int | None = None
-    stock_quantity: int | None = None
+    stock_quantity: int = 100
+    stock_unit: str = "U"
+    unit_amount: float | None = None
 
 
 class CatalogProductSearchPublic(BaseModel):
@@ -95,7 +97,9 @@ class CatalogProductPublic(BaseModel):
     sales_areas: list[dict[str, str]] = Field(default_factory=list)
     popularity: int = 0
     sort_order: int = 0
-    stock_quantity: int | None = None
+    stock_quantity: int = 100
+    stock_unit: str = "U"
+    unit_amount: float | None = None
 
 
 class CatalogCategoryPublic(BaseModel):

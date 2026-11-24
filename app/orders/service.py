@@ -22,7 +22,7 @@ from app.orders.schemas import (
 )
 from app.orders.utils import compute_order_products_revenue
 from app.platform_terms import platform_terms_snapshot
-from app.products.utils import bump_products_on_order_completed
+from app.products.utils import DEFAULT_STOCK_QUANTITY, bump_products_on_order_completed
 from app.services.store_pages import (
     STORE_PAGE_TITLES,
     sanitize_store_page_content,
@@ -337,10 +337,41 @@ async def _decrement_product_stock(
     try:
         for product_id, quantity in qty_by_product.items():
             doc = docs_by_id[product_id]
-            if doc.get("stock_quantity") is None:
-                continue
-
             product_oid = ObjectId(product_id)
+            raw_stock = doc.get("stock_quantity")
+            if raw_stock is None:
+                if quantity > DEFAULT_STOCK_QUANTITY:
+                    raise ValueError(
+                        f"Stock insuficiente para «{doc.get('name', 'producto')}»."
+                    )
+                seeded = await products_col.update_one(
+                    {
+                        "_id": product_oid,
+                        "seller_id": seller_id,
+                        "$or": [
+                            {"stock_quantity": None},
+                            {"stock_quantity": {"$exists": False}},
+                        ],
+                    },
+                    {
+                        "$set": {
+                            "stock_quantity": DEFAULT_STOCK_QUANTITY - quantity,
+                            "stock_unit": doc.get("stock_unit") or "U",
+                            "is_available": DEFAULT_STOCK_QUANTITY - quantity > 0,
+                            "updated_at": now,
+                        }
+                    },
+                )
+                if seeded.modified_count == 1:
+                    applied.append((product_oid, quantity))
+                    continue
+                fresh = await products_col.find_one({"_id": product_oid, "seller_id": seller_id})
+                raw_stock = None if fresh is None else fresh.get("stock_quantity")
+                if raw_stock is None:
+                    raise ValueError(
+                        f"Stock insuficiente para «{doc.get('name', 'producto')}»."
+                    )
+
             result = await products_col.update_one(
                 {
                     "_id": product_oid,

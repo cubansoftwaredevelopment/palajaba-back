@@ -45,7 +45,11 @@ from app.subscriptions.service import seller_has_product_discounts
 from app.products.utils import (
     PRODUCT_DISCOUNT_PLAN_REQUIRED_MESSAGE,
     parse_discount_percent,
+    parse_stock_fields,
+    parse_unit_amount,
     public_discount_percent,
+    public_stock,
+    public_unit_amount,
     stored_discount_percent,
 )
 from app.utils.datetime import to_utc_naive, utc_now
@@ -186,11 +190,9 @@ def document_to_product(
         is_available=bool(doc.get("is_available", True)),
         popularity=int(doc.get("popularity") or 0),
         sort_order=int(doc.get("sort_order") or 0),
-        stock_quantity=(
-            int(doc["stock_quantity"])
-            if doc.get("stock_quantity") is not None
-            else None
-        ),
+        stock_quantity=public_stock(doc)[0],
+        stock_unit=public_stock(doc)[1],
+        unit_amount=public_unit_amount(doc),
     )
 
 
@@ -418,9 +420,9 @@ async def search_seller_ordered_products(seller_id: str, query: str) -> CatalogP
             base_price=float(doc["base_price"]),
             base_currency=doc["base_currency"],
             discount_percent=public_discount_percent(doc, seller_doc),
-            stock_quantity=(
-                int(doc["stock_quantity"]) if doc.get("stock_quantity") is not None else None
-            ),
+            stock_quantity=public_stock(doc)[0],
+            stock_unit=public_stock(doc)[1],
+            unit_amount=public_unit_amount(doc),
         )
         for doc in docs
     ]
@@ -830,6 +832,9 @@ def _same_catalog_product(
     sales_areas: list[dict[str, Any]],
     view_only: bool,
     is_available: bool,
+    stock_quantity: int,
+    stock_unit: str,
+    unit_amount: float | None,
     images: list[dict[str, Any]],
 ) -> bool:
     if str(doc.get("name") or "") != name:
@@ -856,6 +861,11 @@ def _same_catalog_product(
     if bool(doc.get("view_only")) != bool(view_only):
         return False
     if bool(doc.get("is_available")) != bool(is_available):
+        return False
+    stored_stock, stored_unit = public_stock(doc)
+    if stored_stock != int(stock_quantity) or stored_unit != stock_unit:
+        return False
+    if public_unit_amount(doc) != unit_amount:
         return False
     if _area_keys(doc.get("sales_areas")) != _area_keys(sales_areas):
         return False
@@ -890,6 +900,9 @@ async def create_catalog_product(
     frontal_index: int = 0,
     discount_percent: object = None,
     sales_areas_raw: str | None = None,
+    stock_quantity: object = None,
+    stock_unit: object = None,
+    unit_amount: object = None,
 ) -> tuple[CatalogProductPublic, bool]:
     seller_doc = await _seller_doc(seller_id)
     normalized_discount = _discount_percent_for_write(discount_percent, seller_doc)
@@ -958,6 +971,9 @@ async def create_catalog_product(
         seller_doc,
         offers_delivery=bool(offers_delivery),
     )
+    normalized_stock, normalized_unit = parse_stock_fields(stock_quantity, stock_unit)
+    normalized_unit_amount = parse_unit_amount(unit_amount, normalized_unit)
+    available = bool(is_available) and normalized_stock > 0
     candidates = await products.find(
         {
             "seller_id": seller_id,
@@ -979,7 +995,10 @@ async def create_catalog_product(
             offers_delivery=bool(offers_delivery),
             sales_areas=sales_areas,
             view_only=bool(view_only),
-            is_available=bool(is_available),
+            is_available=available,
+            stock_quantity=normalized_stock,
+            stock_unit=normalized_unit,
+            unit_amount=normalized_unit_amount,
             images=prepared_images,
         ):
             return document_to_product(candidate, seller_doc), False
@@ -1025,7 +1044,10 @@ async def create_catalog_product(
         "offers_delivery": bool(offers_delivery),
         "sales_areas": sales_areas,
         "view_only": bool(view_only),
-        "is_available": bool(is_available),
+        "is_available": available,
+        "stock_quantity": normalized_stock,
+        "stock_unit": normalized_unit,
+        "unit_amount": normalized_unit_amount,
         "sort_order": product_count,
         "popularity": 0,
         "created_at": now,
@@ -1230,6 +1252,9 @@ async def update_catalog_product(
     frontal_new_index: int | None = None,
     discount_percent: object = None,
     sales_areas_raw: str | None = None,
+    stock_quantity: object = None,
+    stock_unit: object = None,
+    unit_amount: object = None,
 ) -> CatalogProductPublic:
     doc = await _get_product_doc(seller_id, product_id)
     seller_doc = await _seller_doc(seller_id)
@@ -1256,6 +1281,9 @@ async def update_catalog_product(
         accepted_currencies_raw=accepted_currencies_raw,
     )
 
+    normalized_stock, normalized_unit = parse_stock_fields(stock_quantity, stock_unit)
+    normalized_unit_amount = parse_unit_amount(unit_amount, normalized_unit)
+    available = bool(is_available) and normalized_stock > 0
     now = to_utc_naive(utc_now())
     update_fields: dict[str, Any] = {
         "name": normalized_name,
@@ -1274,7 +1302,10 @@ async def update_catalog_product(
             fallback=doc.get("sales_areas"),
         ),
         "view_only": bool(view_only),
-        "is_available": bool(is_available),
+        "is_available": available,
+        "stock_quantity": normalized_stock,
+        "stock_unit": normalized_unit,
+        "unit_amount": normalized_unit_amount,
         "updated_at": now,
     }
 

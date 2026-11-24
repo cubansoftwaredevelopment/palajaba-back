@@ -141,6 +141,9 @@ async def create_my_catalog_product(
     frontal_index: int = Form(0),
     discount_percent: str | None = Form(None),
     sales_areas: str | None = Form(None),
+    stock_quantity: str | None = Form(None),
+    stock_unit: str | None = Form(None),
+    unit_amount: str | None = Form(None),
 ):
     product, created = await products_service.create_catalog_product(
         seller_payload["seller_id"],
@@ -159,6 +162,9 @@ async def create_my_catalog_product(
         frontal_index=frontal_index,
         discount_percent=discount_percent,
         sales_areas_raw=sales_areas,
+        stock_quantity=stock_quantity,
+        stock_unit=stock_unit,
+        unit_amount=unit_amount,
     )
     if created:
         from app.live.hub import publish_seller_data_update
@@ -197,6 +203,9 @@ async def update_my_catalog_product(
     frontal_new_index: int | None = Form(None),
     discount_percent: str | None = Form(None),
     sales_areas: str | None = Form(None),
+    stock_quantity: str | None = Form(None),
+    stock_unit: str | None = Form(None),
+    unit_amount: str | None = Form(None),
 ):
     product = await products_service.update_catalog_product(
         seller_payload["seller_id"],
@@ -218,6 +227,9 @@ async def update_my_catalog_product(
         frontal_new_index=frontal_new_index,
         discount_percent=discount_percent,
         sales_areas_raw=sales_areas,
+        stock_quantity=stock_quantity,
+        stock_unit=stock_unit,
+        unit_amount=unit_amount,
     )
     from app.live.hub import publish_seller_data_update
     await publish_seller_data_update(seller_payload["seller_id"], "products")
