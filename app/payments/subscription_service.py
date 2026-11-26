@@ -16,7 +16,7 @@ from app.database import (
 from app.payments.qvapay import create_invoice, qvapay_configured
 from app.exchange_rates.service import snapshot_cup_per_unit
 from app.admin.service import get_plan_prices, get_platform_settings
-from app.subscriptions.plugins import normalize_plugin_selection, plugins_total_usd
+from app.subscriptions.plugins import normalize_plugin_selection, plugins_total_usd, seller_has_plugin
 from app.subscriptions.service import (
     expiry_notice_reset,
     is_subscription_active,
@@ -225,9 +225,14 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
     return _checkout_public(document, include_plan_amount=True, payment_url=invoice.url)
 
 
-async def quote_custom_selection(plugins: dict, billing_period: str) -> tuple[dict[str, int], str, float, float]:
+async def quote_custom_selection(
+    plugins: dict,
+    billing_period: str,
+    *,
+    customers_included: bool = False,
+) -> tuple[dict[str, int], str, float, float]:
     period = normalize_billing_period(billing_period)
-    selection = normalize_plugin_selection(plugins)
+    selection = normalize_plugin_selection(plugins, customers_included=customers_included)
     if not selection:
         raise HTTPException(status_code=400, detail="Elige al menos una función.")
     stored = await get_platform_settings()
@@ -356,7 +361,11 @@ async def create_plugin_addon_checkout(
     if not isinstance(ends_at, datetime):
         raise HTTPException(status_code=409, detail="Tu plan no tiene una fecha de vencimiento.")
     period = normalize_billing_period(seller.get("billing_period"))
-    selection, period, amount_usd, discount_percent = await quote_custom_selection(plugins, period)
+    selection, period, amount_usd, discount_percent = await quote_custom_selection(
+        plugins,
+        period,
+        customers_included=seller_has_plugin(seller, "customers"),
+    )
     rates = snapshot_cup_per_unit()
     usd_rate = rates.get("USD")
     amount_cup = (

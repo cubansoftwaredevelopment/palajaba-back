@@ -84,7 +84,7 @@ def parse_plugin_prices(raw: Any) -> dict[str, float]:
     return prices
 
 
-def normalize_plugin_selection(raw: Any) -> dict[str, int]:
+def normalize_plugin_selection(raw: Any, *, customers_included: bool = False) -> dict[str, int]:
     source = raw if isinstance(raw, dict) else {}
     selection: dict[str, int] = {}
     for key in PLUGIN_IDS:
@@ -98,6 +98,8 @@ def normalize_plugin_selection(raw: Any) -> dict[str, int]:
             qty = 1 if qty else 0
         if qty:
             selection[key] = qty
+    if selection.get("customer_notices") and not selection.get("customers") and not customers_included:
+        selection.pop("customer_notices", None)
     return selection
 
 
@@ -161,6 +163,10 @@ def _legacy_enabled(doc: dict | None, key: str) -> bool:
     if key in {"mensajeros", "statistics", "discounts", "banners", "recommendation_boost"}:
         return paid_plus
     return False
+
+
+def seller_has_plugin(doc: dict | None, key: str) -> bool:
+    return feature_on(doc, key, legacy=_legacy_enabled(doc, key))
 
 
 def feature_on(doc: dict | None, key: str, *, legacy: bool) -> bool:
