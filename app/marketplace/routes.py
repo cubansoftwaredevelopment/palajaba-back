@@ -21,14 +21,26 @@ from app.marketplace.schemas import (
 from app.products.schemas import ProductPopularityEventRequest
 from app.products import utils as popularity_service
 from app.banners import service as banners_service
-from app.marketplace import service as marketplace_service
+from app.marketplace.businesses import list_businesses
+from app.marketplace.catalog import (
+    get_store_catalog,
+    get_store_page,
+    get_store_public,
+    list_store_category_products,
+)
+from app.marketplace.feed import list_availability_hints, list_category_products, list_home_feed
+from app.marketplace.gestores import get_gestor_store_catalog, list_gestor_store_category_products
+from app.marketplace.jaba import list_shared_products, sync_jaba_products
+from app.marketplace.products import get_marketplace_product
+from app.marketplace.search import search_products
+from app.marketplace.sellers import resolve_visible_seller_id, set_marketplace_service_fee_percent
 from app.seller_statistics import stats as seller_stats_service
 
 async def _load_marketplace_service_fee() -> None:
     from app.admin.service import get_platform_settings
 
     platform = await get_platform_settings()
-    marketplace_service.set_marketplace_service_fee_percent(platform.transaction_fee_percent)
+    set_marketplace_service_fee_percent(platform.transaction_fee_percent)
 
 
 router = APIRouter(
@@ -54,7 +66,7 @@ async def get_marketplace_home_feed(
     currency: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_home_feed(
+        return await list_home_feed(
             province_id.strip(),
             municipality_id.strip(),
             limit_per_category=limit_per_category,
@@ -78,7 +90,7 @@ async def get_marketplace_availability_hints(
     global_category_id: str | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_availability_hints(
+        return await list_availability_hints(
             province_id.strip(),
             municipality_id,
             currency=currency,
@@ -103,7 +115,7 @@ async def list_marketplace_businesses(
     currency: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_businesses(
+        return await list_businesses(
             province_id.strip(),
             municipality_id.strip(),
             limit=limit,
@@ -131,7 +143,7 @@ async def list_marketplace_category_products(
     currency: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_category_products(
+        return await list_category_products(
             province_id.strip(),
             municipality_id.strip(),
             global_category_id.strip(),
@@ -154,7 +166,7 @@ async def get_marketplace_product(
     municipality_id: str = Query(..., min_length=1),
 ):
     try:
-        return await marketplace_service.get_marketplace_product(
+        return await get_marketplace_product(
             product_id,
             province_id.strip(),
             municipality_id.strip(),
@@ -176,7 +188,7 @@ async def get_shared_products(
     item: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_shared_products(
+        return await list_shared_products(
             province_id.strip(),
             municipality_id.strip(),
             item or [],
@@ -202,7 +214,7 @@ async def search_marketplace_products(
     gestor_username: str | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.search_products(
+        return await search_products(
             province_id.strip(),
             municipality_id.strip(),
             query=q,
@@ -228,7 +240,7 @@ async def record_marketplace_store_view(
     municipality_id: str = Query(..., min_length=1),
 ):
     try:
-        seller_id = await marketplace_service.resolve_visible_seller_id(
+        seller_id = await resolve_visible_seller_id(
             store_slug,
             province_id.strip(),
             municipality_id.strip(),
@@ -253,7 +265,7 @@ async def get_marketplace_store_catalog(
     municipios_adicionales: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.get_store_catalog(
+        return await get_store_catalog(
             store_slug,
             province_id.strip(),
             municipality_id.strip(),
@@ -282,7 +294,7 @@ async def get_marketplace_gestor_store_catalog(
     municipios_adicionales: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.get_gestor_store_catalog(
+        return await get_gestor_store_catalog(
             store_slug,
             gestor_username.strip(),
             province_id.strip(),
@@ -313,7 +325,7 @@ async def list_marketplace_store_category_products(
     municipios_adicionales: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_store_category_products(
+        return await list_store_category_products(
             store_slug,
             province_id.strip(),
             municipality_id.strip(),
@@ -346,7 +358,7 @@ async def list_marketplace_gestor_store_category_products(
     municipios_adicionales: list[str] | None = Query(default=None),
 ):
     try:
-        return await marketplace_service.list_gestor_store_category_products(
+        return await list_gestor_store_category_products(
             store_slug,
             gestor_username.strip(),
             province_id.strip(),
@@ -367,7 +379,7 @@ async def list_marketplace_gestor_store_category_products(
 @router.get("/stores/{store_slug}/pages/{page_slug}", response_model=MarketplaceStorePagePublic)
 async def get_marketplace_store_page(store_slug: str, page_slug: str):
     try:
-        return await marketplace_service.get_store_page(store_slug, page_slug)
+        return await get_store_page(store_slug, page_slug)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -378,7 +390,7 @@ async def get_marketplace_store_page(store_slug: str, page_slug: str):
 @router.get("/stores/{store_slug}", response_model=MarketplaceStorePublic)
 async def get_marketplace_store(store_slug: str):
     try:
-        return await marketplace_service.get_store_public(store_slug)
+        return await get_store_public(store_slug)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -389,7 +401,7 @@ async def get_marketplace_store(store_slug: str):
 @router.post("/jaba/sync", response_model=JabaSyncPublic)
 async def sync_marketplace_jaba(payload: JabaSyncRequest):
     try:
-        return await marketplace_service.sync_jaba_products(payload)
+        return await sync_jaba_products(payload)
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

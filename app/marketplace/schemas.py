@@ -115,6 +115,7 @@ class MarketplaceCategorySectionPublic(BaseModel):
     category_id: str
     category_name: str
     products: list[MarketplaceProductPublic] = Field(default_factory=list)
+    stores: list[MarketplaceBusinessPublic] = Field(default_factory=list)
     total_products: int = 0
     has_more: bool = False
 

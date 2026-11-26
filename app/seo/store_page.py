@@ -6,7 +6,9 @@ from html import escape
 from typing import Any
 
 from app.marketplace.schemas import MarketplaceStoreCatalogPublic
-from app.marketplace.service import get_store_catalog, _parse_business_area, _resolve_store_catalog_seller
+from app.marketplace.catalog import get_store_catalog
+from app.marketplace.sellers import _resolve_store_catalog_seller
+from app.marketplace.utils import _parse_business_area
 from app.utils.reserved_store_slugs import is_reserved_store_slug
 
 SEO_PRODUCTS_PER_CATEGORY = 30
