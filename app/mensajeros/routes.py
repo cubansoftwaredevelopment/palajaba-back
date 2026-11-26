@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import Response
 
 from app.auth.utils import require_active_seller, require_customer, require_mensajero
-from app.catalogs.media_storage import read_image_upload
+from app.catalogs.media_storage import read_image_upload, store_image
 from app.mensajeros import service
 from app.mensajeros.devices import register_device
 from app.mensajeros.schemas import (
@@ -17,8 +17,6 @@ from app.mensajeros.schemas import (
     TelemetryPoint,
 )
 from app.payments.schema import QvaPayAccountRequest
-from app.mensajeros.utils import save_image
-
 router = APIRouter()
 seller_router = APIRouter(prefix="/api/auth/me/mensajeros", tags=["mensajeros"])
 panel_router = APIRouter(prefix="/api/mensajeros", tags=["mensajeros"])
@@ -94,17 +92,18 @@ async def save_device(payload: DeviceRegister, mensajero: dict = Depends(require
 @panel_router.post("/me/photo")
 async def photo(file: UploadFile = File(...), mensajero: dict = Depends(require_mensajero)):
     content, content_type = await read_image_upload(file)
-    url = save_image(content, content_type, mensajero["mensajero_id"])
-    return await service.set_profile_photo(mensajero["mensajero_id"], url)
+    stored = await store_image(content, content_type, scope="mensajeros", owner_id=mensajero["mensajero_id"])
+    return await service.set_profile_photo(mensajero["mensajero_id"], stored.url)
 
 
-async def _stored_photos(files: list[UploadFile], owner_id: str) -> list[str]:
+async def _stored_photos(files: list[UploadFile], owner_id: str, *, scope: str) -> list[str]:
     urls = []
     for file in files:
         if not file.filename:
             continue
         content, content_type = await read_image_upload(file)
-        urls.append(save_image(content, content_type, owner_id))
+        stored = await store_image(content, content_type, scope=scope, owner_id=owner_id)
+        urls.append(stored.url)
     return urls
 
 
@@ -115,7 +114,7 @@ async def vehicle(
     files: list[UploadFile] = File(default=[]),
     mensajero: dict = Depends(require_mensajero),
 ):
-    urls = await _stored_photos(files, mensajero["mensajero_id"])
+    urls = await _stored_photos(files, mensajero["mensajero_id"], scope="mensajeros")
     return await service.add_vehicle(mensajero["mensajero_id"], vehicle_type, plate, urls)
 
 
@@ -128,7 +127,7 @@ async def update_vehicle(
     files: list[UploadFile] = File(default=[]),
     mensajero: dict = Depends(require_mensajero),
 ):
-    uploaded = await _stored_photos(files, mensajero["mensajero_id"])
+    uploaded = await _stored_photos(files, mensajero["mensajero_id"], scope="mensajeros")
     return await service.update_vehicle(
         mensajero["mensajero_id"],
         vehicle_id,
@@ -206,7 +205,8 @@ async def evidence(
         if not file.filename:
             continue
         content, content_type = await read_image_upload(file)
-        urls.append(save_image(content, content_type, mensajero["mensajero_id"]))
+        stored = await store_image(content, content_type, scope="order-evidence", owner_id=mensajero["mensajero_id"])
+        urls.append(stored.url)
     return await service.submit_evidence(
         mensajero["mensajero_id"],
         order_id,

@@ -75,7 +75,12 @@ def _usd_amount(amount: float, currency: str, rates: dict[str, float]) -> float:
 async def ensure_subscription_qvapay_indexes() -> None:
     collection = get_subscription_qvapay_purchases_collection()
     await collection.create_index("seller_id")
-    await collection.create_index("remote_id", unique=True)
+    indexes = await collection.index_information()
+    remote = indexes.get("remote_id_1")
+    if remote is None or not remote.get("sparse"):
+        if remote is not None:
+            await collection.drop_index("remote_id_1")
+        await collection.create_index("remote_id", unique=True, sparse=True)
     await collection.create_index("transaction_uuid", unique=True, sparse=True)
     await collection.create_index([("seller_id", 1), ("status", 1), ("created_at", -1)])
 
@@ -326,6 +331,7 @@ async def create_custom_cup_checkout(*, plugins: dict, billing_period: str, tran
     purchase_id = ObjectId()
     document = {
         "_id": purchase_id,
+        "remote_id": f"cup-plan-{purchase_id}",
         "seller_id": None,
         "store_name": "Nueva tienda",
         "purchase_kind": "custom",
