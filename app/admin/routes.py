@@ -23,6 +23,7 @@ from app.finance_admin.routes import router as finance_router
 from app.notifications.otp_manager.email_otp import send_test_email
 from app.notifications.routes.admin import router as notifications_router
 from app.payments import disputes as dispute_service
+from app.payments import subscription_service
 from app.payments.schema import DisputeRulingRequest
 from app.products.routes import admin_router as products_router
 from app.banners.schemas import BannerAdminPublic, BannerUpdate
@@ -73,6 +74,16 @@ async def get_registration(registration_id: str, _: dict = Depends(require_admin
 async def delete_registration(registration_id: str, _: dict = Depends(require_admin)):
     result = await seller_deletion_service.delete_registration_document(registration_id)
     return RegistrationDeleteResult(**result)
+
+
+@panel_router.get("/plugin-addons/pending")
+async def list_pending_plugin_addons(_: dict = Depends(require_admin)):
+    return await subscription_service.list_pending_addon_transfers()
+
+
+@panel_router.post("/plugin-addons/{purchase_id}/approve")
+async def approve_plugin_addon(purchase_id: str, _: dict = Depends(require_admin)):
+    return await subscription_service.approve_plugin_addon_transfer(purchase_id)
 
 
 @panel_router.post("/registrations/{registration_id}/approve", response_model=RegistrationPublic)
@@ -146,6 +157,7 @@ async def get_plan_prices():
     stored = await admin_service.get_platform_settings()
     return PlatformPlanPricesPublic(
         plan_prices=stored.plan_prices,
+        plugin_prices=stored.plugin_prices,
         qvapay_plan_discount_percent=stored.qvapay_plan_discount_percent,
     )
 

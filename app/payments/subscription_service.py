@@ -15,7 +15,8 @@ from app.database import (
 )
 from app.payments.qvapay import create_invoice, qvapay_configured
 from app.exchange_rates.service import snapshot_cup_per_unit
-from app.admin.service import get_plan_prices
+from app.admin.service import get_plan_prices, get_platform_settings
+from app.subscriptions.plugins import normalize_plugin_selection, plugins_total_usd
 from app.subscriptions.service import (
     expiry_notice_reset,
     is_subscription_active,
@@ -224,6 +225,239 @@ async def create_initial_subscription_checkout(*, plan_tier: str, billing_period
     return _checkout_public(document, include_plan_amount=True, payment_url=invoice.url)
 
 
+async def quote_custom_selection(plugins: dict, billing_period: str) -> tuple[dict[str, int], str, float, float]:
+    period = normalize_billing_period(billing_period)
+    selection = normalize_plugin_selection(plugins)
+    if not selection:
+        raise HTTPException(status_code=400, detail="Elige al menos una función.")
+    stored = await get_platform_settings()
+    prices = stored.plugin_prices.model_dump()
+    amount_usd = plugins_total_usd(prices, selection, period)
+    if amount_usd <= 0:
+        raise HTTPException(status_code=400, detail="El plan personalizado no tiene un precio.")
+    discount_percent = await _qvapay_plan_discount_percent()
+    return selection, period, amount_usd, discount_percent
+
+
+def _custom_public(document: dict[str, Any], payment_url: str = "") -> dict[str, Any]:
+    return {
+        "purchase_id": str(document["_id"]),
+        "plan_tier": "custom",
+        "billing_period": document.get("billing_period"),
+        "plan_plugins": document.get("plan_plugins") or {},
+        "plan_amount_usd": document.get("plan_amount_usd"),
+        "invoice_amount_usd": document.get("invoice_amount_usd"),
+        "amount_cup": document.get("payment_amount_cup"),
+        "payment_url": payment_url or document.get("payment_url") or "",
+        "status": document.get("status"),
+        "payment_method": document.get("payment_method") or "qvapay",
+        "addon_expires_at": document.get("addon_expires_at"),
+        "store_name": document.get("store_name") or "",
+        "transfer_id": document.get("transfer_id") or "",
+    }
+
+
+async def create_custom_qvapay_checkout(*, plugins: dict, billing_period: str) -> dict[str, Any]:
+    if not qvapay_configured():
+        raise HTTPException(status_code=503, detail="Los pagos QvaPay no están disponibles ahora.")
+    selection, period, amount_usd, discount_percent = await quote_custom_selection(plugins, billing_period)
+    invoice_amount_usd = _discounted_usd(amount_usd, discount_percent)
+    rates = snapshot_cup_per_unit()
+    now = to_utc_naive(utc_now())
+    purchase_id = ObjectId()
+    remote_id = f"subscription-plan-{purchase_id}"
+    document = {
+        "_id": purchase_id,
+        "remote_id": remote_id,
+        "seller_id": None,
+        "store_name": "Nueva tienda",
+        "purchase_kind": "custom",
+        "plan_tier": "custom",
+        "plan_plugins": selection,
+        "billing_period": period,
+        "plan_amount_usd": amount_usd,
+        "discount_percent": discount_percent,
+        "invoice_amount_usd": invoice_amount_usd,
+        "currency": "USD",
+        "payment_method": "qvapay",
+        "exchange_rates_cup_per_unit": rates,
+        "status": "creating_invoice",
+        "created_at": now,
+        "updated_at": now,
+    }
+    purchases = get_subscription_qvapay_purchases_collection()
+    await purchases.insert_one(document)
+    try:
+        invoice = await create_invoice(
+            amount=invoice_amount_usd,
+            description="Plan personalizado, Alta de tienda",
+            remote_id=remote_id,
+        )
+    except Exception:
+        await purchases.update_one(
+            {"_id": purchase_id, "status": "creating_invoice"},
+            {"$set": {"status": "failed", "updated_at": to_utc_naive(utc_now())}},
+        )
+        raise
+    document.update({"transaction_uuid": invoice.transaction_uuid, "status": "pending", "payment_url": invoice.url})
+    await purchases.update_one(
+        {"_id": purchase_id, "status": "creating_invoice"},
+        {"$set": {"transaction_uuid": invoice.transaction_uuid, "status": "pending", "payment_url": invoice.url, "updated_at": to_utc_naive(utc_now())}},
+    )
+    return _custom_public(document, payment_url=invoice.url)
+
+
+async def create_custom_cup_checkout(*, plugins: dict, billing_period: str, transfer_id: str) -> dict[str, Any]:
+    cleaned = str(transfer_id or "").strip()
+    if not cleaned:
+        raise HTTPException(status_code=400, detail="El ID de la transferencia es obligatorio.")
+    selection, period, amount_usd, _discount = await quote_custom_selection(plugins, billing_period)
+    rates = snapshot_cup_per_unit()
+    usd_rate = rates.get("USD")
+    if not usd_rate:
+        raise HTTPException(status_code=503, detail="No hay tasa de cambio para mostrar el precio en CUP.")
+    amount_cup = int((Decimal(str(amount_usd)) * Decimal(str(usd_rate))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    now = to_utc_naive(utc_now())
+    purchase_id = ObjectId()
+    document = {
+        "_id": purchase_id,
+        "seller_id": None,
+        "store_name": "Nueva tienda",
+        "purchase_kind": "custom",
+        "plan_tier": "custom",
+        "plan_plugins": selection,
+        "billing_period": period,
+        "plan_amount_usd": amount_usd,
+        "invoice_amount_usd": amount_usd,
+        "payment_amount_cup": amount_cup,
+        "currency": "CUP",
+        "payment_method": "cup",
+        "transfer_id": cleaned,
+        "exchange_rates_cup_per_unit": rates,
+        "status": "submitted",
+        "created_at": now,
+        "updated_at": now,
+    }
+    await get_subscription_qvapay_purchases_collection().insert_one(document)
+    return _custom_public(document)
+
+
+async def create_plugin_addon_checkout(
+    *,
+    seller_id: str,
+    plugins: dict,
+    payment_method: str,
+    transfer_id: str | None = None,
+) -> dict[str, Any]:
+    seller = await get_registrations_collection().find_one({"_id": _oid(seller_id, "Tienda no encontrada.")})
+    if not seller or not is_subscription_active(seller):
+        raise HTTPException(status_code=409, detail="Tu plan no está activo.")
+    ends_at = seller.get("subscription_ends_at")
+    if not isinstance(ends_at, datetime):
+        raise HTTPException(status_code=409, detail="Tu plan no tiene una fecha de vencimiento.")
+    period = normalize_billing_period(seller.get("billing_period"))
+    selection, period, amount_usd, discount_percent = await quote_custom_selection(plugins, period)
+    rates = snapshot_cup_per_unit()
+    usd_rate = rates.get("USD")
+    amount_cup = (
+        int((Decimal(str(amount_usd)) * Decimal(str(usd_rate))).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        if usd_rate
+        else None
+    )
+    now = to_utc_naive(utc_now())
+    purchase_id = ObjectId()
+    document = {
+        "_id": purchase_id,
+        "remote_id": f"subscription-plan-{purchase_id}",
+        "seller_id": str(seller_id),
+        "store_name": seller.get("store_name") or "",
+        "purchase_kind": "addon",
+        "plan_tier": seller.get("plan_tier") or "standard",
+        "plan_plugins": selection,
+        "billing_period": period,
+        "plan_amount_usd": amount_usd,
+        "discount_percent": discount_percent if payment_method == "qvapay" else 0,
+        "invoice_amount_usd": _discounted_usd(amount_usd, discount_percent) if payment_method == "qvapay" else amount_usd,
+        "payment_amount_cup": amount_cup,
+        "currency": "USD" if payment_method == "qvapay" else "CUP",
+        "payment_method": payment_method,
+        "addon_expires_at": to_utc_naive(ends_at),
+        "exchange_rates_cup_per_unit": rates,
+        "status": "creating_invoice" if payment_method == "qvapay" else "submitted",
+        "created_at": now,
+        "updated_at": now,
+    }
+    if payment_method == "cup":
+        cleaned = str(transfer_id or "").strip()
+        if not cleaned:
+            raise HTTPException(status_code=400, detail="El ID de la transferencia es obligatorio.")
+        document["transfer_id"] = cleaned
+        document["status"] = "submitted"
+        await get_subscription_qvapay_purchases_collection().insert_one(document)
+        return _custom_public(document)
+    if not qvapay_configured():
+        raise HTTPException(status_code=503, detail="Los pagos QvaPay no están disponibles ahora.")
+    purchases = get_subscription_qvapay_purchases_collection()
+    await purchases.insert_one(document)
+    try:
+        invoice = await create_invoice(
+            amount=document["invoice_amount_usd"],
+            description="Complemento de plan",
+            remote_id=document["remote_id"],
+        )
+    except Exception:
+        await purchases.update_one(
+            {"_id": purchase_id, "status": "creating_invoice"},
+            {"$set": {"status": "failed", "updated_at": to_utc_naive(utc_now())}},
+        )
+        raise
+    document.update({"transaction_uuid": invoice.transaction_uuid, "status": "pending", "payment_url": invoice.url})
+    await purchases.update_one(
+        {"_id": purchase_id},
+        {"$set": {"transaction_uuid": invoice.transaction_uuid, "status": "pending", "payment_url": invoice.url, "updated_at": to_utc_naive(utc_now())}},
+    )
+    return _custom_public(document, payment_url=invoice.url)
+
+
+async def list_pending_addon_transfers() -> list[dict[str, Any]]:
+    docs = await get_subscription_qvapay_purchases_collection().find(
+        {"purchase_kind": "addon", "payment_method": "cup", "status": "submitted"}
+    ).sort("created_at", -1).to_list(length=50)
+    return [_custom_public(doc) for doc in docs]
+
+
+async def approve_plugin_addon_transfer(purchase_id: str) -> dict[str, Any]:
+    collection = get_subscription_qvapay_purchases_collection()
+    purchase = await collection.find_one({"_id": _oid(purchase_id, "Compra no encontrada.")})
+    if not purchase or purchase.get("purchase_kind") != "addon" or purchase.get("payment_method") != "cup":
+        raise HTTPException(status_code=404, detail="Compra no encontrada.")
+    if purchase.get("status") == "paid":
+        return _custom_public(purchase)
+    now = to_utc_naive(utc_now())
+    claimed = await collection.update_one(
+        {"_id": purchase["_id"], "status": "submitted"},
+        {"$set": {"status": "processing", "updated_at": now}},
+    )
+    if claimed.modified_count != 1:
+        raise HTTPException(status_code=409, detail="Esa transferencia ya fue revisada.")
+    await _activate_paid_purchase(purchase)
+    updated = await collection.find_one({"_id": purchase["_id"]})
+    return _custom_public(updated or purchase)
+
+
+async def load_open_custom_purchase(purchase_id: str) -> dict[str, Any]:
+    doc = await get_subscription_qvapay_purchases_collection().find_one(
+        {"_id": _oid(purchase_id, "No encontramos esa compra."), "seller_id": None, "purchase_kind": "custom"}
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="No encontramos esa compra.")
+    if doc.get("payment_method") == "qvapay" and doc.get("status") != "paid":
+        raise HTTPException(status_code=409, detail="Paga la factura QvaPay antes de continuar con tus datos.")
+    if doc.get("payment_method") == "cup" and doc.get("status") != "submitted":
+        raise HTTPException(status_code=409, detail="Confirma la transferencia antes de continuar.")
+    return doc
+
+
 async def get_public_initial_subscription_checkout(*, purchase_id: str) -> dict[str, Any]:
     doc = await get_subscription_qvapay_purchases_collection().find_one(
         {"_id": _oid(purchase_id, "Factura no encontrada."), "seller_id": None}
@@ -345,24 +579,32 @@ async def _activate_paid_purchase(purchase: dict[str, Any]) -> bool:
         if usd_rate
         else None
     )
-    await registrations.update_one(
-        {"_id": seller_oid},
-        {
-            "$set": {
-                "status": "approved",
-                "plan_tier": tier,
-                "billing_period": period,
-                "is_trial": False,
-                "subscription_starts_at": starts_at,
-                "subscription_ends_at": ends_at,
-                "payment_amount_cup": payment_amount_cup,
-                "approved_at": now,
-                "rejection_reason": None,
-                "updated_at": now,
-                **expiry_notice_reset(),
-            }
-        },
-    )
+    seller_updates: dict[str, Any] = {
+        "status": "approved",
+        "plan_tier": tier,
+        "billing_period": period,
+        "is_trial": False,
+        "subscription_starts_at": starts_at,
+        "subscription_ends_at": ends_at,
+        "payment_amount_cup": payment_amount_cup,
+        "approved_at": now,
+        "rejection_reason": None,
+        "updated_at": now,
+        **expiry_notice_reset(),
+    }
+    if purchase.get("purchase_kind") == "addon":
+        merged = dict(seller.get("plugin_addons") or {})
+        for key, qty in (purchase.get("plan_plugins") or {}).items():
+            merged[key] = int(merged.get(key) or 0) + int(qty)
+        seller_updates = {
+            "plugin_addons": merged,
+            "plugin_addons_expires_at": purchase.get("addon_expires_at") or seller.get("subscription_ends_at"),
+            "updated_at": now,
+        }
+    elif purchase.get("plan_plugins"):
+        seller_updates["plan_tier"] = "custom"
+        seller_updates["plan_plugins"] = purchase.get("plan_plugins")
+    await registrations.update_one({"_id": seller_oid}, {"$set": seller_updates})
     if payment_amount_cup is not None:
         await record_subscription_payment(
             registration_id=str(seller_oid),

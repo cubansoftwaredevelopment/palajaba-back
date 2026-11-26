@@ -168,6 +168,11 @@ async def _get_challenge(challenge_id: str) -> dict:
 async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartResponse:
     now = to_utc_naive(utc_now())
     accepted = acceptance_record(payload.accepted_terms, now)
+    custom_purchase = None
+    if payload.kind == "custom":
+        if not payload.qvapay_purchase_id:
+            raise HTTPException(status_code=400, detail="Confirma el pago del plan personalizado antes de continuar.")
+        custom_purchase = await subscription_service.load_open_custom_purchase(payload.qvapay_purchase_id)
     if payload.kind == "account":
         if not payload.qvapay_purchase_id:
             raise HTTPException(status_code=400, detail="Debes pagar el plan QvaPay antes de crear la tienda.")
@@ -193,9 +198,13 @@ async def start_registration_otp(payload: RegisterRequest) -> RegisterOtpStartRe
         "phone": payload.phone,
         "password_hash": hash_password(payload.password),
         "billing_period": payload.billing_period,
-        "plan_tier": payload.plan_tier,
+        "plan_tier": "custom" if custom_purchase else payload.plan_tier,
+        "plan_plugins": (custom_purchase or {}).get("plan_plugins") or {},
+        "billing_period": (custom_purchase or {}).get("billing_period") or payload.billing_period,
         "discount_code": payload.discount_code,
         "qvapay_purchase_id": payload.qvapay_purchase_id,
+        "custom_payment_method": (custom_purchase or {}).get("payment_method"),
+        "transfer_id": (custom_purchase or {}).get("transfer_id") or payload.transfer_id,
         "email_hash": email_result.hash,
         "phone_hash": phone_result.hash,
         "email_verified": False,
@@ -283,7 +292,10 @@ async def confirm_registration_otp(
         )
 
     is_trial = doc.get("kind") == "trial"
-    is_account = doc.get("kind") == "account"
+    is_account = doc.get("kind") == "account" or (
+        doc.get("kind") == "custom" and doc.get("custom_payment_method") == "qvapay"
+    )
+    is_custom = doc.get("kind") == "custom"
     acceptance = stored_acceptance(doc)
     registration = await create_registration(
         transfer_id=doc.get("transfer_id"),
@@ -298,6 +310,7 @@ async def confirm_registration_otp(
         is_account=is_account,
         terms_accepted_at=acceptance["terms_accepted_at"],
         terms_version=acceptance["terms_version"],
+        plan_plugins=doc.get("plan_plugins") if is_custom else None,
     )
     if is_account:
         await subscription_service.attach_paid_subscription_checkout(
@@ -325,7 +338,7 @@ async def confirm_registration_otp(
     return RegisterOtpConfirmResponse(
         id=registration.id,
         status=registration.status,
-        kind="trial" if is_trial else "account" if is_account else "paid",
+        kind="trial" if is_trial else "custom" if is_custom else "account" if is_account else "paid",
         message=message,
         access_token=access_token,
     )

@@ -24,7 +24,19 @@ from app.seller_statistics import stats as seller_stats_service
 from app.seller_statistics.stats import Granularity
 
 router = APIRouter()
-stats_router = APIRouter(prefix="/api/seller/statistics", tags=["seller-statistics"])
+async def _require_statistics_plan(payload: dict = Depends(require_seller)) -> dict:
+    from app.subscriptions.plugins import require_plugin
+
+    doc = await get_registrations_collection().find_one({"_id": ObjectId(str(payload["seller_id"]))})
+    require_plugin(doc, "statistics")
+    return payload
+
+
+stats_router = APIRouter(
+    prefix="/api/seller/statistics",
+    tags=["seller-statistics"],
+    dependencies=[Depends(_require_statistics_plan)],
+)
 auth_stats_router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 

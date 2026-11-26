@@ -41,7 +41,7 @@ from app.products.utils import (
     sort_product_docs,
 )
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
-from app.subscriptions.service import seller_has_product_discounts
+from app.subscriptions.service import feature_plan_tier, plan_rank, seller_has_product_discounts
 from app.products.utils import (
     PRODUCT_DISCOUNT_PLAN_REQUIRED_MESSAGE,
     parse_discount_percent,
@@ -75,6 +75,21 @@ async def _seller_doc(seller_id: str) -> dict[str, Any]:
             detail="Tienda no encontrada.",
         )
     return doc
+
+
+async def _require_discount_slot(seller_doc: dict[str, Any]) -> None:
+    from app.subscriptions.plugins import require_quantity_slot
+
+    current = await get_catalog_products_collection().count_documents(
+        {"seller_id": str(seller_doc["_id"]), "discount_percent": {"$gt": 0}}
+    )
+    require_quantity_slot(
+        seller_doc,
+        "discounts",
+        current,
+        legacy_limit=None,
+        legacy_included=seller_doc.get("plan_tier") != "custom" and plan_rank(feature_plan_tier(seller_doc)) >= 1,
+    )
 
 
 def _discount_percent_for_write(raw: object, seller_doc: dict[str, Any]) -> int | None:
@@ -906,6 +921,8 @@ async def create_catalog_product(
 ) -> tuple[CatalogProductPublic, bool]:
     seller_doc = await _seller_doc(seller_id)
     normalized_discount = _discount_percent_for_write(discount_percent, seller_doc)
+    if normalized_discount:
+        await _require_discount_slot(seller_doc)
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
     normalized_global_category_id = _validate_global_category_for_seller(
         seller_id,
@@ -1266,6 +1283,8 @@ async def update_catalog_product(
         )
     else:
         normalized_discount = _discount_percent_for_write(discount_percent, seller_doc)
+        if normalized_discount and not stored_discount_percent(doc):
+            await _require_discount_slot(seller_doc)
     local_category_oid = await _validate_local_category_id(seller_id, category_id)
     normalized_global_category_id = _validate_global_category_for_seller(
         seller_id,

@@ -69,6 +69,10 @@ class SellerPublic(BaseModel):
     has_store_banners: bool = False
     has_full_store_customization: bool = False
     has_product_discounts: bool = False
+    plugin_access: dict[str, int | None] = Field(default_factory=dict)
+    plan_plugins: dict[str, int] = Field(default_factory=dict)
+    plugin_addons: dict[str, int] = Field(default_factory=dict)
+    plugin_addons_expires_at: UtcDateTime | None = None
     qvapay_enabled: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
@@ -195,7 +199,7 @@ class PasswordResetCompleteResponse(BaseModel):
     message: str
 
 
-RegisterKind = Literal["account", "trial", "paid"]
+RegisterKind = Literal["account", "trial", "paid", "custom"]
 OtpChannel = Literal["email", "phone"]
 
 
@@ -337,7 +341,7 @@ class RegistrationPublic(BaseModel):
     qvapay_username: str | None = None
     is_trial: bool = False
     billing_period: BillingPeriod
-    plan_tier: PlanTier = "standard"
+    plan_tier: str = "standard"
     status: RegistrationStatus
     subscription_starts_at: UtcDateTime | None = None
     subscription_ends_at: UtcDateTime | None = None

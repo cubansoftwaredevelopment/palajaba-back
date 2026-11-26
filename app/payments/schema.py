@@ -26,6 +26,13 @@ class SubscriptionPlanCheckoutRequest(BaseModel):
     billing_period: BillingPeriod
 
 
+class CustomPluginCheckoutRequest(BaseModel):
+    billing_period: BillingPeriod = "monthly"
+    plugins: dict[str, int] = Field(default_factory=dict)
+    payment_method: Literal["cup", "qvapay"] = "qvapay"
+    transfer_id: str | None = None
+
+
 class SubscriptionPlanCheckoutPublic(BaseModel):
     purchase_id: str
     plan_tier: PlanTier

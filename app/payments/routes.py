@@ -21,6 +21,7 @@ from app.payments.schema import (
     QvaPayAccountRequest,
     StoreRefundRequest,
     SellerAcceptPaymentRequest,
+    CustomPluginCheckoutRequest,
     SubscriptionPlanCheckoutRequest,
 )
 from app.auth.utils import require_active_seller, require_customer, require_seller
@@ -88,6 +89,39 @@ async def create_subscription_plan_qvapay_checkout(
         seller_id=seller["seller_id"],
         plan_tier=payload.plan_tier,
         billing_period=payload.billing_period,
+    )
+
+
+@account_router.post("/api/register/custom")
+async def create_custom_plan_checkout(payload: CustomPluginCheckoutRequest):
+    if payload.payment_method == "cup":
+        return await subscription_service.create_custom_cup_checkout(
+            plugins=payload.plugins,
+            billing_period=payload.billing_period,
+            transfer_id=payload.transfer_id or "",
+        )
+    return await subscription_service.create_custom_qvapay_checkout(
+        plugins=payload.plugins,
+        billing_period=payload.billing_period,
+    )
+
+
+@account_router.get("/api/register/custom/{purchase_id}")
+async def get_custom_plan_checkout(purchase_id: str):
+    doc = await subscription_service.get_public_initial_subscription_checkout(purchase_id=purchase_id)
+    return doc
+
+
+@account_router.post("/api/auth/me/plugins")
+async def create_plugin_addon_checkout(
+    payload: CustomPluginCheckoutRequest,
+    seller: dict = Depends(require_seller),
+):
+    return await subscription_service.create_plugin_addon_checkout(
+        seller_id=seller["seller_id"],
+        plugins=payload.plugins,
+        payment_method=payload.payment_method,
+        transfer_id=payload.transfer_id,
     )
 
 

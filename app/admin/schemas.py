@@ -124,11 +124,27 @@ class PlatformAdminContact(BaseModel):
         return phone
 
 
+class PluginPrices(BaseModel):
+    whatsapp_orders: float = Field(default=1, ge=0)
+    gestores: float = Field(default=1, ge=0)
+    catalog_palette: float = Field(default=2, ge=0)
+    recommendation_boost: float = Field(default=1, ge=0)
+    mensajeros: float = Field(default=1, ge=0)
+    customers: float = Field(default=1, ge=0)
+    customer_notices: float = Field(default=1, ge=0)
+    automatic_orders: float = Field(default=1, ge=0)
+    manual_orders: float = Field(default=1, ge=0)
+    statistics: float = Field(default=2, ge=0)
+    discounts: float = Field(default=1, ge=0)
+    banners: float = Field(default=1, ge=0)
+
+
 class PlatformSettingsPublic(BaseModel):
     renewal_contact_phone: str | None = None
     transaction_fee_percent: float = 0
     qvapay_plan_discount_percent: float = 0
     plan_prices: PlanPricesSettings = Field(default_factory=default_plan_prices)
+    plugin_prices: PluginPrices = Field(default_factory=PluginPrices)
     advertising_prices: AdvertisingPricesSettings = Field(
         default_factory=default_advertising_prices
     )
@@ -142,6 +158,7 @@ class PlatformSettingsUpdate(BaseModel):
     transaction_fee_percent: float | None = Field(default=None, ge=0, le=100)
     qvapay_plan_discount_percent: float | None = Field(default=None, ge=0, le=100)
     plan_prices: PlanPricesSettings | None = None
+    plugin_prices: PluginPrices | None = None
     advertising_prices: AdvertisingPricesSettings | None = None
     admins: list[PlatformAdminContact] | None = None
     admin_email: str | None = None
@@ -176,6 +193,7 @@ class PlatformRenewalContactPublic(BaseModel):
 
 class PlatformPlanPricesPublic(BaseModel):
     plan_prices: PlanPricesSettings
+    plugin_prices: PluginPrices = Field(default_factory=PluginPrices)
     qvapay_plan_discount_percent: float = 0
 
 

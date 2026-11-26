@@ -228,6 +228,7 @@ async def create_registration(
     is_account: bool = False,
     terms_accepted_at=None,
     terms_version: str | None = None,
+    plan_plugins: dict | None = None,
 ) -> RegistrationPublic:
     collection = get_registrations_collection()
     now = to_utc_naive(utc_now())
@@ -276,7 +277,8 @@ async def create_registration(
         "phone": phone,
         "password_hash": hashed,
         "billing_period": billing_period,
-        "plan_tier": normalize_plan_tier(plan_tier),
+        "plan_tier": "custom" if plan_plugins else normalize_plan_tier(plan_tier),
+        "plan_plugins": plan_plugins or {},
         "is_trial": bool(is_trial),
         "status": "approved" if is_preapproved else "pending",
         # OTP-verified owners can manage their inactive store while CUP payment is reviewed.

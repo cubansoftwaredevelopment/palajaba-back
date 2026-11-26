@@ -29,8 +29,10 @@ from app.catalogs.catalog_theme import normalize_catalog_theme, public_catalog_p
 from app.categories.service import categories_for_profile, list_categories, validate_category_ids
 from app.constants import validate_business_area
 from app.gestores.service import parse_gestor_catalog_access
+from app.subscriptions.plugins import plugin_access_map
 from app.subscriptions.service import (
     STORE_BANNERS_PLAN_REQUIRED_MESSAGE,
+    max_gestores_for_seller,
     normalize_plan_tier,
     seller_has_full_store_customization,
     seller_has_mensajeros,
@@ -291,6 +293,10 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         has_store_banners=seller_has_store_banners(doc),
         has_full_store_customization=seller_has_full_store_customization(doc),
         has_product_discounts=seller_has_product_discounts(doc),
+        plugin_access=plugin_access_map(doc, gestores_cap=max_gestores_for_seller(doc)),
+        plan_plugins=doc.get("plan_plugins") or {},
+        plugin_addons=doc.get("plugin_addons") or {},
+        plugin_addons_expires_at=doc.get("plugin_addons_expires_at"),
         qvapay_enabled=bool(doc.get("qvapay_username")) and qvapay_escrow_configured(),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
@@ -544,6 +550,17 @@ async def add_store_banner(seller_id: str, file: UploadFile) -> tuple[SellerPubl
     doc = await _get_seller_doc(seller_id)
     _require_store_banners(doc)
     banners = _store_banner_documents(doc)
+    from app.subscriptions.plugins import require_quantity_slot
+
+    from app.subscriptions.service import feature_plan_tier, plan_rank
+
+    require_quantity_slot(
+        doc,
+        "banners",
+        len(banners),
+        legacy_limit=None,
+        legacy_included=doc.get("plan_tier") != "custom" and plan_rank(feature_plan_tier(doc)) >= 1,
+    )
 
     content, content_type = await read_image_upload(file)
     content_hash = hashlib.sha256(content).hexdigest()

@@ -46,7 +46,9 @@ CATALOG_THEME_PLAN_REQUIRED_MESSAGE = (
 )
 
 
-def normalize_plan_tier(value: str | None) -> PlanTier:
+def normalize_plan_tier(value: str | None) -> str:
+    if value == "custom":
+        return "custom"
     if value == PRO_PLAN_TIER:
         return PRO_PLAN_TIER
     if value == PREMIUM_PLAN_TIER:
@@ -58,10 +60,12 @@ def effective_plan_tier(doc: dict) -> PlanTier:
     return normalize_plan_tier(doc.get("plan_tier"))
 
 
-def feature_plan_tier(doc: dict | None) -> PlanTier:
+def feature_plan_tier(doc: dict | None) -> str:
     """Plan cuyas prestaciones aplican: la prueba gratuita equivale a Pro."""
     payload = doc or {}
     tier = effective_plan_tier(payload)
+    if tier == "custom":
+        return "custom"
     if tier in (PRO_PLAN_TIER, PREMIUM_PLAN_TIER):
         return tier
     if payload.get("is_trial"):
@@ -70,6 +74,8 @@ def feature_plan_tier(doc: dict | None) -> PlanTier:
 
 
 def plan_rank(plan_tier: str | None) -> int:
+    if plan_tier == "custom":
+        return 0
     return _PLAN_RANK[normalize_plan_tier(plan_tier)]
 
 
@@ -79,6 +85,8 @@ def plan_search_rank(doc: dict) -> int:
 
 
 def plan_display_name(plan_tier: str | None) -> str:
+    if plan_tier == "custom":
+        return "Personalizado"
     return PLAN_DISPLAY_NAMES[normalize_plan_tier(plan_tier)]
 
 
@@ -100,7 +108,16 @@ def max_gestores_for_plan(plan_tier: str | None) -> int | None:
 
 
 def max_gestores_for_seller(doc: dict | None) -> int | None:
-    return max_gestores_for_plan(feature_plan_tier(doc))
+    from app.subscriptions.plugins import addon_quantity, is_custom_plan, selected_quantity
+
+    payload = doc or {}
+    if is_custom_plan(payload):
+        return selected_quantity(payload, "gestores")
+    limit = max_gestores_for_plan(feature_plan_tier(payload))
+    extra = addon_quantity(payload, "gestores")
+    if limit is None:
+        return None
+    return limit + extra
 
 
 def seller_can_add_gestor(plan_tier: str | None, current_count: int) -> bool:
@@ -134,36 +151,59 @@ async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
 
 
 def seller_has_statistics(doc: dict) -> bool:
-    return plan_rank(feature_plan_tier(doc)) >= 1
+    from app.subscriptions.plugins import feature_on
+
+    legacy = plan_rank(feature_plan_tier(doc)) >= 1 and not doc.get("plan_tier") == "custom"
+    if doc.get("plan_tier") == "custom":
+        legacy = False
+    return feature_on(doc, "statistics", legacy=legacy)
 
 
 def seller_has_mensajeros(doc: dict) -> bool:
-    return plan_rank(feature_plan_tier(doc)) >= 1
+    from app.subscriptions.plugins import feature_on
+
+    legacy = plan_rank(feature_plan_tier(doc)) >= 1 and doc.get("plan_tier") != "custom"
+    return feature_on(doc, "mensajeros", legacy=legacy)
 
 
 def seller_has_recommendation_boost(doc: dict) -> bool:
-    return seller_has_statistics(doc)
+    return recommendation_multiplier(doc) > 1
 
 
 def seller_has_store_banners(doc: dict) -> bool:
-    return plan_rank(feature_plan_tier(doc)) >= 1
+    from app.subscriptions.plugins import feature_on
+
+    legacy = plan_rank(feature_plan_tier(doc)) >= 1 and doc.get("plan_tier") != "custom"
+    return feature_on(doc, "banners", legacy=legacy)
 
 
 def seller_has_full_store_customization(doc: dict) -> bool:
-    return feature_plan_tier(doc) == PREMIUM_PLAN_TIER
+    from app.subscriptions.plugins import feature_on
+
+    legacy = feature_plan_tier(doc) == PREMIUM_PLAN_TIER
+    return feature_on(doc, "catalog_palette", legacy=legacy)
 
 
 def seller_has_product_discounts(doc: dict) -> bool:
-    return plan_rank(feature_plan_tier(doc)) >= 1
+    from app.subscriptions.plugins import feature_on
+
+    legacy = plan_rank(feature_plan_tier(doc)) >= 1 and doc.get("plan_tier") != "custom"
+    return feature_on(doc, "discounts", legacy=legacy)
 
 
 def recommendation_multiplier(doc: dict) -> int:
+    from app.subscriptions.plugins import addon_quantity, is_custom_plan, selected_quantity
+
+    if is_custom_plan(doc):
+        return max(1, selected_quantity(doc, "recommendation_boost"))
     tier = feature_plan_tier(doc)
     if tier == PREMIUM_PLAN_TIER:
-        return PREMIUM_RECOMMENDATION_MULTIPLIER
-    if tier == PRO_PLAN_TIER:
-        return PRO_RECOMMENDATION_MULTIPLIER
-    return 1
+        base = PREMIUM_RECOMMENDATION_MULTIPLIER
+    elif tier == PRO_PLAN_TIER:
+        base = PRO_RECOMMENDATION_MULTIPLIER
+    else:
+        base = 1
+    return base + addon_quantity(doc, "recommendation_boost")
 
 
 from datetime import UTC, datetime

@@ -417,6 +417,11 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
             "Tu acceso para comprar está revocado. Puedes entrar a tu cuenta, pero no puedes hacer pedidos."
         )
     seller = await _get_seller_doc(payload.store_id)
+    from app.subscriptions.plugins import require_plugin
+
+    require_plugin(seller, "automatic_orders")
+    if payload.payment_method == "contact":
+        require_plugin(seller, "whatsapp_orders")
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
     now = to_utc_naive(utc_now())
@@ -490,6 +495,9 @@ async def create_seller_manual_order(
     seller = await get_registrations_collection().find_one({"_id": seller_oid})
     if seller is None:
         raise ValueError("Tienda no encontrada o no disponible.")
+    from app.subscriptions.plugins import require_plugin
+
+    require_plugin(seller, "manual_orders")
 
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)

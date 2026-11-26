@@ -443,12 +443,14 @@ def gestor_limit_reached_detail(limit: int, seller: dict | None = None) -> str:
 async def create_seller_gestor(seller_id: str, username: str) -> GestorPublic:
     seller = await require_seller_gestores_enabled(seller_id)
     current_count = await count_seller_gestores(seller_id)
-    plan_tier = feature_plan_tier(seller)
-    if not seller_can_add_gestor(plan_tier, current_count):
-        limit = max_gestores_for_plan(plan_tier) or 0
+    from app.subscriptions.plugins import PLUGIN_REQUIRED_MESSAGE
+    from app.subscriptions.service import max_gestores_for_seller
+
+    limit = max_gestores_for_seller(seller)
+    if limit is not None and current_count >= limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=gestor_limit_reached_detail(limit, seller),
+            detail=PLUGIN_REQUIRED_MESSAGE if limit <= 0 else gestor_limit_reached_detail(limit, seller),
         )
 
     try:

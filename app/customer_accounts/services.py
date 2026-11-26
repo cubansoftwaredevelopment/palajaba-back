@@ -605,6 +605,10 @@ async def list_store_customers(
     date_to: date | None = None,
     products: list[str] | None = None,
 ):
+    from app.subscriptions.plugins import require_plugin
+
+    seller = await get_registrations_collection().find_one({"_id": ObjectId(seller_id)})
+    require_plugin(seller, "customers")
     orders = await get_orders_collection().find(
         {"seller_id": seller_id, "buyer_id": {"$exists": True}}
     ).sort([("created_at", -1), ("_id", -1)]).to_list(length=None)
@@ -758,12 +762,12 @@ async def send_store_customer_notice(seller_id: str, payload: StoreCustomerNotic
         seller_oid = ObjectId(seller_id)
     except Exception as exc:
         raise HTTPException(status_code=404, detail="Tienda no encontrada.") from exc
-    seller = await get_registrations_collection().find_one(
-        {"_id": seller_oid},
-        {"store_name": 1, "profile_photo_url": 1},
-    )
+    seller = await get_registrations_collection().find_one({"_id": seller_oid})
     if not seller:
         raise HTTPException(status_code=404, detail="Tienda no encontrada.")
+    from app.subscriptions.plugins import require_plugin
+
+    require_plugin(seller, "customer_notices")
 
     buyer_ids = await get_orders_collection().distinct(
         "buyer_id",

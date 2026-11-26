@@ -4,12 +4,14 @@ from typing import Any
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
+from app.subscriptions.plugins import parse_plugin_prices
 from app.admin.schemas import (
     AdvertisingPlanPrice,
     AdvertisingPricesSettings,
     PlanPeriodPrices,
     PlanPriceConfig,
     PlanPricesSettings,
+    PluginPrices,
     PlatformAdminContact,
     PlatformSettingsPublic,
     PlatformSettingsUpdate,
@@ -180,6 +182,7 @@ def _document_to_public(doc: dict[str, Any] | None) -> PlatformSettingsPublic:
         transaction_fee_percent=fee_percent,
         qvapay_plan_discount_percent=plan_discount,
         plan_prices=parse_plan_prices(doc.get("plan_prices")),
+        plugin_prices=PluginPrices.model_validate(parse_plugin_prices(doc.get("plugin_prices"))),
         advertising_prices=parse_advertising_prices(doc.get("advertising_prices")),
         admins=admins,
         admin_email=first.email if first else None,
@@ -224,6 +227,8 @@ async def update_platform_settings(payload: PlatformSettingsUpdate) -> PlatformS
         updates["qvapay_plan_discount_percent"] = float(payload.qvapay_plan_discount_percent)
     if payload.plan_prices is not None:
         updates["plan_prices"] = payload.plan_prices.model_dump()
+    if payload.plugin_prices is not None:
+        updates["plugin_prices"] = payload.plugin_prices.model_dump()
     if payload.advertising_prices is not None:
         updates["advertising_prices"] = payload.advertising_prices.model_dump(by_alias=True)
     if payload.admins is not None:

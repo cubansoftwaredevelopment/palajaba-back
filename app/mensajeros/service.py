@@ -131,6 +131,19 @@ async def list_for_seller(seller_id: str, *, search: str = "", vehicle_type: str
 
 async def create_for_seller(seller_id: str, payload) -> dict:
     await _require_mensajeros_plan(seller_id)
+    seller = await get_registrations_collection().find_one({"_id": _oid(seller_id, "Tienda no encontrada.")})
+    current = await get_mensajeros_collection().count_documents({"seller_id": seller["_id"]})
+    from app.subscriptions.plugins import require_quantity_slot
+
+    from app.subscriptions.service import feature_plan_tier, plan_rank
+
+    require_quantity_slot(
+        seller,
+        "mensajeros",
+        current,
+        legacy_limit=None,
+        legacy_included=seller.get("plan_tier") != "custom" and plan_rank(feature_plan_tier(seller)) >= 1,
+    )
     username = normalize_username(payload.username)
     try:
         phone = normalize_phone_digits(payload.phone)
