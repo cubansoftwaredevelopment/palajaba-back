@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class MensajeroCreate(BaseModel):
@@ -62,11 +62,31 @@ class EvidenceRequest(BaseModel):
 
 
 class TelemetryPoint(BaseModel):
-    client_id: str
-    lat: float
-    lng: float
+    model_config = ConfigDict(extra="ignore")
+
+    client_id: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     accuracy: float | None = None
     recorded_at: datetime | None = None
+    time: float | None = None
+
+    @model_validator(mode="after")
+    def normalize_native_fix(self):
+        if self.lat is None and self.latitude is not None:
+            self.lat = float(self.latitude)
+        if self.lng is None and self.longitude is not None:
+            self.lng = float(self.longitude)
+        if self.lat is None or self.lng is None:
+            raise ValueError("Falta la ubicación.")
+        if self.recorded_at is None and self.time:
+            self.recorded_at = datetime.fromtimestamp(self.time / 1000, tz=timezone.utc)
+        if not self.client_id:
+            stamp = int(self.time) if self.time else int((self.recorded_at or datetime.now(timezone.utc)).timestamp() * 1000)
+            self.client_id = f"loc-{stamp}-{self.lat:.5f}-{self.lng:.5f}"
+        return self
 
 
 class StartRouteRequest(BaseModel):
