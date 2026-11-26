@@ -10,6 +10,8 @@ from fastapi import HTTPException, status
 from app.utils.datetime import to_utc_naive, utc_now
 
 PLUGIN_REQUIRED_MESSAGE = "Esta función no está en tu plan."
+MENSAJEROS_QUOTA_MESSAGE = "Agotado el número de mensajeros de su plan."
+DISCOUNTS_QUOTA_MESSAGE = "Agotado el número de descuento a productos."
 
 BOOLEAN_PLUGINS = (
     "whatsapp_orders",
@@ -100,6 +102,7 @@ def normalize_plugin_selection(raw: Any, *, customers_included: bool = False) ->
             selection[key] = qty
     if selection.get("customer_notices") and not selection.get("customers") and not customers_included:
         selection.pop("customer_notices", None)
+    selection.pop("automatic_orders", None)
     return selection
 
 
@@ -219,4 +222,8 @@ def require_quantity_slot(doc: dict | None, key: str, current: int, *, legacy_li
     if cap is None:
         return
     if current >= cap:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=PLUGIN_REQUIRED_MESSAGE)
+        detail = {
+            "mensajeros": MENSAJEROS_QUOTA_MESSAGE,
+            "discounts": DISCOUNTS_QUOTA_MESSAGE,
+        }.get(key, PLUGIN_REQUIRED_MESSAGE) if cap > 0 else PLUGIN_REQUIRED_MESSAGE
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)

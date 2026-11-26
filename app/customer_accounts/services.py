@@ -509,6 +509,14 @@ async def list_customer_orders(customer_id: str, *, offset: int = 0, limit: int 
         "payment_method": "qvapay",
         "qvapay.evidence.status": {"$in": ["pending", "rejected"]},
     })
+    processing = await orders.count_documents({
+        "buyer_id": customer_id,
+        "status": "pending_confirmation",
+        "$nor": [
+            {"payment_method": "qvapay", "qvapay.payment_status": "paid"},
+            {"payment_method": "qvapay", "qvapay.evidence.status": {"$in": ["pending", "rejected"]}},
+        ],
+    })
     product_ids = set()
     for doc in docs:
         for item in doc.get("items") or []:
@@ -567,6 +575,7 @@ async def list_customer_orders(customer_id: str, *, offset: int = 0, limit: int 
         "limit": page_size,
         "has_more": safe_offset + len(items) < total,
         "has_attention": attention > 0,
+        "has_processing": processing > 0,
     }
 
 

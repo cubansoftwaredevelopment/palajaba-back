@@ -31,7 +31,7 @@ from app.marketplace.catalog import (
 from app.marketplace.feed import list_availability_hints, list_category_products, list_home_feed
 from app.marketplace.gestores import get_gestor_store_catalog, list_gestor_store_category_products
 from app.marketplace.jaba import list_shared_products, sync_jaba_products
-from app.marketplace.products import get_marketplace_product
+from app.marketplace.products import get_marketplace_product as load_marketplace_product
 from app.marketplace.search import search_products
 from app.marketplace.sellers import resolve_visible_seller_id, set_marketplace_service_fee_percent
 from app.seller_statistics import stats as seller_stats_service
@@ -166,7 +166,7 @@ async def get_marketplace_product(
     municipality_id: str = Query(..., min_length=1),
 ):
     try:
-        return await get_marketplace_product(
+        return await load_marketplace_product(
             product_id,
             province_id.strip(),
             municipality_id.strip(),

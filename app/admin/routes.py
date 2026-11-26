@@ -86,6 +86,11 @@ async def approve_plugin_addon(purchase_id: str, _: dict = Depends(require_admin
     return await subscription_service.approve_plugin_addon_transfer(purchase_id)
 
 
+@panel_router.post("/plugin-addons/{purchase_id}/reject")
+async def reject_plugin_addon(purchase_id: str, _: dict = Depends(require_admin)):
+    return await subscription_service.reject_plugin_addon_transfer(purchase_id)
+
+
 @panel_router.post("/registrations/{registration_id}/approve", response_model=RegistrationPublic)
 async def approve_registration(registration_id: str, payment_amount_cup: int = Query(..., ge=0, description="Monto real transferido en CUP (0 = acceso gratuito)"), subscription_ends_at: str | None = Query(default=None, description="Fecha de fin de suscripción (YYYY-MM-DD)", pattern=r"^\d{4}-\d{2}-\d{2}$"), _: dict = Depends(require_admin)):
     return await registration_service.approve_registration(registration_id, parse_subscription_end(subscription_ends_at), payment_amount_cup)

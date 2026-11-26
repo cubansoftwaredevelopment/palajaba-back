@@ -30,6 +30,7 @@ class MarketplaceStorePublic(BaseModel):
     store_slug: str
     phone: str
     qvapay_enabled: bool = False
+    whatsapp_orders_enabled: bool = True
     profile_photo_url: str | None = None
     business_area: BusinessArea | None = None
     checkout_phones: list[MarketplaceCheckoutPhonePublic] = Field(default_factory=list)

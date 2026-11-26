@@ -417,11 +417,10 @@ async def create_order(payload: CreateOrderRequest, *, customer_id: str) -> Orde
             "Tu acceso para comprar está revocado. Puedes entrar a tu cuenta, pero no puedes hacer pedidos."
         )
     seller = await _get_seller_doc(payload.store_id)
-    from app.subscriptions.plugins import require_plugin
+    from app.subscriptions.plugins import seller_has_plugin
 
-    require_plugin(seller, "automatic_orders")
-    if payload.payment_method == "contact":
-        require_plugin(seller, "whatsapp_orders")
+    if payload.payment_method == "contact" and not seller_has_plugin(seller, "whatsapp_orders"):
+        raise ValueError("Esta tienda solo acepta pagos por QvaPay.")
     normalized_items = _normalize_items(_items_from_create_payload(payload.items))
     payment_currency = _resolve_payment_currency(normalized_items, payload.payment_currency)
     now = to_utc_naive(utc_now())

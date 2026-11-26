@@ -54,6 +54,15 @@ class SellerLoginRequest(BaseModel):
         return self
 
 
+class PlanUpgradePublic(BaseModel):
+    purchase_id: str
+    payment_method: Literal["cup", "qvapay"]
+    status: str
+    plan_plugins: dict[str, int] = Field(default_factory=dict)
+    billing_period: str | None = None
+    transfer_id: str = ""
+
+
 class SellerPublic(BaseModel):
     id: str
     store_name: str
@@ -73,6 +82,7 @@ class SellerPublic(BaseModel):
     plan_plugins: dict[str, int] = Field(default_factory=dict)
     plugin_addons: dict[str, int] = Field(default_factory=dict)
     plugin_addons_expires_at: UtcDateTime | None = None
+    pending_plan_upgrade: PlanUpgradePublic | None = None
     qvapay_enabled: bool = False
     subscription_ends_at: UtcDateTime | None = None
     profile_photo_url: str | None = None
@@ -342,6 +352,9 @@ class RegistrationPublic(BaseModel):
     is_trial: bool = False
     billing_period: BillingPeriod
     plan_tier: str = "standard"
+    plan_plugins: dict[str, int] = Field(default_factory=dict)
+    plugin_addons: dict[str, int] = Field(default_factory=dict)
+    plugin_addons_expires_at: UtcDateTime | None = None
     status: RegistrationStatus
     subscription_starts_at: UtcDateTime | None = None
     subscription_ends_at: UtcDateTime | None = None
@@ -367,6 +380,7 @@ class RegistrationPublic(BaseModel):
     completed_orders_count: int = 0
     gestor_count: int = 0
     app_downloads: list[RegistrationAppDownload] = Field(default_factory=list)
+    plan_upgrade: PlanUpgradePublic | None = None
 
 
 class RegistrationDeleteResult(BaseModel):

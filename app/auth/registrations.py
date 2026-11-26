@@ -49,6 +49,24 @@ def _legacy_timestamp(doc: dict[str, Any], *fields: str) -> datetime:
     return to_utc_naive(utc_now())
 
 
+def _positive_plugins(raw: Any) -> dict[str, int]:
+    if not isinstance(raw, dict):
+        return {}
+    selection: dict[str, int] = {}
+    for key, value in raw.items():
+        try:
+            qty = int(value or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        if qty > 0:
+            selection[str(key)] = qty
+    return selection
+
+
+def _plan_plugins(doc: dict[str, Any]) -> dict[str, int]:
+    return _positive_plugins(doc.get("plan_plugins"))
+
+
 def document_to_public(
     doc: dict[str, Any],
     *,
@@ -59,6 +77,7 @@ def document_to_public(
     completed_orders_count: int = 0,
     gestor_count: int = 0,
     app_downloads: list | None = None,
+    plan_upgrade: dict[str, Any] | None = None,
 ) -> RegistrationPublic:
     counts = product_counts or {}
     notes = marketplace_visibility_notes
@@ -79,6 +98,9 @@ def document_to_public(
             else "monthly"
         ),
         plan_tier=normalize_plan_tier(doc.get("plan_tier")),
+        plan_plugins=_plan_plugins(doc),
+        plugin_addons=_positive_plugins(doc.get("plugin_addons")),
+        plugin_addons_expires_at=doc.get("plugin_addons_expires_at"),
         status=doc["status"],
         subscription_starts_at=doc.get("subscription_starts_at"),
         subscription_ends_at=doc.get("subscription_ends_at"),
@@ -114,6 +136,7 @@ def document_to_public(
         completed_orders_count=completed_orders_count,
         gestor_count=gestor_count,
         app_downloads=list(app_downloads or []),
+        plan_upgrade=plan_upgrade,
     )
 
 
@@ -129,6 +152,8 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
     completed_by_seller = await aggregate_completed_orders_by_seller(seller_ids)
     gestores_by_seller = await aggregate_gestor_counts_by_seller(seller_ids)
     downloads_by_seller = await map_user_app_downloads(user_type="seller", user_ids=seller_ids)
+    from app.payments.subscription_service import latest_plan_upgrades_by_seller
+    upgrades_by_seller = await latest_plan_upgrades_by_seller(seller_ids)
     return [
         document_to_public(
             doc,
@@ -147,6 +172,7 @@ async def _registrations_to_public(documents: list[dict[str, Any]]) -> list[Regi
                 RegistrationAppDownload(platform=item["platform"], version=item["version"])
                 for item in downloads_by_seller.get(str(doc["_id"]), [])
             ],
+            plan_upgrade=upgrades_by_seller.get(str(doc["_id"])),
         )
         for doc in documents
     ]
@@ -164,6 +190,8 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
     completed_by_seller = await aggregate_completed_orders_by_seller([seller_id])
     gestores_by_seller = await aggregate_gestor_counts_by_seller([seller_id])
     downloads_by_seller = await map_user_app_downloads(user_type="seller", user_ids=[seller_id])
+    from app.payments.subscription_service import latest_plan_upgrades_by_seller
+    upgrades_by_seller = await latest_plan_upgrades_by_seller([seller_id])
     counts = counts_by_seller.get(seller_id)
     return document_to_public(
         doc,
@@ -179,6 +207,7 @@ async def _registration_to_public(doc: dict[str, Any]) -> RegistrationPublic:
             RegistrationAppDownload(platform=item["platform"], version=item["version"])
             for item in downloads_by_seller.get(seller_id, [])
         ],
+        plan_upgrade=upgrades_by_seller.get(seller_id),
     )
 
 

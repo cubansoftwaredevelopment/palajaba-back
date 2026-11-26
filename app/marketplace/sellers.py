@@ -85,6 +85,7 @@ def _service_fee_for_seller(seller: dict[str, Any]) -> float:
 
 def _store_to_public(seller: dict[str, Any]) -> MarketplaceStorePublic:
     from app.payments.qvapay import qvapay_escrow_configured
+    from app.subscriptions.plugins import seller_has_plugin
 
     seller_id = str(seller["_id"])
     return MarketplaceStorePublic(
@@ -93,6 +94,7 @@ def _store_to_public(seller: dict[str, Any]) -> MarketplaceStorePublic:
         store_slug=seller.get("store_slug") or store_name_to_slug(seller["store_name"]),
         phone=phone_display(seller["phone"]),
         qvapay_enabled=bool(seller.get("qvapay_username")) and qvapay_escrow_configured(),
+        whatsapp_orders_enabled=seller_has_plugin(seller, "whatsapp_orders"),
         profile_photo_url=seller.get("profile_photo_url"),
         business_area=_parse_business_area(seller.get("business_area")),
         store_pages=store_page_flags(seller),

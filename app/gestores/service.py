@@ -234,7 +234,13 @@ async def ensure_seller_gestor_catalog_defaults() -> None:
 
 
 def seller_has_gestores_enabled(seller: dict[str, Any]) -> bool:
-    return bool(seller.get("gestores_enabled"))
+    if seller.get("gestores_enabled"):
+        return True
+    from app.subscriptions.plugins import addon_quantity, is_custom_plan, selected_quantity
+
+    if is_custom_plan(seller):
+        return selected_quantity(seller, "gestores") > 0
+    return addon_quantity(seller, "gestores") > 0
 
 
 async def require_seller_gestores_enabled(seller_id: str) -> dict[str, Any]:

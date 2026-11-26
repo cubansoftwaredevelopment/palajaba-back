@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import get_registrations_collection
 from app.admin.utils import is_admin_username
 from app.catalogs.media_storage import read_image_upload, remove_image, store_image
-from app.auth.schemas import SellerPublic
+from app.auth.schemas import PlanUpgradePublic, SellerPublic
 from app.auth.profile_schemas import (
     BusinessArea,
     BusinessLocation,
@@ -261,6 +261,30 @@ def _store_banner_documents(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return documents
 
 
+def _pending_plan_upgrade(doc: dict[str, Any]) -> PlanUpgradePublic | None:
+    raw = doc.get("pending_plan_upgrade")
+    if not isinstance(raw, dict) or raw.get("payment_method") != "cup":
+        return None
+    plugins: dict[str, int] = {}
+    for key, value in (raw.get("plan_plugins") or {}).items():
+        try:
+            qty = int(value or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        if qty > 0:
+            plugins[str(key)] = qty
+    if not plugins:
+        return None
+    return PlanUpgradePublic(
+        purchase_id=str(raw.get("purchase_id") or ""),
+        payment_method="cup",
+        status=str(raw.get("status") or "submitted"),
+        plan_plugins=plugins,
+        billing_period=raw.get("billing_period"),
+        transfer_id=str(raw.get("transfer_id") or ""),
+    )
+
+
 def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
     from app.payments.qvapay import qvapay_escrow_configured
 
@@ -297,6 +321,7 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         plan_plugins=doc.get("plan_plugins") or {},
         plugin_addons=doc.get("plugin_addons") or {},
         plugin_addons_expires_at=doc.get("plugin_addons_expires_at"),
+        pending_plan_upgrade=_pending_plan_upgrade(doc),
         qvapay_enabled=bool(doc.get("qvapay_username")) and qvapay_escrow_configured(),
         subscription_ends_at=doc.get("subscription_ends_at"),
         profile_photo_url=doc.get("profile_photo_url"),
@@ -352,7 +377,14 @@ async def _get_seller_doc(seller_id: str) -> dict[str, Any]:
 
 async def get_seller_public(seller_id: str) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
-    return document_to_seller(doc)
+    seller = document_to_seller(doc)
+    if seller.pending_plan_upgrade is not None:
+        return seller
+    from app.payments.subscription_service import latest_plan_upgrades_by_seller
+    upgrade = (await latest_plan_upgrades_by_seller([seller_id])).get(seller_id)
+    if not upgrade or upgrade.get("payment_method") != "cup" or upgrade.get("status") != "submitted":
+        return seller
+    return seller.model_copy(update={"pending_plan_upgrade": upgrade})
 
 
 async def get_seller_business_categories(seller_id: str) -> list[CategoryPublic]:

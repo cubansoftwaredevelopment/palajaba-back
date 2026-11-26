@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
-from app.auth.utils import require_active_seller, require_seller
+from app.auth.utils import require_active_seller, require_profile_seller, require_seller
 from app.auth.schemas import SellerPublic
 from app.auth.profile_schemas import (
     SellerProfileUpdate,
@@ -39,7 +39,7 @@ async def seller_business_categories(seller_payload: dict = Depends(require_sell
 @router.patch("/me/profile", response_model=SellerPublic)
 async def update_seller_profile(
     payload: SellerProfileUpdate,
-    seller_payload: dict = Depends(require_active_seller),
+    seller_payload: dict = Depends(require_profile_seller),
 ):
     return await profile_service.update_seller_profile(seller_payload["seller_id"], payload)
 
@@ -55,7 +55,7 @@ async def update_seller_store_name(
 @router.post("/me/profile-photo", response_model=SellerPublic)
 async def upload_profile_photo(
     photo: UploadFile = File(...),
-    seller_payload: dict = Depends(require_active_seller),
+    seller_payload: dict = Depends(require_profile_seller),
 ):
     return await profile_service.save_profile_photo(seller_payload["seller_id"], photo)
 
