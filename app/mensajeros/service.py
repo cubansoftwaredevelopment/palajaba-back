@@ -91,6 +91,14 @@ async def ensure_mensajero_indexes() -> None:
     await get_mensajeria_puntos_collection().create_index([("batch_id", ASCENDING), ("recorded_at", ASCENDING)])
 
 
+async def _require_mensajeros_plan(seller_id: str) -> None:
+    from app.subscriptions.service import MENSAJEROS_PLAN_REQUIRED_MESSAGE, seller_has_mensajeros
+
+    doc = await get_registrations_collection().find_one({"_id": _oid(seller_id, "Tienda no encontrada.")})
+    if not doc or not seller_has_mensajeros(doc):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=MENSAJEROS_PLAN_REQUIRED_MESSAGE)
+
+
 async def assert_mensajero_active(mensajero_id: str) -> dict[str, Any]:
     doc = await get_mensajeros_collection().find_one({"_id": _oid(mensajero_id, "Mensajero no encontrado.")})
     if not doc or doc.get("is_active", True) is False:
@@ -99,6 +107,7 @@ async def assert_mensajero_active(mensajero_id: str) -> dict[str, Any]:
 
 
 async def list_for_seller(seller_id: str, *, search: str = "", vehicle_type: str = "") -> list[dict]:
+    await _require_mensajeros_plan(seller_id)
     query: dict[str, Any] = {"seller_id": _oid(seller_id, "Tienda no encontrada.")}
     if vehicle_type:
         if vehicle_type not in VEHICLE_TYPES:
@@ -121,6 +130,7 @@ async def list_for_seller(seller_id: str, *, search: str = "", vehicle_type: str
 
 
 async def create_for_seller(seller_id: str, payload) -> dict:
+    await _require_mensajeros_plan(seller_id)
     username = normalize_username(payload.username)
     try:
         phone = normalize_phone_digits(payload.phone)
@@ -171,6 +181,7 @@ async def open_assignment_counts(mensajero_ids: list) -> dict[str, int]:
 
 
 async def update_for_seller(seller_id: str, mensajero_id: str, payload) -> dict:
+    await _require_mensajeros_plan(seller_id)
     doc = await _owned_messenger(seller_id, mensajero_id)
     username = normalize_username(payload.username)
     try:
@@ -194,6 +205,7 @@ async def update_for_seller(seller_id: str, mensajero_id: str, payload) -> dict:
 
 
 async def delete_for_seller(seller_id: str, mensajero_id: str) -> None:
+    await _require_mensajeros_plan(seller_id)
     doc = await _owned_messenger(seller_id, mensajero_id)
     open_count = await get_mensajeria_asignaciones_collection().count_documents({
         "mensajero_id": doc["_id"],
@@ -301,6 +313,7 @@ def _order_brief(order: dict) -> dict:
 
 
 async def assign_batch(seller_id: str, payload) -> dict:
+    await _require_mensajeros_plan(seller_id)
     messenger = await get_mensajeros_collection().find_one({
         "_id": _oid(payload.mensajero_id, "Mensajero no encontrado."),
         "seller_id": _oid(seller_id, "Tienda no encontrada."),
@@ -385,6 +398,7 @@ async def assign_batch(seller_id: str, payload) -> dict:
 
 
 async def cancel_assignment(seller_id: str, order_id: str) -> dict:
+    await _require_mensajeros_plan(seller_id)
     order_oid = _oid(order_id, "Pedido no encontrado.")
     assignment = await get_mensajeria_asignaciones_collection().find_one({
         "order_id": order_oid,

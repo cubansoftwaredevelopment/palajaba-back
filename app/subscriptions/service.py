@@ -35,6 +35,9 @@ _PLAN_RANK: dict[PlanTier, int] = {
 STATISTICS_PLAN_REQUIRED_MESSAGE = (
     "Las estadísticas están disponibles en el plan Prueba y en los planes Pro y Premium."
 )
+MENSAJEROS_PLAN_REQUIRED_MESSAGE = (
+    "Los mensajeros están disponibles en el plan Prueba y en los planes Pro y Premium."
+)
 STORE_BANNERS_PLAN_REQUIRED_MESSAGE = (
     "Los banners de tienda están disponibles en el plan Prueba y en los planes Pro y Premium."
 )
@@ -131,6 +134,10 @@ async def plan_price_cup(plan_tier: str, billing_period: str) -> int:
 
 
 def seller_has_statistics(doc: dict) -> bool:
+    return plan_rank(feature_plan_tier(doc)) >= 1
+
+
+def seller_has_mensajeros(doc: dict) -> bool:
     return plan_rank(feature_plan_tier(doc)) >= 1
 
 

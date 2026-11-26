@@ -64,6 +64,7 @@ class SellerPublic(BaseModel):
     billing_period: str
     plan_tier: str = "standard"
     has_statistics: bool = False
+    has_mensajeros: bool = False
     has_recommendation_boost: bool = False
     has_store_banners: bool = False
     has_full_store_customization: bool = False
