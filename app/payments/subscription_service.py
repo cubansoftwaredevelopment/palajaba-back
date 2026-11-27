@@ -434,6 +434,50 @@ async def create_plugin_addon_checkout(
     return _custom_public(document, payment_url=invoice.url)
 
 
+def _upgrade_plugins(raw: Any) -> dict[str, int]:
+    plugins: dict[str, int] = {}
+    for key, value in (raw or {}).items():
+        try:
+            qty = int(value or 0)
+        except (TypeError, ValueError):
+            qty = 0
+        if qty > 0:
+            plugins[str(key)] = qty
+    return plugins
+
+
+async def latest_plan_upgrades_by_seller(seller_ids: list[str]) -> dict[str, dict[str, Any]]:
+    ids = [str(seller_id) for seller_id in seller_ids if seller_id]
+    if not ids:
+        return {}
+    rows = await get_subscription_qvapay_purchases_collection().aggregate([
+        {
+            "$match": {
+                "seller_id": {"$in": ids},
+                "purchase_kind": "addon",
+                "status": {"$in": ["submitted", "pending", "processing", "creating_invoice"]},
+            }
+        },
+        {"$sort": {"created_at": -1}},
+        {"$group": {"_id": "$seller_id", "doc": {"$first": "$$ROOT"}}},
+    ]).to_list(length=len(ids))
+    upgrades: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        doc = row.get("doc") or {}
+        seller_id = str(row.get("_id") or doc.get("seller_id") or "")
+        if not seller_id:
+            continue
+        upgrades[seller_id] = {
+            "purchase_id": str(doc.get("_id") or ""),
+            "payment_method": doc.get("payment_method") or "qvapay",
+            "status": str(doc.get("status") or ""),
+            "plan_plugins": _upgrade_plugins(doc.get("plan_plugins")),
+            "billing_period": doc.get("billing_period"),
+            "transfer_id": str(doc.get("transfer_id") or ""),
+        }
+    return upgrades
+
+
 async def list_pending_addon_transfers() -> list[dict[str, Any]]:
     docs = await get_subscription_qvapay_purchases_collection().find(
         {"purchase_kind": "addon", "payment_method": "cup", "status": "submitted"}
