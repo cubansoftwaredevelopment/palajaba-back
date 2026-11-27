@@ -3,7 +3,7 @@ import time
 from pathlib import Path
 
 import httpx
-from jose import jwt
+import jwt
 
 from app.config import settings
 from app.live.devices import (

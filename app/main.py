@@ -60,7 +60,12 @@ async def lifespan(app: FastAPI):
     await close_mongo_connection()
 
 
-app = FastAPI(title="Pa' La Jaba API", lifespan=lifespan)
+app = FastAPI(
+    title="Pa' La Jaba API",
+    lifespan=lifespan,
+    max_body_size=40 * 1024 * 1024,
+    form_limits={"max_files": 12, "max_fields": 40},
+)
 
 app.add_middleware(
     CORSMiddleware,

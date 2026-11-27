@@ -2,6 +2,17 @@
 $BackendRoot = $PSScriptRoot
 Set-Location $BackendRoot
 
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host "Node.js no está en el PATH. Hace falta para auditar dependencias con osv-scanner."
+    exit 1
+}
+
+$RepoRoot = Split-Path $BackendRoot -Parent
+& node (Join-Path $RepoRoot "palajaba-front\scripts\audit-osv.mjs")
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
 $port = 8081
 Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }

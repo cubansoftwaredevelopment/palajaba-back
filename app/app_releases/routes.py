@@ -29,7 +29,12 @@ async def list_app_releases(
     return await app_releases_service.list_admin_releases(platform=platform)
 
 
-@admin_router.post("/app-releases", response_model=AppReleasePublic, status_code=201)
+@admin_router.post(
+    "/app-releases",
+    response_model=AppReleasePublic,
+    status_code=201,
+    max_body_size=220 * 1024 * 1024,
+)
 async def create_app_release(
     file: UploadFile = File(...),
     platform: Literal["android", "ios"] = Form(...),
