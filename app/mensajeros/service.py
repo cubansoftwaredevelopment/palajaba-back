@@ -72,6 +72,59 @@ def _public(doc: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _seller_match_ids(seller_ids: list[str]) -> list:
+    values: list = []
+    for seller_id in seller_ids:
+        text = str(seller_id or "").strip()
+        if not text:
+            continue
+        values.append(text)
+        try:
+            values.append(ObjectId(text))
+        except InvalidId:
+            continue
+    return values
+
+
+def _counts_by_seller(rows: list[dict]) -> dict[str, int]:
+    totals: dict[str, int] = {}
+    for row in rows:
+        raw_id = row.get("_id")
+        if raw_id is None:
+            continue
+        key = str(raw_id)
+        totals[key] = totals.get(key, 0) + int(row.get("count") or 0)
+    return totals
+
+
+async def aggregate_mensajero_counts_by_seller(seller_ids: list[str]) -> dict[str, int]:
+    """Cuenta los transportistas de cada negocio."""
+    ids = _seller_match_ids(seller_ids)
+    if not ids:
+        return {}
+    rows = await get_mensajeros_collection().aggregate(
+        [
+            {"$match": {"seller_id": {"$in": ids}}},
+            {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+        ]
+    ).to_list(length=None)
+    return _counts_by_seller(rows)
+
+
+async def aggregate_completed_trips_by_seller(seller_ids: list[str]) -> dict[str, int]:
+    """Cuenta las rutas terminadas de cada negocio."""
+    ids = _seller_match_ids(seller_ids)
+    if not ids:
+        return {}
+    rows = await get_mensajeria_batches_collection().aggregate(
+        [
+            {"$match": {"seller_id": {"$in": ids}, "status": "completed"}},
+            {"$group": {"_id": "$seller_id", "count": {"$sum": 1}}},
+        ]
+    ).to_list(length=None)
+    return _counts_by_seller(rows)
+
+
 async def ensure_mensajero_indexes() -> None:
     await get_mensajeros_collection().create_index([("username", ASCENDING)], unique=True)
     await get_mensajeros_collection().create_index([("seller_id", ASCENDING)])
@@ -636,6 +689,7 @@ async def add_point(mensajero_id: str, batch_id: str, point) -> dict:
         sort=[("recorded_at", DESCENDING)],
     )
     if previous and distance_km((previous["lat"], previous["lng"]), (point.lat, point.lng)) < 0.015:
+        await _notify_nearby_customers(batch, point.lat, point.lng)
         return {"stored": False, "skipped": True}
     now = to_utc_naive(point.recorded_at or utc_now())
     document = {
@@ -660,7 +714,75 @@ async def add_point(mensajero_id: str, batch_id: str, point) -> dict:
         order = await get_orders_collection().find_one({"_id": assignment["order_id"]}, {"buyer_id": 1})
         if order and order.get("buyer_id"):
             await customer_hub.send(str(order["buyer_id"]), {**payload, "order_id": str(order["_id"])})
+    await _notify_nearby_customers(batch, point.lat, point.lng)
     return {"stored": True}
+
+
+def _customer_pin(order: dict | None) -> tuple[float, float] | None:
+    delivery = (order or {}).get("delivery")
+    if not isinstance(delivery, dict):
+        return None
+    lat = delivery.get("latitude")
+    lng = delivery.get("longitude")
+    if isinstance(lat, bool) or isinstance(lng, bool):
+        return None
+    if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+        return None
+    lat_value = float(lat)
+    lng_value = float(lng)
+    if not (-90 <= lat_value <= 90 and -180 <= lng_value <= 180):
+        return None
+    return lat_value, lng_value
+
+
+async def _notify_nearby_customers(batch: dict, lat: float, lng: float) -> None:
+    """Avisa una vez por pedido cuando el mensajero entra en 1 km de la entrega."""
+    assignments = await get_mensajeria_asignaciones_collection().find(
+        {"batch_id": batch["_id"], "status": "in_route", "nearby_notified_at": {"$exists": False}},
+        {"order_id": 1},
+    ).to_list(length=100)
+    if not assignments:
+        return
+    now = to_utc_naive(utc_now())
+    notified_buyers: set[str] = set()
+    for assignment in assignments:
+        order = await get_orders_collection().find_one(
+            {"_id": assignment["order_id"]},
+            {"buyer_id": 1, "buyer_name": 1, "delivery": 1},
+        )
+        pin = _customer_pin(order)
+        if pin is None or distance_km((lat, lng), pin) > 1:
+            continue
+        claimed = await get_mensajeria_asignaciones_collection().update_one(
+            {"_id": assignment["_id"], "nearby_notified_at": {"$exists": False}},
+            {"$set": {"nearby_notified_at": now}},
+        )
+        if claimed.modified_count != 1:
+            continue
+        delivery = (order or {}).get("delivery") or {}
+        buyer_name = str((order or {}).get("buyer_name") or delivery.get("recipient_name") or "").strip()
+        await notify_seller_notice(
+            batch["seller_id"],
+            title="Mensajero cerca del cliente",
+            content=(
+                f"El mensajero está próximo a la ubicación de {buyer_name}."
+                if buyer_name
+                else "El mensajero está próximo a la ubicación de un cliente."
+            ),
+            kind="courier_nearby",
+            order_id=str(order["_id"]),
+        )
+        buyer_id = str((order or {}).get("buyer_id") or "")
+        if not buyer_id or buyer_id in notified_buyers:
+            continue
+        notified_buyers.add(buyer_id)
+        await publish_customer_notification(buyer_id, {
+            "id": f"nearby-{batch['_id']}-{buyer_id}",
+            "title": "El mensajero está cerca",
+            "content": "El mensajero está próximo a tu ubicación.",
+            "kind": "courier_nearby",
+            "order_id": str(order["_id"]),
+        })
 
 
 async def courier_evidence_pdf(order_id: str, *, seller_id: str | None = None, mensajero_id: str | None = None) -> tuple[bytes, str]:

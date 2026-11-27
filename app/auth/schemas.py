@@ -379,6 +379,8 @@ class RegistrationPublic(BaseModel):
     unconfirmed_orders_count: int = 0
     completed_orders_count: int = 0
     gestor_count: int = 0
+    mensajero_count: int = 0
+    trip_count: int = 0
     app_downloads: list[RegistrationAppDownload] = Field(default_factory=list)
     plan_upgrade: PlanUpgradePublic | None = None
 
