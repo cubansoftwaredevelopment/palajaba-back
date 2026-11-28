@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.utils.datetime import UtcDateTime
+
 
 def _normalize_phone(value: str) -> str:
     digits = "".join(character for character in value if character.isdigit())
@@ -91,6 +93,8 @@ class CustomerPublic(BaseModel):
     qvapay_verified: bool = False
     qvapay_prompt_dismissed: bool = False
     purchase_revoked: bool = False
+    updated_at: UtcDateTime | None = None
+    section_updated_at: dict[str, UtcDateTime] = Field(default_factory=dict)
 
 
 class CustomerLoginResponse(BaseModel):

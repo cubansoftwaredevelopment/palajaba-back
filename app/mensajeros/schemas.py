@@ -26,6 +26,8 @@ class MensajeroPublic(BaseModel):
     vehicle_types: list[str] = []
     vehicles: list[dict] = []
     is_active: bool = True
+    updated_at: str | None = None
+    section_updated_at: dict[str, str] = Field(default_factory=dict)
 
 
 class AssignmentFee(BaseModel):

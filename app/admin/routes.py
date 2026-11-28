@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, Field
@@ -129,6 +129,25 @@ async def update_discount_code(discount_code_id: str, payload: DiscountCodeUpdat
 @panel_router.delete("/discount-codes/{discount_code_id}", response_model=DiscountCodeDeleteResult)
 async def delete_discount_code(discount_code_id: str, _: dict = Depends(require_admin)):
     return await discount_codes_service.delete_discount_code(discount_code_id)
+
+
+@panel_router.post("/me/sync")
+async def sync_admin_dates(payload: dict[str, Any], admin: dict = Depends(require_admin)):
+    from app.account_sync.admin import compare_admin
+
+    return await compare_admin(str(admin.get("admin_id") or ""), payload)
+
+
+@panel_router.put("/me/sync/{section}")
+async def push_admin_section(section: str, payload: dict[str, Any], admin: dict = Depends(require_admin)):
+    from app.account_sync.admin import apply_admin_section
+
+    return await apply_admin_section(
+        str(admin.get("admin_id") or ""),
+        section,
+        payload.get("updated_at"),
+        payload.get("data"),
+    )
 
 
 @panel_router.get("/settings", response_model=PlatformSettingsPublic)

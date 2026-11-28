@@ -1,5 +1,6 @@
 import hashlib
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -348,6 +349,12 @@ def document_to_seller(doc: dict[str, Any]) -> SellerPublic:
         store_banners=store_banners_from_document(doc),
         store_pages=StorePagesPublic(**store_pages_from_document(doc)),
         gestor_catalog_access=parse_gestor_catalog_access(doc.get("gestor_catalog_access")),
+        updated_at=doc.get("updated_at") or doc.get("created_at"),
+        section_updated_at={
+            key: value
+            for key, value in (doc.get("section_updated_at") or {}).items()
+            if isinstance(value, datetime)
+        },
     )
 
 
@@ -378,6 +385,11 @@ async def _get_seller_doc(seller_id: str) -> dict[str, Any]:
 async def get_seller_public(seller_id: str) -> SellerPublic:
     doc = await _get_seller_doc(seller_id)
     seller = document_to_seller(doc)
+    from app.account_sync.seller import server_dates
+    from datetime import datetime as date_time
+
+    dates = {key: value for key, value in (await server_dates(seller_id)).items() if isinstance(value, date_time)}
+    seller = seller.model_copy(update={"section_updated_at": dates})
     if seller.pending_plan_upgrade is not None:
         return seller
     from app.payments.subscription_service import latest_plan_upgrades_by_seller
@@ -428,6 +440,7 @@ async def update_seller_profile(
         "business_area": business_area,
         "delivery_areas": delivery_areas,
         "updated_at": now,
+        "section_updated_at.perfil": now,
     }
 
     if payload.clear_business_location:

@@ -108,6 +108,8 @@ class SellerPublic(BaseModel):
     gestor_catalog_access: GestorCatalogAccess = Field(
         default_factory=lambda: GestorCatalogAccess(mode="selected", product_ids=[])
     )
+    updated_at: UtcDateTime | None = None
+    section_updated_at: dict[str, UtcDateTime] = Field(default_factory=dict)
 
 
 class SubscriptionExpiredPublic(BaseModel):

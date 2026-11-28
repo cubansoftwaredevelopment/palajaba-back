@@ -59,6 +59,7 @@ class GestorPublic(BaseModel):
     selected_products: list[GestorSelectedProduct] = Field(default_factory=list)
     created_at: UtcDateTime
     updated_at: UtcDateTime
+    section_updated_at: dict[str, UtcDateTime] = Field(default_factory=dict)
 
 
 class GestorCreateRequest(BaseModel):

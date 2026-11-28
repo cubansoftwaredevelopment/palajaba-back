@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, status
 
 from app.auth.utils import require_gestor
@@ -29,6 +31,26 @@ async def gestor_setup(payload: GestorSetupRequest):
         setup_token=payload.setup_token,
         password=payload.password,
         phone=payload.phone,
+    )
+
+
+@router.post("/me/sync")
+async def sync_gestor_dates(payload: dict[str, Any], gestor_payload: dict = Depends(require_gestor)):
+    from app.account_sync.gestor import compare_gestor
+
+    return await compare_gestor(gestor_payload["gestor_id"], gestor_payload["seller_id"], payload)
+
+
+@router.put("/me/sync/{section}")
+async def push_gestor_section(section: str, payload: dict[str, Any], gestor_payload: dict = Depends(require_gestor)):
+    from app.account_sync.gestor import apply_gestor_section
+
+    return await apply_gestor_section(
+        gestor_payload["gestor_id"],
+        gestor_payload["seller_id"],
+        section,
+        payload.get("updated_at"),
+        payload.get("data"),
     )
 
 

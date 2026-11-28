@@ -4,6 +4,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
+from app.account_sync.customer import apply_customer_section, compare_customer
 from app.auth.utils import require_customer, require_seller
 from app.orders import service as orders_service
 
@@ -53,6 +54,25 @@ async def confirm_customer_registration(payload: CustomerOtpConfirmRequest):
 @router.post("/login", response_model=CustomerLoginResponse)
 async def customer_login(payload: CustomerLoginRequest):
     return await services.customer_login(payload)
+
+
+@router.post("/me/sync")
+async def sync_customer_dates(payload: dict[str, Any], customer_payload: dict = Depends(require_customer)):
+    return await compare_customer(customer_payload["customer_id"], payload)
+
+
+@router.put("/me/sync/{section}")
+async def push_customer_section(
+    section: str,
+    payload: dict[str, Any],
+    customer_payload: dict = Depends(require_customer),
+):
+    return await apply_customer_section(
+        customer_payload["customer_id"],
+        section,
+        payload.get("updated_at"),
+        payload.get("data"),
+    )
 
 
 @router.get("/me", response_model=CustomerPublic)

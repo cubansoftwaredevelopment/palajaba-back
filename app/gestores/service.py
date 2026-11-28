@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 from bson import ObjectId
@@ -170,6 +171,11 @@ def document_to_gestor_public(doc: dict[str, Any]) -> GestorPublic:
         selected_products=parse_selected_products(doc.get("selected_products")),
         created_at=doc["created_at"],
         updated_at=doc["updated_at"],
+        section_updated_at={
+            key: value
+            for key, value in (doc.get("section_updated_at") or {}).items()
+            if isinstance(value, datetime)
+        },
     )
 
 
@@ -826,6 +832,7 @@ async def update_gestor_selected_products(
             "$set": {
                 "selected_products": selected_products_to_document(payload.products),
                 "updated_at": now,
+                "section_updated_at.productos": now,
             }
         },
     )
@@ -952,4 +959,8 @@ async def complete_gestor_setup(
 
 async def get_gestor_public(gestor_id: str, seller_id: str) -> GestorPublic:
     doc = await _get_gestor_for_seller(seller_id, gestor_id)
-    return document_to_gestor_public(doc)
+    public = document_to_gestor_public(doc)
+    from app.account_sync.gestor import server_dates
+
+    dates = {key: value for key, value in (await server_dates(gestor_id, seller_id)).items() if isinstance(value, datetime)}
+    return public.model_copy(update={"section_updated_at": dates})

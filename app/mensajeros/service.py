@@ -25,6 +25,7 @@ from app.database import (
     get_orders_collection,
     get_registrations_collection,
 )
+from app.utils.datetime import serialize_utc_datetime
 from app.live.hub import customer_hub, hub, publish_customer_notification, publish_seller_data_update
 from app.live.push import notify_device_tokens
 from app.mensajeros.devices import list_device_tokens
@@ -69,6 +70,12 @@ def _public(doc: dict[str, Any]) -> dict[str, Any]:
             for item in vehicles
         ],
         "is_active": doc.get("is_active", True) is not False,
+        "updated_at": serialize_utc_datetime(doc["updated_at"]) if isinstance(doc.get("updated_at"), datetime) else None,
+        "section_updated_at": {
+            key: serialize_utc_datetime(value)
+            for key, value in (doc.get("section_updated_at") or {}).items()
+            if isinstance(value, datetime)
+        },
     }
 
 
@@ -941,7 +948,7 @@ async def add_vehicle(mensajero_id: str, vehicle_type: str, plate: str, photo_ur
     }
     await get_mensajeros_collection().update_one(
         {"_id": doc["_id"]},
-        {"$push": {"vehicles": vehicle}, "$set": {"updated_at": to_utc_naive(utc_now())}},
+        {"$push": {"vehicles": vehicle}, "$set": {"updated_at": to_utc_naive(utc_now()), "section_updated_at.vehiculos": to_utc_naive(utc_now())}},
     )
     doc.setdefault("vehicles", []).append(vehicle)
     return _public(doc)
@@ -969,6 +976,7 @@ async def update_vehicle(mensajero_id: str, vehicle_id: str, vehicle_type: str, 
             "vehicles.$.photo_url": photos[0],
             "vehicles.$.photo_urls": photos,
             "updated_at": to_utc_naive(utc_now()),
+            "section_updated_at.vehiculos": to_utc_naive(utc_now()),
         }},
     )
     return _public(doc)
@@ -987,7 +995,7 @@ async def delete_vehicle(mensajero_id: str, vehicle_id: str) -> dict:
         raise HTTPException(status_code=409, detail="No se puede eliminar: está en una ruta.")
     await get_mensajeros_collection().update_one(
         {"_id": doc["_id"]},
-        {"$pull": {"vehicles": {"id": vehicle_id}}, "$set": {"updated_at": to_utc_naive(utc_now())}},
+        {"$pull": {"vehicles": {"id": vehicle_id}}, "$set": {"updated_at": to_utc_naive(utc_now()), "section_updated_at.vehiculos": to_utc_naive(utc_now())}},
     )
     doc["vehicles"] = [item for item in doc.get("vehicles") or [] if item.get("id") != vehicle_id]
     return _public(doc)

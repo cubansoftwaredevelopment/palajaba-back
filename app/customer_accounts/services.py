@@ -159,6 +159,8 @@ async def confirm_customer_registration(payload: CustomerOtpConfirmRequest) -> C
         "favorite_product_ids": [],
         "favorites": [],
         "created_at": to_utc_naive(utc_now()),
+        "updated_at": to_utc_naive(utc_now()),
+        "section_updated_at": {"perfil": to_utc_naive(utc_now())},
     }
     try:
         result = await get_customers_collection().insert_one(customer)
@@ -259,7 +261,9 @@ async def update_customer(customer_id: str, payload: dict[str, Any]):
     full_name = " ".join(str(payload.get("full_name") or "").split())
     if len(full_name) < 2 or len(full_name) > 120:
         raise HTTPException(status_code=422, detail="El nombre debe tener entre 2 y 120 caracteres.")
+    from app.account_sync.customer import touch_customer
     await get_customers_collection().update_one({"_id": ObjectId(customer_id)}, {"$set": {"full_name": full_name}})
+    await touch_customer(customer_id, "perfil")
     return await get_customer(customer_id)
 
 
@@ -310,7 +314,8 @@ async def confirm_customer_contact_change(payload: CustomerContactOtpConfirmRequ
     await verify_otp(otp_hash=doc.get("otp_hash") or "", code=payload.code)
     try:
         result = await get_customers_collection().update_one(
-            {"_id": ObjectId(customer_id)}, {"$set": {doc["kind"]: doc[doc["kind"]]}}
+            {"_id": ObjectId(customer_id)},
+            {"$set": {doc["kind"]: doc[doc["kind"]], "updated_at": to_utc_naive(utc_now())}},
         )
     except Exception as exc:
         raise HTTPException(status_code=409, detail="Ese correo o teléfono ya está asociado a otra cuenta.") from exc
@@ -326,7 +331,10 @@ async def update_customer_identity_card(payload: CustomerIdentityCardUpdateReque
     if await customers.find_one({"identity_card": payload.identity_card, "_id": {"$ne": customer_oid}}):
         raise HTTPException(status_code=409, detail="Ese carnet ya está asociado a otra cuenta.")
     try:
-        await customers.update_one({"_id": customer_oid}, {"$set": {"identity_card": payload.identity_card}})
+        await customers.update_one(
+            {"_id": customer_oid},
+            {"$set": {"identity_card": payload.identity_card, "updated_at": to_utc_naive(utc_now())}},
+        )
     except Exception as exc:
         raise HTTPException(status_code=409, detail="Ese carnet ya está asociado a otra cuenta.") from exc
     return await get_customer(customer_id)
@@ -424,15 +432,20 @@ async def upload_customer_photo(photo: UploadFile, customer_id: str):
         raise HTTPException(status_code=401, detail="La cuenta de cliente ya no existe.")
     content, content_type = await read_image_upload(photo)
     image = await store_image(content, content_type, scope="profiles", owner_id=customer_id)
-    await collection.update_one({"_id": doc["_id"]}, {"$set": {"profile_photo_url": image.url}})
+    await collection.update_one(
+        {"_id": doc["_id"]},
+        {"$set": {"profile_photo_url": image.url, "updated_at": to_utc_naive(utc_now())}},
+    )
     if doc.get("profile_photo_url"):
         await remove_image(doc["profile_photo_url"])
     return await get_customer(customer_id)
 
 
 async def add_customer_address(payload: CustomerAddressRequest, customer_id: str):
+    from app.account_sync.customer import touch_customer
     address = {"id": str(uuid.uuid4()), **payload.model_dump()}
     await get_customers_collection().update_one({"_id": ObjectId(customer_id)}, {"$push": {"addresses": address}})
+    await touch_customer(customer_id, "direcciones")
     return await get_customer(customer_id)
 
 
@@ -443,13 +456,17 @@ async def update_customer_address(address_id: str, payload: CustomerAddressReque
     )
     if not result.matched_count:
         raise HTTPException(status_code=404, detail="No encontramos esa dirección guardada.")
+    from app.account_sync.customer import touch_customer
+    await touch_customer(customer_id, "direcciones")
     return await get_customer(customer_id)
 
 
 async def delete_customer_address(address_id: str, customer_id: str):
+    from app.account_sync.customer import touch_customer
     await get_customers_collection().update_one(
         {"_id": ObjectId(customer_id)}, {"$pull": {"addresses": {"id": address_id}}}
     )
+    await touch_customer(customer_id, "direcciones")
     return await get_customer(customer_id)
 
 
@@ -477,18 +494,22 @@ async def add_customer_favorite(product_id: str, customer_id: str):
             "store_slug": (seller or {}).get("store_slug") or "",
         },
     }
+    from app.account_sync.customer import touch_customer
     await get_customers_collection().update_one(
         {"_id": ObjectId(customer_id)},
         {"$addToSet": {"favorite_product_ids": product_id, "favorites": snapshot}},
     )
+    await touch_customer(customer_id, "favoritos")
     return await get_customer(customer_id)
 
 
 async def remove_customer_favorite(product_id: str, customer_id: str):
+    from app.account_sync.customer import touch_customer
     await get_customers_collection().update_one(
         {"_id": ObjectId(customer_id)},
         {"$pull": {"favorite_product_ids": product_id, "favorites": {"id": product_id}}},
     )
+    await touch_customer(customer_id, "favoritos")
     return await get_customer(customer_id)
 
 

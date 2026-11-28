@@ -95,6 +95,25 @@ async def complete_password_reset(payload: PasswordResetCompleteRequest):
     )
 
 
+@auth_router.post("/me/sync")
+async def sync_seller_dates(payload: dict, seller_payload: dict = Depends(require_seller)):
+    from app.account_sync.seller import compare_seller
+
+    return await compare_seller(seller_payload["seller_id"], payload)
+
+
+@auth_router.put("/me/sync/{section}")
+async def push_seller_section(section: str, payload: dict, seller_payload: dict = Depends(require_seller)):
+    from app.account_sync.seller import apply_seller_section
+
+    return await apply_seller_section(
+        seller_payload["seller_id"],
+        section,
+        payload.get("updated_at"),
+        payload.get("data"),
+    )
+
+
 @auth_router.get("/me", response_model=SellerPublic)
 async def seller_me(seller_payload: dict = Depends(require_seller)):
     return await profile_service.get_seller_public(seller_payload["seller_id"])

@@ -68,11 +68,39 @@ async def setup(payload: MensajeroSetupRequest):
     return await service.complete_setup(payload.setup_token, payload.password)
 
 
+@panel_router.post("/me/sync")
+async def sync_mensajero_dates(payload: dict, mensajero: dict = Depends(require_mensajero)):
+    from app.account_sync.mensajero import compare_mensajero
+
+    return await compare_mensajero(mensajero["mensajero_id"], payload)
+
+
+@panel_router.put("/me/sync/{section}")
+async def push_mensajero_section(section: str, payload: dict, mensajero: dict = Depends(require_mensajero)):
+    from app.account_sync.mensajero import apply_mensajero_section
+
+    return await apply_mensajero_section(
+        mensajero["mensajero_id"],
+        section,
+        payload.get("updated_at"),
+        payload.get("data"),
+    )
+
+
 @panel_router.get("/me")
 async def me(mensajero: dict = Depends(require_mensajero)):
     doc = await service.assert_mensajero_active(mensajero["mensajero_id"])
+    from app.account_sync.mensajero import server_dates
     from app.mensajeros.service import _public
-    return _public(doc)
+    from app.utils.datetime import serialize_utc_datetime
+
+    public = _public(doc)
+    public["section_updated_at"] = {
+        key: serialize_utc_datetime(value)
+        for key, value in (await server_dates(mensajero["mensajero_id"])).items()
+        if value is not None
+    }
+    return public
 
 
 @panel_router.get("/me/summary")

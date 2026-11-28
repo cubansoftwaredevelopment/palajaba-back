@@ -1,9 +1,28 @@
+from datetime import datetime
 from typing import Any
+
+from app.utils.datetime import to_utc_naive
 
 from .schema import CustomerPublic
 
 
+def customer_section_dates(doc: dict[str, Any]) -> dict[str, datetime]:
+    raw = doc.get("section_updated_at") or {}
+    created = doc.get("created_at") if isinstance(doc.get("created_at"), datetime) else None
+    dates: dict[str, datetime] = {}
+    for name in ("perfil", "direcciones", "favoritos"):
+        value = raw.get(name) if isinstance(raw.get(name), datetime) else created
+        if isinstance(value, datetime):
+            dates[name] = to_utc_naive(value)
+    for name in ("pedidos", "avisos"):
+        value = raw.get(name)
+        if isinstance(value, datetime):
+            dates[name] = to_utc_naive(value)
+    return dates
+
+
 def customer_public(doc: dict[str, Any]) -> CustomerPublic:
+    updated = doc.get("updated_at") if isinstance(doc.get("updated_at"), datetime) else doc.get("created_at")
     return CustomerPublic(
         id=str(doc["_id"]),
         full_name=doc["full_name"],
@@ -18,6 +37,8 @@ def customer_public(doc: dict[str, Any]) -> CustomerPublic:
         qvapay_verified=bool(doc.get("qvapay_username") and doc.get("qvapay_verified_at")),
         qvapay_prompt_dismissed=bool(doc.get("qvapay_prompt_dismissed")),
         purchase_revoked=bool(doc.get("purchase_revoked")),
+        updated_at=to_utc_naive(updated) if isinstance(updated, datetime) else None,
+        section_updated_at=customer_section_dates(doc),
     )
 
 
